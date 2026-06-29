@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -9,6 +9,13 @@ export default function SignupPage() {
   const [userType, setUserType] = useState<"employer" | "worker" | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    // 가입 페이지 진입 시 기존 브라우저 롤 캐시 전면 초기화
+    localStorage.removeItem("pending_user_type");
+    localStorage.removeItem("current_mode");
+    localStorage.removeItem("login_redirect");
+  }, []);
 
   // 구글 로그인
   const handleGoogleLogin = async (type: "employer" | "worker") => {
@@ -29,6 +36,29 @@ export default function SignupPage() {
       if (error) throw error;
     } catch (err: any) {
       setError("구글 로그인 중 오류가 발생했어요");
+      setLoading(false);
+    }
+  };
+
+  // 카카오 로그인
+  const handleKakaoLogin = async (type: "employer" | "worker") => {
+    setLoading(true);
+    setError("");
+
+    try {
+      // 유저 타입을 localStorage에 저장 (로그인 후 사용)
+      localStorage.setItem("pending_user_type", type);
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "kakao",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) throw error;
+    } catch (err: any) {
+      setError("카카오 로그인 중 오류가 발생했어요");
       setLoading(false);
     }
   };
@@ -105,14 +135,14 @@ export default function SignupPage() {
               시작하기
             </h2>
             <p className="text-white/40 text-sm mb-8">
-              구글 계정으로 간편하게 시작하세요
+              원하시는 계정으로 간편하게 시작하세요
             </p>
 
             {/* 구글 로그인 버튼 */}
             <button
               onClick={() => handleGoogleLogin(userType)}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-bold py-4 rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-50 mb-4"
+              className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-bold py-4 rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-50 mb-3"
             >
               <svg width="20" height="20" viewBox="0 0 24 24">
                 <path
@@ -125,7 +155,7 @@ export default function SignupPage() {
                 />
                 <path
                   fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18c-.75 1.48-1.18 3.15-1.18 4.93s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
                 />
                 <path
                   fill="#EA4335"
@@ -133,6 +163,16 @@ export default function SignupPage() {
                 />
               </svg>
               {loading ? "처리 중..." : "Google로 시작하기"}
+            </button>
+
+            {/* 카카오 로그인 버튼 */}
+            <button
+              onClick={() => handleKakaoLogin(userType)}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-3 bg-[#FEE500] text-[#191919] font-bold py-4 rounded-xl hover:bg-[#FDD835] transition-colors disabled:opacity-50 mb-4"
+            >
+              <KakaoIcon />
+              {loading ? "처리 중..." : "카카오톡으로 시작하기"}
             </button>
 
             {error && (
@@ -146,5 +186,13 @@ export default function SignupPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function KakaoIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#191919" d="M12 3C6.48 3 2 6.48 2 10.8c0 2.76 1.72 5.19 4.32 6.63L5.28 21l4.44-2.31C10.44 18.9 11.22 19 12 19c5.52 0 10-3.48 10-8.2C22 6.48 17.52 3 12 3z"/>
+    </svg>
   );
 }

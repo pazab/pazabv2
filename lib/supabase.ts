@@ -31,13 +31,7 @@ const getSupabaseClient = (() => {
       })
     }
 
-    instance = createClient(url, key, {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true,
-      }
-    })
+    instance = createBrowserClient(url, key)
     return instance
   }
 })()

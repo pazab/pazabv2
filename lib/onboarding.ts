@@ -182,3 +182,47 @@ function availabilityToDays(av?: string): string[] {
   if (av === 'weekend') return ['sat', 'sun']
   return ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 }
+
+// ============================================================
+// 4. coordToAddress — 좌표 → 주소 + region 3단계 (Kakao Local API)
+// ============================================================
+export async function coordToAddress(lat: number, lng: number): Promise<AddressResult | null> {
+  const REST_KEY = process.env.NEXT_PUBLIC_KAKAO_REST_KEY
+  if (!REST_KEY) {
+    console.error('[coordToAddress] NEXT_PUBLIC_KAKAO_REST_KEY missing')
+    return null
+  }
+
+  try {
+    const res = await fetch(
+      `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`,
+      { headers: { Authorization: `KakaoAK ${REST_KEY}` } }
+    )
+    const data = await res.json()
+
+    if (data.documents?.length > 0) {
+      const doc = data.documents[0]
+      const addr = doc.road_address || doc.address
+      if (!addr) return null
+
+      const sido = addr.region_1depth_name || ''
+      const sigungu = addr.region_2depth_name || ''
+      const eupmyeondong = addr.region_3depth_name || ''
+      const addressName = addr.address_name || ''
+
+      return {
+        lat,
+        lng,
+        sido,
+        sigungu,
+        eupmyeondong,
+        region: [sido, sigungu, eupmyeondong].filter(Boolean).join(' '),
+        address: addressName,
+      }
+    }
+    return null
+  } catch (e) {
+    console.error('[coordToAddress] error:', e)
+    return null
+  }
+}

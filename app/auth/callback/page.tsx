@@ -51,7 +51,8 @@ export default function CallbackPage() {
       );
 
       setTimeout(() => { subscription.unsubscribe(); router.replace("/"); }, 5000);
-    } catch {
+    } catch (err) {
+      console.error("Auth callback verification error:", err);
       router.replace("/");
     }
   };
@@ -136,7 +137,8 @@ export default function CallbackPage() {
         router.replace("/explore");
       }
 
-    } catch {
+    } catch (err) {
+      console.error("Save and redirect db error:", err);
       router.replace("/");
     }
   };

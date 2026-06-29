@@ -769,8 +769,9 @@ function MyTeamPageContent() {
   const currentTabs = viewAs === "employer" ? employerTabs : workerTabs;
 
   return (
-    <main style={{ minHeight:"100vh", background:"var(--bg)", maxWidth:480, margin:"0 auto", paddingBottom:80 }}>
+    <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
       <AppHeader title="팀·소속 관리" showBack />
+      <div style={{ maxWidth: 480, margin: "0 auto", position: "relative" }}>
 
       {/* 알바생 계약서 목록 모달 */}
       {showContractListModal && (
@@ -1203,7 +1204,7 @@ function MyTeamPageContent() {
           </>
         )}
       </div>
-      
+      </div>
     </main>
   );
 }

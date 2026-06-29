@@ -131,7 +131,7 @@ export default function BottomNav() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const isHiddenPath = ["/login", "/signup", "/auth", "/", "/chat/", "/paz", "/sudoku", "/daeta"].some(p => pathname === p || (p !== "/" && pathname?.startsWith(p)));
+  const isHiddenPath = ["/login", "/signup", "/auth", "/", "/chat/", "/paz", "/sudoku"].some(p => pathname === p || (p !== "/" && pathname?.startsWith(p)));
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -141,7 +141,7 @@ export default function BottomNav() {
   }, [pathname]);
 
   const handleTabClick = (path: string) => {
-    const protectedPaths = ["/chat", "/mypage", "/personality", "/interview"];
+    const protectedPaths = ["/chat", "/mypage", "/personality", "/interview", "/myteam", "/daeta"];
     const isProtected = protectedPaths.some(p => path.startsWith(p));
     // null이면 아직 세션 확인 중 - 잠깐 기다렸다 재시도
     if (isProtected && isLoggedIn === null) {
@@ -166,10 +166,11 @@ export default function BottomNav() {
 
   if (isHiddenPath || !isLoggedIn) return null;
   const tabs = [
+    { icon: "ti-calendar-event", label: "근태/관리", path: "/myteam", active: pathname.startsWith("/myteam") },
+    { icon: "ti-bolt", label: "대타 SOS", path: "/daeta", active: pathname.startsWith("/daeta") },
     { icon: "ti-compass", label: "탐색", path: "/explore", active: pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
-    { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat"), badge: unreadCount },
-    { icon: "ti-brain", label: "성향분석", path: "/personality", active: pathname.startsWith("/personality") || pathname.startsWith("/interview") || pathname.startsWith("/result") },
-    { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") },
+    { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat") && !pathname.includes("/paz"), badge: unreadCount },
+    { icon: "ti-user-circle", label: "성향/MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];
 
   return (

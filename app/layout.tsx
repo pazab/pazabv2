@@ -28,13 +28,23 @@ export const viewport: Viewport = {
   themeColor: "#3B82F6",
 };
 
+import AuthGuard from "@/components/AuthGuard";
+import BottomNav from "@/components/BottomNav";
+import PazFloatingButton from "@/components/PazFloatingButton";
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ko" className={`${notoSansKR.variable} h-full`}>
+      <head>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" />
+      </head>
       <body className="min-h-full flex flex-col font-sans antialiased">
+        <AuthGuard />
         {children}
+        <PazFloatingButton />
+        <BottomNav />
       </body>
     </html>
   );

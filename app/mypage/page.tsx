@@ -622,7 +622,7 @@ function MyPageContent() {
     setJobLoading(true);
     try {
       const { data } = await supabase.from("employer_profiles").select("*").eq("user_id", uid).eq("is_deleted", false).neq("job_type", "urgent");
-      const jobsWithLogs = await Promise.all((data || []).map(async (job) => {
+      const jobsWithLogs = await Promise.all((data || []).map(async (job: any) => {
         const { count } = await supabase.from("bot_chat_logs")
           .select("*", { count: "exact", head: true })
           .eq("employer_profile_id", job.id)
@@ -848,10 +848,10 @@ function MyPageContent() {
   const showBothTabs = (hasWorkerInterview && hasEmployerInterview) || user?.user_type === "both";
 
   return (
-    <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 120, maxWidth: 480, margin: "0 auto" }}>
+    <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 120 }}>
       <AppHeader title="MY" showSettings />
 
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 16px" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px" }}>
         <div style={{ padding: "0 0px" }}>
 
         {/* 프로필 카드 */}
