@@ -1,0 +1,934 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/lib/useToast";
+
+interface DaetaRegisterModalProps {
+  userId: string;
+  onClose: () => void;
+  onSuccess: () => void;
+  postingId?: string | null;
+}
+
+const BANK_OPTIONS = ["신한은행", "국민은행", "우리은행", "하나은행", "농협은행", "카카오뱅크", "토스뱅크"];
+
+const mapKakaoCategory = (kakaoCategory: string): string => {
+  if (!kakaoCategory) return "기타";
+  if (kakaoCategory.includes("카페") || kakaoCategory.includes("커피") || kakaoCategory.includes("제과") || kakaoCategory.includes("베이커리") || kakaoCategory.includes("디저트")) {
+    return "카페";
+  }
+  if (kakaoCategory.includes("음식점") || kakaoCategory.includes("한식") || kakaoCategory.includes("일식") || kakaoCategory.includes("중식") || kakaoCategory.includes("양식") || kakaoCategory.includes("패스트푸드") || kakaoCategory.includes("분식") || kakaoCategory.includes("술집") || kakaoCategory.includes("호프") || kakaoCategory.includes("포장마차") || kakaoCategory.includes("식당")) {
+    return "음식점";
+  }
+  if (kakaoCategory.includes("편의점") || kakaoCategory.includes("마트") || kakaoCategory.includes("슈퍼")) {
+    return "편의점";
+  }
+  if (kakaoCategory.includes("미용") || kakaoCategory.includes("뷰티") || kakaoCategory.includes("헤어") || kakaoCategory.includes("네일") || kakaoCategory.includes("피부")) {
+    return "뷰티/미용";
+  }
+  if (kakaoCategory.includes("판매") || kakaoCategory.includes("리테일") || kakaoCategory.includes("매장") || kakaoCategory.includes("백화점") || kakaoCategory.includes("쇼핑") || kakaoCategory.includes("아웃렛")) {
+    return "매장관리";
+  }
+  return "기타";
+};
+
+export default function DaetaRegisterModal({ userId, onClose, onSuccess, postingId }: DaetaRegisterModalProps) {
+  const { showToast, ToastUI } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [hasProfile, setHasProfile] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+
+  // 기본 매장 정보 (기존 프로필이 있을 때)
+  const [shopInfo, setShopInfo] = useState<{
+    id?: string;
+    businessName: string;
+    businessType: string;
+    region: string;
+    lat: number;
+    lng: number;
+  } | null>(null);
+
+  const [myShops, setMyShops] = useState<any[]>([]);
+
+  // 1. 신규 사장님 간편 가입/인증 폼 상태
+  const [step, setStep] = useState<"cert" | "form">("cert"); // cert: 신원인증/매장등록, form: 대타근무조건
+  const [newBusinessName, setNewBusinessName] = useState("");
+  const [newBusinessType, setNewBusinessType] = useState("음식점");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressResults, setAddressResults] = useState<any[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  
+  // 신원/계좌인증 상태
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [bankName, setBankName] = useState("신한은행");
+  const [accountNum, setAccountNum] = useState("");
+  const [accountVerified, setAccountVerified] = useState(false);
+  const [verifiedName, setVerifiedName] = useState("");
+
+  // 2. 대타 구인 정보 입력 상태
+  const [workDate, setWorkDate] = useState("");
+  const [startHour, setStartHour] = useState("12");
+  const [startMin, setStartMin] = useState("00");
+  const [endHour, setEndHour] = useState("18");
+  const [endMin, setEndMin] = useState("00");
+  const [wage, setWage] = useState("11000"); // 기본 추천 우대 시급
+  const [duty, setDuty] = useState("");
+  const [secureOption, setSecureOption] = useState(false); // 사장님 안심 옵션 수수료 동의
+
+  // 자격 요건 마스터 및 선택 상태
+  const [credentialsMaster, setCredentialsMaster] = useState<any[]>([]);
+  const [selectedCreds, setSelectedCreds] = useState<any[]>([]);
+  const [customCredInput, setCustomCredInput] = useState("");
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+
+  // 업종 및 직무 카테고리 상태
+  const [parentCategories, setParentCategories] = useState<any[]>([]);
+  const [childCategories, setChildCategories] = useState<any[]>([]);
+  const [selectedParent, setSelectedParent] = useState<any | null>(null);
+  const [customDuty, setCustomDuty] = useState("");
+  const [profileCategoryId, setProfileCategoryId] = useState<string | null>(null);
+
+  // 오늘 날짜 계산 (min 설정용)
+  const todayStr = new Date().toISOString().split("T")[0];
+  const maxDateStr = new Date(Date.now() + 3 * 86400000).toISOString().split("T")[0]; // 최대 3일 뒤
+
+  useEffect(() => {
+    loadCredentials();
+    if (postingId) {
+      loadPostingDetails(postingId);
+    } else {
+      checkEmployerProfile();
+    }
+  }, [postingId, userId]);
+
+  const loadPostingDetails = async (id: string) => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("daeta_postings")
+        .select("*")
+        .eq("id", id)
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        setWorkDate(data.work_date || "");
+        if (data.work_hours) {
+          const parts = data.work_hours.split("~");
+          const startParts = (parts[0] || "12:00").trim().split(":");
+          const endParts = (parts[1] || "18:00").trim().split(":");
+          setStartHour(startParts[0] || "12");
+          setStartMin(startParts[1] || "00");
+          setEndHour(endParts[0] || "18");
+          setEndMin(endParts[1] || "00");
+        }
+        setWage(String(data.wage || 10030));
+        setDuty(data.duty || "");
+        setSecureOption(data.secure_option || false);
+        if (data.required_credentials) {
+          const parsed = typeof data.required_credentials === "string"
+            ? JSON.parse(data.required_credentials)
+            : data.required_credentials;
+          setSelectedCreds(parsed || []);
+        }
+        
+        setShopInfo({
+          id: data.employer_profile_id || undefined,
+          businessName: data.business_name || "",
+          businessType: data.business_type || "기타",
+          region: data.region || "",
+          lat: data.lat || 37.5665,
+          lng: data.lng || 126.9780,
+        });
+        setHasProfile(true);
+        setStep("form");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrMsg("공고 정보를 불러오는 데 실패했습니다: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCredentials = async () => {
+    const { data: cats } = await supabase.from("job_categories").select("*").order("sort_order");
+    if (cats) {
+      setParentCategories(cats.filter(c => !c.parent_id));
+      setChildCategories(cats.filter(c => c.parent_id));
+    }
+    const { data } = await supabase.from("job_credentials").select("*").order("is_mandatory_by_law", { ascending: false });
+    if (data) setCredentialsMaster(data);
+  };
+
+  useEffect(() => {
+    if (profileCategoryId && childCategories.length > 0 && parentCategories.length > 0) {
+      const child = childCategories.find(c => c.id === profileCategoryId);
+      if (child) {
+        setDuty(child.name);
+        const parent = parentCategories.find(p => p.id === child.parent_id);
+        if (parent) setSelectedParent(parent);
+      }
+    }
+  }, [profileCategoryId, childCategories, parentCategories]);
+
+  const checkEmployerProfile = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("employer_profiles")
+        .select("id, business_name, business_type, region, lat, lng, category_id, category_ids")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        setMyShops(data);
+        const profile = data[0];
+        setShopInfo({
+          id: profile.id,
+          businessName: profile.business_name || "",
+          businessType: profile.business_type || "기타",
+          region: profile.region || "",
+          lat: profile.lat || 37.5665,
+          lng: profile.lng || 126.9780,
+        });
+        setHasProfile(true);
+        setStep("form"); // 매장 프로필이 있으면 바로 대타 정보 입력 폼으로
+        if (profile.category_id) {
+          setProfileCategoryId(profile.category_id);
+        }
+      } else {
+        setHasProfile(false);
+        setStep("cert"); // 없으면 1분 간편 가입/인증 단계로
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrMsg("매장 정보를 조회하는 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 카카오 API 주소 키워드 검색
+  const searchAddress = async (query: string) => {
+    setAddressQuery(query);
+    if (query.trim().length < 2) {
+      setAddressResults([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(query)}&size=5`,
+        {
+          headers: {
+            Authorization: "KakaoAK 02e1711115a492598ea97b18764fc597",
+          },
+        }
+      );
+      const data = await res.json();
+      setAddressResults(data.documents || []);
+    } catch (err) {
+      console.error("주소 검색 오류:", err);
+    }
+  };
+
+  // 목업 1원 송금 계좌 실명인증
+  const verifyAccount = () => {
+    if (!accountNum.trim()) {
+      showToast("계좌번호를 입력해 주세요.", "error");
+      return;
+    }
+    // 1초 목업 로딩 후 인증완료 처리
+    setAccountVerified(true);
+    // 가입자 이름 또는 임의의 이름 매칭
+    setVerifiedName("안심사장");
+    showToast("🏦 계좌 실명 인증 완료! (예금주: 안심사장)");
+  };
+
+  // 대타 공고 저장 처리
+  const handleRegister = async () => {
+    if (step === "cert") {
+      // 1단계 유효성 검증
+      if (!newBusinessName.trim()) {
+        setErrMsg("매장 상호명을 입력해 주세요.");
+        return;
+      }
+      if (!selectedAddress) {
+        setErrMsg("매장 주소를 검색하여 선택해 주세요.");
+        return;
+      }
+      if (!phoneVerified) {
+        setErrMsg("휴대폰 간편인증 동의가 필요합니다.");
+        return;
+      }
+      if (!accountVerified) {
+        setErrMsg("정산용 은행 계좌 실명 인증을 완료해 주세요.");
+        return;
+      }
+      
+      setSaving(true);
+      setErrMsg("");
+      try {
+        const newProfile = {
+          user_id: userId,
+          business_name: newBusinessName.trim(),
+          business_type: newBusinessType,
+          region: selectedAddress.address_name,
+          lat: parseFloat(selectedAddress.y),
+          lng: parseFloat(selectedAddress.x),
+          is_active: true,
+          is_deleted: false,
+        };
+
+        const { data: insertedData, error: insErr } = await supabase
+          .from("employer_profiles")
+          .insert(newProfile)
+          .select()
+          .single();
+
+        if (insErr) throw insErr;
+
+        if (insertedData) {
+          setMyShops(prev => [insertedData, ...prev]);
+          setShopInfo({
+            id: insertedData.id,
+            businessName: insertedData.business_name || "",
+            businessType: insertedData.business_type || "기타",
+            region: insertedData.region || "",
+            lat: insertedData.lat || 37.5665,
+            lng: insertedData.lng || 126.9780,
+          });
+          setHasProfile(true);
+          if (insertedData.category_id) {
+            setProfileCategoryId(insertedData.category_id);
+          } else {
+            setProfileCategoryId(null);
+          }
+        }
+        setStep("form");
+      } catch (err: any) {
+        console.error(err);
+        setErrMsg("매장 등록에 실패했습니다: " + err.message);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // 2단계 구인 정보 유효성 검증
+    if (!workDate) {
+      setErrMsg("대타가 필요한 날짜를 선택해 주세요.");
+      return;
+    }
+    const finalWage = parseInt(wage);
+    if (isNaN(finalWage) || finalWage < 10030) {
+      setErrMsg("시급은 2026년 최저시급(10,030원) 이상이어야 합니다.");
+      return;
+    }
+    const finalDuty = duty === "직접입력" ? customDuty.trim() : duty;
+    if (!finalDuty) {
+      setErrMsg("대타 담당 업무를 선택하거나 입력해 주세요.");
+      return;
+    }
+
+    setSaving(true);
+    setErrMsg("");
+
+    try {
+      const finalShop = shopInfo!;
+      
+      // 요일 계산
+      const days = ["일", "월", "화", "수", "목", "금", "토"];
+      const dayName = days[new Date(workDate).getDay()];
+
+      // 만료시간 계산 (근무 시작 날짜/시간)
+      const expiresAt = `${workDate}T${startHour}:${startMin}:00Z`;
+
+      const tags = [finalDuty, "대타"];
+      if (secureOption) {
+        tags.push("안심페이");
+      }
+
+      const insertData = {
+        user_id: userId,
+        business_name: finalShop.businessName,
+        business_type: finalShop.businessType,
+        region: finalShop.region,
+        lat: finalShop.lat,
+        lng: finalShop.lng,
+        work_date: workDate,
+        work_hours: `${startHour}:${startMin} ~ ${endHour}:${endMin}`,
+        wage: finalWage,
+        duty: finalDuty,
+        secure_option: secureOption,
+        status: "pending",
+        expires_at: expiresAt,
+        required_credentials: JSON.stringify(selectedCreds),
+      };
+
+      if (postingId) {
+        const { error } = await supabase
+          .from("daeta_postings")
+          .update({
+            work_date: workDate,
+            work_hours: `${startHour}:${startMin} ~ ${endHour}:${endMin}`,
+            wage: finalWage,
+            duty: finalDuty,
+            secure_option: secureOption,
+            required_credentials: JSON.stringify(selectedCreds),
+          })
+          .eq("id", postingId);
+        if (error) throw error;
+        showToast("⚡ 대타 공고가 성공적으로 수정되었습니다!");
+      } else {
+        const { error } = await supabase.from("daeta_postings").insert(insertData);
+        if (error) throw error;
+        showToast("⚡ 긴급 대타 공고가 성공적으로 등록되었습니다!");
+      }
+      setTimeout(onSuccess, 1500);
+    } catch (err: any) {
+      console.error(err);
+      setErrMsg("대타 공고 등록에 실패했습니다: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: "20px", maxHeight: "90vh", overflowY: "auto", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", borderTop: "1px solid rgba(255,255,255,0.08)", color: "#fff" }}>
+        
+        {/* 모달 헤더 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 900, margin: 0, color: "#fff" }}>
+            {step === "cert" ? "⚡ 대타 간편 등록 & 본인 인증" : "⚡ 대타 근무조건 입력"}
+          </h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        {loading ? (
+          <p style={{ textAlign: "center", padding: "40px 0", color: "#94a3b8" }}>정보를 불러오는 중...</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            
+            {/* 1단계: 신원/계좌인증 및 간편 등록 (프로필이 없는 사장님 대상) */}
+            {step === "cert" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                
+                <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 12, padding: "12px", fontSize: 12, lineHeight: 1.5, color: "#c4b5fd" }}>
+                  💡 <strong>처음 오셨군요!</strong><br />
+                  바쁘신 사장님을 위해 1회성 간편 정보 등록 및 본인 확인을 거친 후 바로 대타를 구하실 수 있습니다. (성향분석 생략)
+                </div>
+
+                {/* 매장 상호명 검색 */}
+                <div style={{ position: "relative" }}>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>🏪 매장 상호명 검색 *</label>
+                  <input type="text" value={newBusinessName}
+                    onChange={e => {
+                      setNewBusinessName(e.target.value);
+                      searchAddress(e.target.value);
+                    }}
+                    placeholder="예: 파스쿠찌 아산신정호점 (검색어 입력)"
+                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                  
+                  {/* 주소 및 상호명 검색 결과 드롭다운 */}
+                  {addressResults.length > 0 && (
+                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1c1c1e", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 12, zIndex: 100, overflow: "hidden", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                      {addressResults.map((item, i) => (
+                        <div key={i} onClick={() => {
+                          setNewBusinessName(item.place_name);
+                          setSelectedAddress(item);
+                          if (item.category_name) {
+                            setNewBusinessType(mapKakaoCategory(item.category_name));
+                          }
+                          setAddressResults([]);
+                        }}
+                          style={{ padding: "10px 12px", cursor: "pointer", borderBottom: i < addressResults.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none", fontSize: 12, transition: "background 0.2s" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                          onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                          <div style={{ fontWeight: 700, color: "#fff" }}>{item.place_name || item.address_name}</div>
+                          <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, marginTop: 2 }}>{item.road_address_name || item.address_name}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 확인된 주소 및 업종 표시 */}
+                {selectedAddress && (
+                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div>
+                      <span style={{ fontSize: 10, color: "#4ade80", fontWeight: 700, letterSpacing: 0.5, display: "block", marginBottom: 2 }}>📍 확인된 매장 위치</span>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{selectedAddress.road_address_name || selectedAddress.address_name}</div>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 10, color: "#8b5cf6", fontWeight: 700, letterSpacing: 0.5, display: "block", marginBottom: 2 }}>📂 자동 감지된 업종</span>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {newBusinessType === "카페" ? "☕ 카페 / 베이커리" :
+                         newBusinessType === "음식점" ? "🍳 식당 / 음식점" :
+                         newBusinessType === "편의점" ? "🏪 편의점 / 마트" :
+                         newBusinessType === "뷰티/미용" ? "💈 뷰티 / 미용" :
+                         newBusinessType === "매장관리" ? "📦 매장 관리 / 일반 알바" :
+                         "❓ 기타 업종"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 휴대폰 인증 동의 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                  <input type="checkbox" id="phoneCheck" checked={phoneVerified} onChange={e => setPhoneVerified(e.target.checked)}
+                    style={{ width: 18, height: 18, cursor: "pointer" }} />
+                  <label htmlFor="phoneCheck" style={{ fontSize: 13, cursor: "pointer", color: "rgba(255,255,255,0.8)" }}>
+                    📱 휴대폰 본인 신원 인증 동의 (10초 인증)
+                  </label>
+                </div>
+
+                {/* 계좌 인증 */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>💰 급여 지급 정산 계좌 연동 *</label>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                    <select value={bankName} onChange={e => setBankName(e.target.value)}
+                      style={{ width: 110, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "#fff", fontSize: 13, outline: "none" }}>
+                      {BANK_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                    <input type="text" value={accountNum} onChange={e => setAccountNum(e.target.value)} placeholder="계좌번호 입력 (숫자만)"
+                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                    <button type="button" onClick={verifyAccount}
+                      style={{ background: accountVerified ? "#22c55e" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: 12, padding: "0 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      {accountVerified ? "인증완료" : "1원 인증"}
+                    </button>
+                  </div>
+                  {accountVerified && (
+                    <span style={{ fontSize: 11, color: "#4ade80" }}>예금주: {verifiedName} (신원 대조 완료)</span>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+            {/* 2단계: 대타 구인 상세 조건 입력 */}
+            {step === "form" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                
+                {/* 상점 정보 확인 */}
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "12px 14px" }}>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 6 }}>SELECTED SHOP</span>
+                  {myShops.length > 0 ? (
+                    <select
+                      value={shopInfo?.id || ""}
+                      onChange={e => {
+                        if (e.target.value === "new_shop") {
+                          setNewBusinessName("");
+                          setNewBusinessType("음식점");
+                          setAddressQuery("");
+                          setAddressResults([]);
+                          setSelectedAddress(null);
+                          setPhoneVerified(false);
+                          setAccountVerified(false);
+                          setStep("cert");
+                          return;
+                        }
+                        const selected = myShops.find(s => s.id === e.target.value);
+                        if (selected) {
+                          setShopInfo({
+                            id: selected.id,
+                            businessName: selected.business_name || "",
+                            businessType: selected.business_type || "기타",
+                            region: selected.region || "",
+                            lat: selected.lat || 37.5665,
+                            lng: selected.lng || 126.9780,
+                          });
+                          if (selected.category_id) {
+                            setProfileCategoryId(selected.category_id);
+                          } else {
+                            setProfileCategoryId(null);
+                          }
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        background: "var(--surface2)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        padding: "12px",
+                        color: "#fff",
+                        fontSize: 14,
+                        outline: "none",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {myShops.map(s => (
+                        <option key={s.id} value={s.id}>{s.business_name} ({s.region})</option>
+                      ))}
+                      <option value="new_shop">➕ 새 매장 추가 등록...</option>
+                    </select>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 15, fontWeight: 900 }}>{shopInfo?.businessName}</div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{shopInfo?.region}</div>
+                    </>
+                  )}
+                </div>
+
+                {/* 대타 일자 */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>📅 대타 필요한 날짜 *</label>
+                  <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} min={todayStr} max={maxDateStr}
+                    style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none" }} />
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginTop: 4 }}>* 대타 구인은 오늘 기준 3일 이내 긴급 일정만 가능합니다.</span>
+                </div>
+
+                {/* 근무시간 */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>⏰ 근무시간 *</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <select value={startHour} onChange={e => setStartHour(e.target.value)}
+                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      {Array.from({ length: 24 }, (_, i) => <option key={i} value={String(i).padStart(2, "0")}>{String(i).padStart(2, "0")}시</option>)}
+                    </select>
+                    <select value={startMin} onChange={e => setStartMin(e.target.value)}
+                      style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      <option value="00">00분</option><option value="30">30분</option>
+                    </select>
+                    <span style={{ color: "rgba(255,255,255,0.4)" }}>~</span>
+                    <select value={endHour} onChange={e => setEndHour(e.target.value)}
+                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      {Array.from({ length: 24 }, (_, i) => <option key={i} value={String(i).padStart(2, "0")}>{String(i).padStart(2, "0")}시</option>)}
+                    </select>
+                    <select value={endMin} onChange={e => setEndMin(e.target.value)}
+                      style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      <option value="00">00분</option><option value="30">30분</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 제시 시급 */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>💰 제시 시급 *</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="number" value={wage} onChange={e => setWage(e.target.value)}
+                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                    <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>원/시간</span>
+                  </div>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginTop: 4 }}>* 최저시급(10,030원) 이상. 대타는 우대 시급(11,000원 이상)이 매칭율이 높습니다.</span>
+                </div>
+
+                {/* 업종 및 담당 업무 선택 */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 8 }}>📂 업종 선택 *</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: selectedParent ? 10 : 0 }}>
+                    {parentCategories.map(cat => (
+                      <button key={cat.id} type="button" onClick={() => { setSelectedParent(cat); setDuty(""); setCustomDuty(""); }}
+                        style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: selectedParent?.id === cat.id ? 700 : 400, background: selectedParent?.id === cat.id ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: selectedParent?.id === cat.id ? "#fff" : "rgba(255,255,255,0.6)", transition: "all 0.15s" }}>
+                        {cat.emoji} {cat.name}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedParent && (
+                    <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 12, padding: 12, marginTop: 10 }}>
+                      <p style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", margin: "0 0 8px", fontWeight: 600 }}>{selectedParent.emoji} {selectedParent.name} › 직무 선택</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {childCategories.filter(c => c.parent_id === selectedParent.id).map(child => (
+                          child.name === "직접입력" ? (
+                            <div key={child.id} style={{ width: "100%", marginTop: 4 }}>
+                              <button type="button" onClick={() => { setDuty("직접입력"); }}
+                                style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: duty === "직접입력" ? 700 : 400, background: duty === "직접입력" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: duty === "직접입력" ? "#fff" : "rgba(255,255,255,0.6)", marginBottom: duty === "직접입력" ? 8 : 0 }}>
+                                ✏️ 직접입력
+                              </button>
+                              {duty === "직접입력" && (
+                                <input type="text" value={customDuty} onChange={e => setCustomDuty(e.target.value)} placeholder="직무명을 입력해 주세요"
+                                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 12px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box", marginTop: 4 }} />
+                              )}
+                            </div>
+                          ) : (
+                            <button key={child.id} type="button" onClick={() => { setDuty(child.name); setCustomDuty(""); }}
+                              style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: duty === child.name ? 700 : 400, background: duty === child.name ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: duty === child.name ? "#fff" : "rgba(255,255,255,0.6)", transition: "all 0.15s" }}>
+                              {child.emoji} {child.name}
+                            </button>
+                          )
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 필수/우대 자격 요건 선택 */}
+                {duty && (
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 8 }}>🏅 필수/우대 자격 요건</label>
+                    
+                    {/* 동적 프리셋 칩 목록 */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                      {[
+                        ...credentialsMaster.filter(c => c.category_name === selectedParent?.name && c.duty_name === duty && c.is_mandatory_by_law),
+                        ...credentialsMaster.filter(c => c.category_name === selectedParent?.name && c.duty_name === duty && !c.is_mandatory_by_law),
+                      ].map(c => {
+                          const isSelected = selectedCreds.some(sc => sc.name === c.name);
+                          const isMandatory = c.is_mandatory_by_law;
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedCreds(prev => prev.filter(sc => sc.name !== c.name));
+                                } else {
+                                  setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
+                                }
+                              }}
+                              style={{
+                                padding: "6px 12px",
+                                borderRadius: 20,
+                                border: "none",
+                                fontSize: 11,
+                                cursor: "pointer",
+                                fontWeight: isSelected ? 700 : 400,
+                                background: isSelected
+                                  ? (isMandatory ? "linear-gradient(135deg, #db2777, #ec4899)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)")
+                                  : (isMandatory ? "rgba(236,72,153,0.15)" : "var(--surface2)"),
+                                color: isSelected ? "#fff" : (isMandatory ? "#fbcfe8" : "var(--text-muted)"),
+                                boxShadow: "none",
+                                outline: "none",
+                                transition: "all 0.15s"
+                              }}
+                            >
+                              {isMandatory && "⚠️ "}{c.name}
+                            </button>
+                          );
+                        })}
+
+                      {/* 인라인 직접입력 칩 */}
+                      {showCustomInput ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={customCredInput}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setCustomCredInput(val);
+                              if (!val.trim()) {
+                                setSuggestions([]);
+                                return;
+                              }
+                              const matched = credentialsMaster.filter(c =>
+                                c.category_name === selectedParent?.name &&
+                                c.duty_name === duty &&
+                                c.name.toLowerCase().includes(val.toLowerCase()) &&
+                                !selectedCreds.some(sc => sc.name === c.name)
+                              );
+                              setSuggestions(matched.slice(0, 5));
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
+                                  const presetMatch = credentialsMaster.find(c => c.category_name === selectedParent?.name && c.duty_name === duty && c.name === customCredInput.trim());
+                                  setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
+                                }
+                                setCustomCredInput("");
+                                setSuggestions([]);
+                                setShowCustomInput(false);
+                              }, 200);
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
+                                  const presetMatch = credentialsMaster.find(c => c.category_name === selectedParent?.name && c.duty_name === duty && c.name === customCredInput.trim());
+                                  setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
+                                }
+                                setCustomCredInput("");
+                                setSuggestions([]);
+                                setShowCustomInput(false);
+                              }
+                            }}
+                            placeholder="직접 입력..."
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 20,
+                              border: "1px solid #c4b5fd",
+                              background: "var(--surface)",
+                              color: "#fff",
+                              fontSize: 11,
+                              width: 100,
+                              outline: "none"
+                            }}
+                          />
+                          {suggestions.length > 0 && (
+                            <div style={{
+                              position: "absolute",
+                              top: "calc(100% + 4px)",
+                              left: 0,
+                              width: 180,
+                              background: "#1e1e24",
+                              border: "1px solid var(--border)",
+                              borderRadius: 10,
+                              zIndex: 100,
+                              overflow: "hidden",
+                              boxShadow: "0 8px 24px rgba(0,0,0,0.5)"
+                            }}>
+                              {suggestions.map((c, i) => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onMouseDown={() => {
+                                    setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
+                                    setCustomCredInput("");
+                                    setSuggestions([]);
+                                    setShowCustomInput(false);
+                                  }}
+                                  style={{
+                                    width: "100%",
+                                    padding: "8px 12px",
+                                    background: "none",
+                                    border: "none",
+                                    borderBottom: i < suggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                                    textAlign: "left",
+                                    cursor: "pointer",
+                                    color: "#fff",
+                                    fontSize: 11,
+                                    display: "block"
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.1)"}
+                                  onMouseLeave={e => e.currentTarget.style.background = "none"}
+                                >
+                                  {c.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCustomInput(true);
+                            setCustomCredInput("");
+                            setSuggestions([]);
+                          }}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: 20,
+                            border: "none",
+                            fontSize: 11,
+                            cursor: "pointer",
+                            fontWeight: 400,
+                            background: "var(--surface2)",
+                            color: "var(--text-muted)",
+                            boxShadow: "none",
+                            outline: "none",
+                            transition: "all 0.15s"
+                          }}
+                        >
+                          ✏️ 직접입력
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 추가된 직접 입력 칩들 */}
+                    {selectedCreds.filter(sc => !sc.is_preset).length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                        {selectedCreds
+                          .filter(sc => !sc.is_preset)
+                          .map(sc => (
+                            <span
+                              key={sc.name}
+                              onClick={() => setSelectedCreds(prev => prev.filter(p => p.name !== sc.name))}
+                              style={{
+                                fontSize: 11,
+                                background: "rgba(236,72,153,0.1)",
+                                border: "1px solid rgba(236,72,153,0.3)",
+                                color: "#fbcfe8",
+                                padding: "4px 10px",
+                                borderRadius: 10,
+                                cursor: "pointer"
+                              }}
+                            >
+                              {sc.name} ✕
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 안심 보장 수수료 옵션 */}
+                <div style={{ background: "rgba(236,72,153,0.06)", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "12px 14px", marginTop: 4 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <input type="checkbox" id="secureCheck" checked={secureOption} onChange={e => setSecureOption(e.target.checked)}
+                      style={{ width: 20, height: 20, cursor: "pointer", marginTop: 2, flexShrink: 0 }} />
+                    <div>
+                      <label htmlFor="secureCheck" style={{ fontSize: 13, fontWeight: 800, color: "#fbcfe8", cursor: "pointer", display: "block", marginBottom: 4 }}>
+                        🛡️ 노쇼 안심 보장 수수료 가입 (건당 3,000원)
+                      </label>
+                      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.5, display: "block" }}>
+                        체크 시 공고에 [안심보장 🛡️] 마크가 표시되어 매칭률이 3배 급상승합니다. 알바생이 노쇼할 경우 플랫폼이 위로금(일당 전액 환불 및 쿠폰)을 보장합니다.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 패널티 규정 동의 고지 */}
+                <p style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", lineHeight: 1.4, margin: "4px 0 0" }}>
+                  ※ 파잡 대타 매칭은 민법상 적법한 근로계약 성립의 청약 행위입니다. 매칭 성사 후 사장님의 사유로 일방 취소(해고 등) 시 위약금이 부과되거나 서비스 영구 정지 처리가 될 수 있습니다.
+                </p>
+
+              </div>
+            )}
+
+            {errMsg && (
+              <p style={{ color: "#f87171", fontSize: 13, fontWeight: 700, textAlign: "center", margin: 0 }}>🚨 {errMsg}</p>
+            )}
+
+            {/* 하단 버튼 */}
+            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              {step === "form" && !hasProfile && (
+                <button type="button" onClick={() => setStep("cert")} style={{ flex: 1, padding: "14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  이전
+                </button>
+              )}
+              {step === "cert" && myShops.length > 0 && (
+                <button type="button" onClick={() => {
+                  setStep("form");
+                  // Restore to the first active shop
+                  const firstShop = myShops[0];
+                  if (firstShop) {
+                    setShopInfo({
+                      id: firstShop.id,
+                      businessName: firstShop.business_name || "",
+                      businessType: firstShop.business_type || "기타",
+                      region: firstShop.region || "",
+                      lat: firstShop.lat || 37.5665,
+                      lng: firstShop.lng || 126.9780,
+                    });
+                    if (firstShop.category_id) {
+                      setProfileCategoryId(firstShop.category_id);
+                    } else {
+                      setProfileCategoryId(null);
+                    }
+                  }
+                }} style={{ flex: 1, padding: "14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  취소
+                </button>
+              )}
+              <button type="button" onClick={handleRegister} disabled={saving}
+                style={{ flex: 2, padding: "14px", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", borderRadius: 16, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 15px rgba(139,92,246,0.3)" }}>
+                {saving ? "등록 중..." : step === "cert" ? "매장 등록 및 다음으로 →" : "대타 긴급 등록하기 🚀"}
+              </button>
+            </div>
+            
+            {ToastUI}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
