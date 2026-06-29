@@ -42,7 +42,7 @@ export default function CallbackPage() {
       }
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
+        async (event: string, session: any) => {
           if (event === "SIGNED_IN" && session) {
             subscription.unsubscribe();
             await saveAndRedirect(session);

@@ -56,7 +56,7 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
 
   useEffect(() => {
     supabase.from("user_badges").select("badge_key").eq("user_id", userId)
-      .then(({ data }) => {
+      .then(({ data }: any) => {
         setAllBadges(data || []);
       });
   }, [userId]);
@@ -171,8 +171,8 @@ function WorkerProfileStatus({ userId, router, onUpdate }: { userId: string; rou
 
   useEffect(() => {
     supabase.from("worker_profiles").select("*").eq("user_id", userId)
-      .then(async ({ data }) => {
-        const withCounts = await Promise.all((data || []).map(async (p) => {
+      .then(async ({ data }: any) => {
+        const withCounts = await Promise.all((data || []).map(async (p: any) => {
           const { count } = await supabase.from("bot_chat_logs")
             .select("*", { count: "exact", head: true })
             .eq("worker_profile_id", p.id);

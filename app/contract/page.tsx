@@ -114,7 +114,7 @@ function ContractContent() {
       .eq("employer_id", cur.employer_id).eq("worker_id", cur.worker_id)
       .eq("progress_status","hired").order("created_at",{ascending:false});
 
-    const enriched = await Promise.all((all||[]).map(async (m,i) => {
+    const enriched = await Promise.all((all||[]).map(async (m: any, i: number) => {
       let ep = null;
       if (m.employer_profile_id) {
         // 매칭된 공고로 조회

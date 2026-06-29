@@ -195,10 +195,10 @@ function ExploreContent() {
         .select("*, users!employer_profiles_user_id_fkey(avatar_url, name, nickname)")
         .eq("is_active", true).eq("is_deleted", false).neq("job_type", "urgent")
         .gte("expires_at", new Date().toISOString()).limit(1000);
-      setAllItems((data || []).map(d => ({ ...d, id: d.id || d.user_id, employer_avatar: (d.users as Record<string, unknown>)?.avatar_url, employer_name: (d.users as Record<string, unknown>)?.nickname || (d.users as Record<string, unknown>)?.name, match_score: null })));
+      setAllItems((data || []).map((d: any) => ({ ...d, id: d.id || d.user_id, employer_avatar: (d.users as Record<string, unknown>)?.avatar_url, employer_name: (d.users as Record<string, unknown>)?.nickname || (d.users as Record<string, unknown>)?.name, match_score: null })));
     } else {
       const { data } = await supabase.from("worker_profiles").select("*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname)").eq("is_active", true).limit(1000);
-      setAllItems((data || []).filter(w => w.is_public !== false && (!w.job_status || w.job_status === "active" || w.job_status === "open")).map(d => ({ ...d, id: d.user_id, worker_avatar: (d.users as Record<string, unknown>)?.avatar_url, worker_name: (d.users as Record<string, unknown>)?.nickname || (d.users as Record<string, unknown>)?.name, trust_score: (d.users as Record<string, unknown>)?.trust_score ?? 50, match_score: null })));
+      setAllItems((data || []).filter((w: any) => w.is_public !== false && (!w.job_status || w.job_status === "active" || w.job_status === "open")).map((d: any) => ({ ...d, id: d.user_id, worker_avatar: (d.users as Record<string, unknown>)?.avatar_url, worker_name: (d.users as Record<string, unknown>)?.nickname || (d.users as Record<string, unknown>)?.name, trust_score: (d.users as Record<string, unknown>)?.trust_score ?? 50, match_score: null })));
     }
   };
 
