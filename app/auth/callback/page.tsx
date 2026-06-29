@@ -57,6 +57,20 @@ export default function CallbackPage() {
     }
   };
 
+  // 중복 없는 닉네임 반환 — 겹치면 이름2, 이름3 ...
+  const resolveUniqueNickname = async (base: string): Promise<string> => {
+    const clean = base.trim().slice(0, 18);
+    const { data } = await supabase.from("users")
+      .select("nickname").ilike("nickname", `${clean}%`).limit(30);
+    const taken = new Set((data || []).map((r: any) => r.nickname?.toLowerCase()));
+    if (!taken.has(clean.toLowerCase())) return clean;
+    for (let i = 2; i <= 999; i++) {
+      const candidate = `${clean}${i}`;
+      if (!taken.has(candidate.toLowerCase())) return candidate;
+    }
+    return `${clean}_${Date.now().toString(36)}`;
+  };
+
   const saveAndRedirect = async (session: any) => {
     try {
       setStatus("프로필 확인 중...");
@@ -69,14 +83,19 @@ export default function CallbackPage() {
         .from("users").select("user_type, profile_completed").eq("id", user.id).single();
 
       if (!existingUser) {
-        const userEmail = user.email || 
+        const userEmail = user.email ||
           user.user_metadata?.email || "";
-        const userName = user.user_metadata?.full_name || 
-          user.user_metadata?.name || 
+        const userName = user.user_metadata?.full_name ||
+          user.user_metadata?.name ||
           user.user_metadata?.user_name || "파잡유저";
+
+        // 중복 닉네임 방지: 겹치면 숫자 붙이기
+        const uniqueNickname = await resolveUniqueNickname(userName);
+
         await supabase.from("users").insert({
           id: user.id, email: userEmail,
           name: userName,
+          nickname: uniqueNickname,
           user_type: userType, profile_completed: false,
           trust_score: 50, grade: "bronze", is_active: true,
         });

@@ -16,6 +16,10 @@ interface InviteInfo {
   role: string
   expires_at: string | null
   used_at: string | null
+  wage?: number | null
+  work_days?: string | null
+  work_hours?: string | null
+  biz_name?: string | null
   employer?: {
     nickname: string
     employer_profiles: { business_name: string }[] | null
@@ -35,6 +39,11 @@ export default function InviteAcceptPage() {
   const [accepting, setAccepting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setIsLoggedIn(!!data.user))
+  }, [])
 
   useEffect(() => {
     loadInvite()
@@ -103,13 +112,39 @@ export default function InviteAcceptPage() {
         return
       }
 
-      // 1. team_members 연결 (worker_id 채우기)
+      // 1. team_members 연결
       if (invite.team_member_id) {
+        // 구형: team_member_id 방식
         await supabase.from('team_members').update({
           worker_id: user.id,
           invite_status: 'joined',
           updated_at: new Date().toISOString(),
         }).eq('id', invite.team_member_id)
+      } else {
+        // 신형: 닉네임 검색 초대 — 직접 insert
+        const { data: existing } = await supabase.from('team_members')
+          .select('id').eq('employer_id', invite.employer_id).eq('worker_id', user.id).limit(1)
+        if (!existing || existing.length === 0) {
+          await supabase.from('team_members').insert({
+            employer_id: invite.employer_id,
+            worker_id: user.id,
+            invite_status: 'joined',
+            status: 'active',
+            member_role: 'staff',
+            wage: invite.wage ?? null,
+            work_days: invite.work_days ?? null,
+            work_hours: invite.work_hours ?? null,
+          })
+        } else {
+          // 이미 있으면 근무조건 업데이트
+          await supabase.from('team_members').update({
+            invite_status: 'joined',
+            status: 'active',
+            wage: invite.wage ?? null,
+            work_days: invite.work_days ?? null,
+            work_hours: invite.work_hours ?? null,
+          }).eq('id', existing[0].id)
+        }
       }
 
       // 2. invite_codes 사용 처리
@@ -124,14 +159,19 @@ export default function InviteAcceptPage() {
         .eq('id', user.id)
         .single()
 
+      const currentType = userData?.user_type;
+      const newType = currentType === 'employer' ? 'both'
+        : currentType === 'both' ? 'both'
+        : 'worker';
+
       if (!userData?.onboarded) {
         await promoteProfile(supabase, user.id, 'worker')
         await supabase.from('users').update({
           onboarded: true,
-          user_type: 'worker',
+          user_type: newType,
         }).eq('id', user.id)
-      } else if (!userData?.user_type) {
-        await supabase.from('users').update({ user_type: 'worker' }).eq('id', user.id)
+      } else {
+        await supabase.from('users').update({ user_type: newType }).eq('id', user.id)
       }
 
       // 4. Tier1 검증 승격 (team_history)
@@ -140,7 +180,7 @@ export default function InviteAcceptPage() {
       setDone(true)
 
       // 5. myteam으로 이동
-      setTimeout(() => router.push('/myteam'), 1500)
+      setTimeout(() => router.replace('/myteam'), 1500)
     } catch (e) {
       console.error(e)
       setError('수락 처리 중 오류가 발생했어요. 다시 시도해주세요.')
@@ -150,38 +190,6 @@ export default function InviteAcceptPage() {
   }
 
   // 상태별 렌더
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-400 animate-pulse">초대 정보 확인 중...</div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="text-5xl mb-4">😕</div>
-          <h1 className="text-lg font-bold text-gray-800 mb-2">{error}</h1>
-          <a href="/" className="text-blue-500 text-sm underline">홈으로</a>
-        </div>
-      </div>
-    )
-  }
-
-  if (done) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="text-5xl mb-4">🎉</div>
-          <h1 className="text-lg font-bold text-gray-800 mb-2">연결 완료!</h1>
-          <p className="text-gray-500 text-sm">근무정보로 이동할게요...</p>
-        </div>
-      </div>
-    )
-  }
-
   const storeName =
     (invite?.employer as { employer_profiles?: { business_name: string }[] } | undefined)
       ?.employer_profiles?.[0]?.business_name ?? '가게'
@@ -189,53 +197,99 @@ export default function InviteAcceptPage() {
     (invite?.employer as { nickname?: string } | undefined)?.nickname ?? '사장님'
   const workerNick = invite?.team_member?.nickname ?? '님'
 
+  const centerStyle: React.CSSProperties = {
+    minHeight: "100vh", background: "var(--bg)",
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20,
+  }
+
+  if (loading) return (
+    <div style={centerStyle}>
+      <p style={{ color: "var(--text-muted)" }}>초대 정보 확인 중...</p>
+    </div>
+  )
+
+  if (error) return (
+    <div style={centerStyle}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>😕</div>
+        <p style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>{error}</p>
+        <a href="/" style={{ color: "#8b5cf6", fontSize: 14 }}>홈으로</a>
+      </div>
+    </div>
+  )
+
+  if (done) return (
+    <div style={centerStyle}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
+        <p style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>연결 완료!</p>
+        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>근무정보로 이동할게요...</p>
+      </div>
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div style={centerStyle}>
+      <div style={{ width: "100%", maxWidth: 380 }}>
         {/* 초대 카드 */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 text-center mb-6">
-          <div className="text-5xl mb-4">🙌</div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">
-            {storeName}이<br />
-            {workerNick}을(를) 초대했어요
+        <div style={{
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderRadius: 20, padding: 28, textAlign: "center", marginBottom: 16,
+        }}>
+          <div style={{ fontSize: 44, marginBottom: 12 }}>🙌</div>
+          <h1 style={{ fontSize: 20, fontWeight: 900, color: "var(--text)", margin: "0 0 8px", lineHeight: 1.4 }}>
+            {storeName}에서<br />
+            <span style={{ color: "#8b5cf6" }}>@{workerNick}</span>님을 초대했어요
           </h1>
-          <p className="text-gray-500 text-sm mb-6">
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px" }}>
             근태·급여를 앱으로 받아보세요
           </p>
 
-          {/* 사장님 정보 */}
-          <div className="bg-gray-50 rounded-xl p-4 text-left mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-lg">🏪</div>
-              <div>
-                <p className="font-semibold text-gray-800">{storeName}</p>
-                <p className="text-sm text-gray-500">{employerNick}</p>
-              </div>
+          {/* 매장 정보 */}
+          <div style={{
+            background: "var(--surface2)", border: "1px solid var(--border)",
+            borderRadius: 12, padding: "12px 16px", textAlign: "left", marginBottom: 20,
+            display: "flex", alignItems: "center", gap: 12,
+          }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: "rgba(139,92,246,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <i className="ti ti-building-store" style={{ fontSize: 20, color: "#8b5cf6" }} />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: "var(--text)" }}>{storeName}</p>
+              <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>@{employerNick}</p>
             </div>
           </div>
 
           {error && (
-            <p className="text-red-500 text-sm bg-red-50 rounded-lg py-2 px-3 mb-4">{error}</p>
+            <p style={{ fontSize: 13, color: "#ef4444", background: "rgba(239,68,68,0.08)", borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>{error}</p>
           )}
 
-          {/* 로그인 여부에 따른 CTA */}
-          <button
-            id="invite-accept-btn"
-            onClick={handleAccept}
-            disabled={accepting}
-            className="w-full py-4 bg-yellow-400 hover:bg-yellow-500 disabled:opacity-60 text-gray-900 font-bold text-base rounded-xl transition-all flex items-center justify-center gap-2"
-          >
-            {accepting ? '처리 중...' : (
-              <>
-                <span className="text-xl">🗨️</span>
-                카카오로 1탭 수락하기
-              </>
-            )}
-          </button>
+          {/* CTA */}
+          {isLoggedIn ? (
+            <button onClick={handleAccept} disabled={accepting} style={{
+              width: "100%", padding: "14px 0", borderRadius: 14, border: "none", cursor: "pointer",
+              background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", color: "#fff",
+              fontSize: 15, fontWeight: 700, opacity: accepting ? 0.6 : 1,
+            }}>
+              {accepting ? '처리 중...' : '✅ 초대 수락하기'}
+            </button>
+          ) : (
+            <button onClick={handleAccept} disabled={accepting} style={{
+              width: "100%", padding: "14px 0", borderRadius: 14, border: "none", cursor: "pointer",
+              background: "#FEE500", color: "#191919",
+              fontSize: 15, fontWeight: 700, opacity: accepting ? 0.6 : 1,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>
+              {accepting ? '처리 중...' : <><span style={{ fontSize: 18 }}>🗨️</span> 카카오로 로그인 후 수락하기</>}
+            </button>
+          )}
         </div>
 
-        <p className="text-center text-gray-400 text-xs">
-          파잡 — 알바 근태·급여 관리
+        <p style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>
+          PAZAB — 알바 근태·급여 관리
         </p>
       </div>
     </div>

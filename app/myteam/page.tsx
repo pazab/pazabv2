@@ -486,6 +486,146 @@ function WorkerPayslipTab({ workerId, employerId, router }: { workerId:string; e
   );
 }
 
+const STATUS_EMOJI: Record<string,string> = { normal:"✅", late:"⏰", early_leave:"🔜", absent:"❌", off:"📅" };
+const STATUS_LABEL: Record<string,string> = { normal:"출근", late:"지각", early_leave:"조퇴", absent:"결근", off:"휴무" };
+const STATUS_COLOR: Record<string,string> = { normal:"#10b981", late:"#f59e0b", early_leave:"#f59e0b", absent:"#ef4444", off:"#6b7280" };
+
+function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: string; router: any; onRefresh?: () => void }) {
+  const [recentAtt, setRecentAtt] = useState<any[]>([]);
+  const [monthStats, setMonthStats] = useState({ days: 0, hours: 0, estPay: 0 });
+  const [editHireDate, setEditHireDate] = useState(false);
+  const [hireDateInput, setHireDateInput] = useState(m.hire_date || "");
+
+  useEffect(() => {
+    const now = new Date();
+    const ms = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
+    supabase.from("attendance")
+      .select("work_date,status,actual_hours,check_in,check_out")
+      .eq("team_member_id", m.id)
+      .gte("work_date", ms)
+      .order("work_date", { ascending: false })
+      .then(({ data }) => {
+        const att = data || [];
+        setRecentAtt(att.slice(0, 5));
+        const workDays = att.filter((a:any) => a.status !== "absent" && a.status !== "off").length;
+        const totalH = att.reduce((s:number, a:any) => s + (parseFloat(a.actual_hours) || 0), 0);
+        setMonthStats({ days: workDays, hours: Math.round(totalH * 10) / 10, estPay: m.wage ? Math.round(totalH * m.wage) : 0 });
+      });
+  }, [m.id]);
+
+  const storeName = m.profile?.business_name || m.employer?.nickname || "매장";
+  const now = new Date();
+  const monthLabel = `${now.getFullYear()}년 ${now.getMonth()+1}월`;
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      {/* 매장 정보 카드 */}
+      <div style={{ ...cardStyle, padding: 0, overflow:"hidden" }}>
+        <div style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", padding:"16px 18px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:26 }}>{BIZ_EMOJI[m.profile?.business_type]||"🏪"}</span>
+            <div style={{ flex:1 }}>
+              <p style={{ fontSize:16, fontWeight:800, color:"#fff", margin:"0 0 2px" }}>{storeName}</p>
+              <p style={{ fontSize:11, color:"rgba(255,255,255,0.75)", margin:0 }}>
+                {m.profile?.business_type} · {m.profile?.region||"위치미정"}
+              </p>
+            </div>
+            <span style={{ fontSize:11, background:"rgba(255,255,255,0.2)", color:"#fff", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>재직중</span>
+          </div>
+          {/* 근무 조건 */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+            {[
+              { label:"시급", value: m.wage ? `${m.wage.toLocaleString()}원` : "미정" },
+              { label:"근무요일", value: m.work_days || "미정" },
+              { label:"근무시간", value: m.work_hours || "미정" },
+            ].map(r => (
+              <div key={r.label} style={{ background:"rgba(255,255,255,0.15)", borderRadius:10, padding:"8px 10px" }}>
+                <p style={{ fontSize:10, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>{r.label}</p>
+                <p style={{ fontSize:12, fontWeight:700, color:"#fff", margin:0 }}>{r.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* 입사일 */}
+        <div style={{ padding:"10px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", borderBottom:"1px solid var(--border)" }}>
+          <span style={{ fontSize:12, color:"var(--text-muted)" }}>입사일</span>
+          {editHireDate ? (
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <input type="date" value={hireDateInput} onChange={e => setHireDateInput(e.target.value)}
+                style={{ fontSize:12, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, padding:"4px 8px", color:"var(--text)" }} />
+              <button onClick={async () => {
+                await supabase.from("team_members").update({ hire_date: hireDateInput || null }).eq("id", m.id);
+                setEditHireDate(false);
+                onRefresh?.();
+              }} style={{ fontSize:11, background:"#7c3aed", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontWeight:700 }}>저장</button>
+              <button onClick={() => setEditHireDate(false)} style={{ fontSize:11, background:"var(--surface2)", color:"var(--text-muted)", border:"1px solid var(--border)", borderRadius:6, padding:"4px 8px", cursor:"pointer" }}>취소</button>
+            </div>
+          ) : (
+            <button onClick={() => setEditHireDate(true)} style={{ fontSize:12, fontWeight:600, color: m.hire_date ? "var(--text)" : "#f59e0b", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
+              {m.hire_date || "미설정"} <span style={{ fontSize:10, color:"#7c3aed" }}>수정</span>
+            </button>
+          )}
+        </div>
+        {/* 채팅 */}
+        <button onClick={() => router.push(`/chat?employer=${m.employer_id}`)}
+          style={{ width:"100%", background:"none", border:"none", padding:"12px 18px", fontSize:13, color:"var(--text-muted)", cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:8 }}>
+          <i className="ti ti-message" style={{ fontSize:16 }} /> 사장님과 채팅
+        </button>
+      </div>
+
+      {/* 출퇴근 버튼 */}
+      <CheckInButton member={m} userId={userId} onRefresh={onRefresh} />
+
+      {/* 이번달 요약 */}
+      <div style={{ ...cardStyle, padding:"14px 16px" }}>
+        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 12px" }}>{monthLabel} 요약</p>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+          {[
+            { label:"근무일", value:`${monthStats.days}일` },
+            { label:"총 시간", value:`${monthStats.hours}h` },
+            { label:"예상 급여", value: monthStats.estPay ? `${monthStats.estPay.toLocaleString()}원` : "-" },
+          ].map(r => (
+            <div key={r.label} style={{ textAlign:"center" }}>
+              <p style={{ fontSize:20, fontWeight:900, color:"#7c3aed", margin:"0 0 4px" }}>{r.value}</p>
+              <p style={{ fontSize:10, color:"var(--text-muted)", margin:0 }}>{r.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 최근 근무 */}
+      <div style={{ ...cardStyle, padding:"14px 16px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:0 }}>최근 근무 기록</p>
+          <span style={{ fontSize:11, color:"var(--text-muted)" }}>이번달</span>
+        </div>
+        {recentAtt.length === 0 ? (
+          <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", margin:0 }}>이번달 근무 기록이 없어요</p>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {recentAtt.map((a:any) => {
+              const cin = a.check_in ? new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
+              const cout = a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
+              return (
+                <div key={a.work_date} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", background:"var(--surface2)", borderRadius:10 }}>
+                  <span style={{ fontSize:14 }}>{STATUS_EMOJI[a.status]||"📅"}</span>
+                  <div style={{ flex:1 }}>
+                    <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
+                    <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>{cin} ~ {cout}</span>
+                  </div>
+                  <span style={{ fontSize:11, color: STATUS_COLOR[a.status]||"var(--text-muted)", fontWeight:600 }}>
+                    {STATUS_LABEL[a.status]||a.status} {a.actual_hours ? `${a.actual_hours}h` : ""}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const PERSONALITY_EMOJI: Record<string, string> = {
   "폭풍처리형":"⚡","꼼꼼탐정형":"🔍","공감마스터형":"💕",
   "돌격대장형":"🚀","묵묵수행형":"🎯","분위기메이커형":"🌟",
@@ -502,37 +642,17 @@ const BIZ_EMOJI: Record<string, string> = {
 
 function MyTeamPageContent() {
   const router = useRouter();
-  const sp = useSearchParams();
   const [user, setUser] = useState<any>(null);
   const [userType, setUserType] = useState<string>("");
   const [employerResult, setEmployerResult] = useState<any>(null);
-  const [showContractListModal, setShowContractListModal] = useState(false);
-  const [workerContracts, setWorkerContracts] = useState<any[]>([]);
-  const [loadingContracts, setLoadingContracts] = useState(false);
-  const [memberSubTab, setMemberSubTab] = useState<Record<string,"info"|"attendance"|"payslip"|"contract">>({});
-  const [memberAttendance, setMemberAttendance] = useState<Record<string, any[]>>({});
   const [attRefreshKey, setAttRefreshKey] = useState<Record<string, number>>({});
-  const [viewAs, setViewAs] = useState<"employer"|"worker">("employer");
-  const [tab, setTab] = useState<"members"|"personality"|"mywork"|"history">("members");
-  const changeTab = (t: "members"|"personality"|"mywork"|"history") => {
-    setTab(t);
-    sessionStorage.setItem("myteam_tab", t);
-  };
   const [loading, setLoading] = useState(true);
-
-  // URL 파라미터로 탭 초기화
-  useEffect(() => {
-    const t = sp.get("tab");
-    if (t) setTab(t as any);
-  }, [sp]);
 
   // 사장님 데이터
   const [members, setMembers] = useState<any[]>([]);
-  const [teamScore, setTeamScore] = useState<number>(0);
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
 
   const userTypeRef = useRef<string>("");
 
@@ -565,16 +685,6 @@ function MyTeamPageContent() {
     userTypeRef.current = ut;
     if (data?.employer_result) setEmployerResult(data.employer_result);
     if (data) setUser((p: any) => ({ ...p, ...data }));
-    const defaultView = ut === "worker" ? "worker" : "employer";
-    setViewAs(defaultView);
-    // URL파라미터 → sessionStorage → 기본값 순서 (URL이 최우선)
-    const urlTab = new URLSearchParams(window.location.search).get("tab");
-    const savedTab = sessionStorage.getItem("myteam_tab");
-    const resolvedTab = urlTab || savedTab || (defaultView === "employer" ? "members" : "mywork");
-    setTab(resolvedTab as any);
-    sessionStorage.removeItem("myteam_tab");
-    if (["mywork","history"].includes(resolvedTab)) setViewAs("worker");
-    else setViewAs(defaultView);
     if (ut === "employer" || ut === "both") loadTeam(uid);
     if (ut === "worker" || ut === "both") loadMyWork(uid);
     setLoading(false);
@@ -582,7 +692,7 @@ function MyTeamPageContent() {
 
   async function loadTeam(uid: string) {
     const { data } = await supabase.from("team_members")
-      .select(`id, worker_id, employer_id, match_id, hire_date, status, wage, work_days, work_hours,
+      .select(`id, worker_id, employer_id, match_id, hire_date, status, wage, work_days, work_hours, member_role,
         users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, email, trust_score)`)
       .eq("employer_id", uid).eq("status", "active")
       .order("hire_date", { ascending: false });
@@ -656,23 +766,16 @@ function MyTeamPageContent() {
       };
     });
     setMembers(enriched);
-
-    // 팀 성향 평균 점수
-    const scores = enriched
-      .map(m => m.worker?.worker_result?.hexaco?.agreeableness || 0)
-      .filter(Boolean);
-    setTeamScore(scores.length ? Math.round(scores.reduce((a:number,b:number)=>a+b,0)/scores.length) : 0);
   }
 
   async function loadMyWork(uid: string) {
     const { data: activeData } = await supabase.from("team_members")
-      .select(`id, match_id, hire_date, wage, work_days, work_hours, status, employer_id,
+      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, role_desc, invite_status, created_at,
         users!team_members_employer_id_fkey (nickname, avatar_url)`)
       .eq("worker_id", uid).eq("status", "active")
-      .order("hire_date", { ascending: false });
+      .order("created_at", { ascending: false });
 
-    const empIds = (activeData||[]).map(d => d.employer_id);
-    // 사장님별 가장 최신 공고 1개만 (중복 방지)
+    const empIds = (activeData||[]).map((d: any) => d.employer_id);
     const profiles: any[] = [];
     if (empIds.length > 0) {
       for (const empId of [...new Set(empIds)]) {
@@ -680,71 +783,21 @@ function MyTeamPageContent() {
           .select("user_id, business_name, business_type, region")
           .eq("user_id", empId)
           .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .limit(1).maybeSingle();
         if (ep) profiles.push(ep);
       }
     }
 
-    const matchIds = (activeData||[]).map(d => d.match_id).filter(Boolean);
-    const { data: contracts } = matchIds.length > 0
-      ? await supabase.from("contracts").select("match_id, worker_signed").in("match_id", matchIds)
-      : { data: [] };
-
-    // 계약서에서 실제 합의 조건 가져오기
-    const activeMatchIds2 = (activeData||[]).map(d => d.match_id).filter(Boolean);
-    const { data: activeContracts } = activeMatchIds2.length > 0
-      ? await supabase.from("contracts")
-          .select("match_id, wage, work_days, work_hours, contract_data, worker_signed")
-          .in("match_id", activeMatchIds2)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-      : { data: [] };
-
-    setCurrent((activeData||[]).map(d => {
-      const contract = (activeContracts||[]).find((c:any) => c.match_id === d.match_id);
-      const cd = contract?.contract_data;
-      return {
-        ...d,
-        employer: (d as any).users,
-        profile: (profiles||[]).find((p:any) => p.user_id === d.employer_id),
-        wage: cd?.wage ? parseInt(cd.wage.replace(/,/g,"")) : (contract?.wage || d.wage || null),
-        work_days: cd ? (cd.workDaysMode==="text" ? cd.workDaysText : ["월","화","수","목","금","토","일"].filter((_:string,i:number) => (cd as any)[`workDays${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i]}`]).join("·")) : (contract?.work_days || d.work_days || null),
-        work_hours: cd?.dailyHours || contract?.work_hours || d.work_hours || null,
-        contractStatus: !contract ? "none" : contract.worker_signed ? "done" : "pending",
-      };
-    }));
-
-    const { data: histData } = await supabase.from("team_members")
-      .select(`id, hire_date, wage, work_days, status, employer_id,
-        users!team_members_employer_id_fkey (nickname, avatar_url)`)
-      .eq("worker_id", uid).neq("status", "active")
-      .order("hire_date", { ascending: false });
-
-    const histEmpIds = (histData||[]).map(d => d.employer_id);
-    const { data: histProfiles } = histEmpIds.length > 0
-      ? await supabase.from("employer_profiles").select("user_id, business_name, business_type, region").in("user_id", histEmpIds)
-      : { data: [] };
-
-    setHistory((histData||[]).map(d => ({
+    setCurrent((activeData||[]).map((d: any) => ({
       ...d,
-      employer: (d as any).users,
-      profile: (histProfiles||[]).find((p:any) => p.user_id === d.employer_id),
+      employer: d.users,
+      profile: profiles.find((p: any) => p.user_id === d.employer_id),
+      contractStatus: "none",
     })));
   }
 
-  async function loadWorkerContracts(workerId: string, employerId: string, matchId?: string) {
-    setLoadingContracts(true);
-    let query = supabase.from("contracts")
-      .select("id, match_id, start_date, end_date, created_at, contract_data, worker_signed, employer_signed, status, wage, work_days")
-      .eq("worker_id", workerId).eq("employer_id", employerId)
-      .order("created_at", { ascending: false });
-    // match_id 있으면 해당 계약만 (재입사 시 이전 계약 제외)
-    if (matchId) query = query.eq("match_id", matchId);
-    const { data } = await query;
-    setWorkerContracts(data || []);
-    setLoadingContracts(false);
-  }
+  const isEmployer = userType === "employer" || userType === "both";
+  const isWorker = userType === "worker" || userType === "both";
 
   const contractBadge = (status: string) => ({
     none: { label:"⚠️ 계약서미작성", color:"#ef4444", bg:"#ef444415" },
@@ -752,176 +805,79 @@ function MyTeamPageContent() {
     done: { label:"📄 계약완료", color:"#10b981", bg:"#10b98115" },
   }[status] || { label:"⚠️ 미작성", color:"#ef4444", bg:"#ef444415" });
 
-  const isEmployer = userType === "employer" || userType === "both";
-  const isWorker = userType === "worker" || userType === "both";
-  const isBoth = userType === "both";
-
-  const employerTabs = [
-    { id:"members", label:`팀원 ${members.length}명` },
-    { id:"personality", label:"팀 성향" },
-  ] as const;
-
-  const workerTabs = [
-    { id:"mywork", label:`소속 ${current.length}` },
-    { id:"history", label:`근무이력 ${history.length}` },
-  ] as const;
-
-  const currentTabs = viewAs === "employer" ? employerTabs : workerTabs;
-
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
-      <AppHeader title="팀·소속 관리" showBack />
-      <div style={{ maxWidth: 480, margin: "0 auto", position: "relative" }}>
-
-      {/* 알바생 계약서 목록 모달 */}
-      {showContractListModal && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
-          <div style={{ ...modalSheet, maxHeight:"80vh", display:"flex", flexDirection:"column", padding:0 }}>
-            {/* 모달 헤더 */}
-            <div style={{ padding:"16px 20px 12px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
-              <span style={{ fontSize:15, fontWeight:700, color:"var(--text)" }}>📄 계약서 목록</span>
-              <button onClick={() => setShowContractListModal(false)}
-                style={{ background:"none", border:"none", fontSize:20, color:"var(--text-muted)", cursor:"pointer" }}>✕</button>
-            </div>
-
-            {/* 계약서 목록 */}
-            <div style={{ overflowY:"auto", padding:"12px 16px 24px", display:"flex", flexDirection:"column", gap:10 }}>
-              {loadingContracts ? (
-                <div style={{ textAlign:"center", padding:"40px 0", color:"var(--text-muted)" }}>로딩 중...</div>
-              ) : workerContracts.length === 0 ? (
-                <div style={{ textAlign:"center", padding:"40px 0" }}>
-                  <div style={{ fontSize:40, marginBottom:8 }}>📄</div>
-                  <p style={{ color:"var(--text-muted)", fontSize:14 }}>계약서가 없어요</p>
-                </div>
-              ) : workerContracts.map((c, i) => {
-                const isLatest = i === 0 && c.status !== "superseded";
-                const isSuperseded = c.status === "superseded";
-                const isPending = (c.status === "pending" || c.status === "active") && !c.worker_signed;
-                const isSigned = c.worker_signed;
-                return (
-                  <div key={c.id} style={{ background:"var(--bg)", borderRadius:14, padding:14, border:`1px solid ${isLatest && !isSuperseded ? "#7c3aed40" : "var(--border)"}`, opacity: isSuperseded ? 0.6 : 1 }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" as const }}>
-                        <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>
-                          {isSuperseded ? "📋 이전 계약" : isLatest ? "📄 현재 계약" : `📋 계약 ${i+1}`}
-                        </span>
-                        {isSigned && !isSuperseded && (
-                          <span style={{ fontSize:10, background:"#10b98120", color:"#10b981", borderRadius:6, padding:"1px 6px" }}>✅ 서명완료</span>
-                        )}
-                        {isPending && (
-                          <span style={{ fontSize:10, background:"#f59e0b20", color:"#f59e0b", borderRadius:6, padding:"1px 6px" }}>⏳ 동의 필요</span>
-                        )}
-                        {isSuperseded && (
-                          <span style={{ fontSize:10, background:"var(--surface2)", color:"var(--text-muted)", borderRadius:6, padding:"1px 6px" }}>🔒 대체됨</span>
-                        )}
-                      </div>
-                      <span style={{ fontSize:11, color:"var(--text-muted)", flexShrink:0 }}>
-                        {new Date(c.created_at).toLocaleDateString("ko-KR")}
-                      </span>
-                    </div>
-                    <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 10px" }}>
-                      {c.start_date||"-"} ~ {c.end_date||"기간 미정"}
-                      {c.contract_data?.contractType && (
-                        <span style={{ marginLeft:6, fontSize:11, background:"var(--surface)", borderRadius:6, padding:"1px 6px", border:"1px solid var(--border)" }}>
-                          {c.contract_data.contractType==="parttime" ? "단시간" : c.contract_data.contractType==="minor" ? "연소근로자" : "표준"}
-                        </span>
-                      )}
-                    </p>
-                    <div style={{ display:"flex", gap:6 }}>
-                      <button onClick={() => { setShowContractListModal(false); router.push(`/contract/view?matchId=${c.match_id}&tab=mywork`); }}
-                        style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"8px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
-                        📄 보기
-                      </button>
-                      {isPending && !isSuperseded && (
-                        <button onClick={() => { setShowContractListModal(false); router.push(`/contract/view?matchId=${c.match_id}&tab=mywork`); }}
-                          style={{ flex:1, background:"linear-gradient(135deg,#10b981,#059669)", border:"none", borderRadius:8, padding:"8px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>
-                          ✅ 동의하기
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ padding:"12px 16px 0" }}>
-        {/* both 유저 - 역할 전환 */}
-        {isBoth && (
-          <div style={{ display:"flex", background:"var(--surface2)", borderRadius:12, padding:3, marginBottom:14, gap:2 }}>
-            <button onClick={() => { setViewAs("employer"); changeTab("members"); }}
-              style={{ flex:1, background:viewAs==="employer"?"var(--surface)":"none", border:"none", borderRadius:10, padding:"8px", fontSize:13, fontWeight:viewAs==="employer"?700:400, color:viewAs==="employer"?"var(--text)":"var(--text-muted)", cursor:"pointer" }}>
-              🏪 사장님으로
-            </button>
-            <button onClick={() => { setViewAs("worker"); changeTab("mywork"); }}
-              style={{ flex:1, background:viewAs==="worker"?"var(--surface)":"none", border:"none", borderRadius:10, padding:"8px", fontSize:13, fontWeight:viewAs==="worker"?700:400, color:viewAs==="worker"?"var(--text)":"var(--text-muted)", cursor:"pointer" }}>
-              ⚡ 알바생으로
-            </button>
-          </div>
-        )}
-
-        {/* 탭 */}
-        <div style={{ display:"flex", background:"var(--surface2)", borderRadius:12, padding:3, marginBottom:16, gap:2 }}>
-          {currentTabs.map(t => (
-            <button key={t.id} onClick={() => changeTab(t.id as any)}
-              style={{ flex:1, background:tab===t.id?"var(--surface)":"none", border:"none", borderRadius:10, padding:"8px 4px", fontSize:12, fontWeight:tab===t.id?700:400, color:tab===t.id?"var(--text)":"var(--text-muted)", cursor:"pointer" }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
+      <AppHeader title="팀·소속" showBack />
+      <div style={{ maxWidth:480, margin:"0 auto", padding:"12px 16px 0" }}>
         {loading ? (
           <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>로딩 중...</div>
         ) : (
-          <>
-            {/* ── 사장님: 팀원 목록 ── */}
-            {tab === "members" && (
-              <>
-                {/* 요약 카드 */}
-                <div style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", borderRadius:16, padding:"14px 20px", marginBottom:12, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
+
+            {/* ── 내 소속 (worker / both) ── */}
+            {isWorker && (
+              <section>
+                <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", textTransform:"uppercase", letterSpacing:1 }}>내 소속</p>
+                {current.length === 0 ? (
+                  <div style={{ ...cardStyle, padding:"28px 16px", textAlign:"center" }}>
+                    <div style={{ fontSize:36, marginBottom:8 }}>🏪</div>
+                    <p style={{ color:"var(--text-muted)", fontSize:13, margin:"0 0 12px" }}>소속 매장이 없어요</p>
+                    <button onClick={() => router.push("/explore")}
+                      style={{ ...btnPrimary, width:"auto", padding:"8px 20px", fontSize:13 }}>
+                      공고 탐색하기 →
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+                    {current.map(m => (
+                      <WorkerMemberScroll key={m.id} m={m} userId={user?.id||""} router={router}
+                        onRefresh={() => setAttRefreshKey(prev => ({ ...prev, [m.id]: (prev[m.id]||0)+1 }))} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* ── 내 팀 (employer / both) ── */}
+            {isEmployer && (
+              <section>
+                <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", textTransform:"uppercase", letterSpacing:1 }}>내 팀</p>
+
+                {/* 요약 + 초대 */}
+                <div style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", borderRadius:16, padding:"14px 20px", marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                   <div>
                     <p style={{ fontSize:11, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>현재 팀원</p>
                     <p style={{ fontSize:28, fontWeight:900, color:"#fff", margin:0 }}>{members.length}명</p>
                   </div>
-                  <div style={{ textAlign:"right" }}>
-                    <p style={{ fontSize:11, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>계약서 완료</p>
-                    <p style={{ fontSize:22, fontWeight:700, color:"#fff", margin:0 }}>
-                      {members.filter(m=>m.contractStatus==="done").length}명
-                    </p>
-                  </div>
+                  <button onClick={() => router.push("/invite")}
+                    style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.3)", borderRadius:12, padding:"8px 16px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                    📨 초대하기
+                  </button>
                 </div>
 
-                {/* 직원 초대 버튼 */}
-                <button onClick={() => router.push("/invite")}
-                  style={{ ...btnSecondary, border:"1.5px dashed #7c3aed60", color:"#7c3aed", marginBottom:14, display:"flex", alignItems:"center", justifyContent:"center", gap:6, background:"var(--surface)" }}>
-                  🎫 기존 직원 초대 코드 발급
-                </button>
-
                 {members.length === 0 ? (
-                  <div style={{ textAlign:"center", padding:"60px 0" }}>
-                    <div style={{ fontSize:48, marginBottom:12 }}>👥</div>
-                    <p style={{ color:"var(--text-muted)", fontSize:14 }}>아직 팀원이 없어요</p>
-                    <p style={{ color:"var(--text-muted)", fontSize:12, marginTop:4 }}>채용 확정 시 자동으로 추가돼요</p>
+                  <div style={{ ...cardStyle, padding:"28px 16px", textAlign:"center" }}>
+                    <div style={{ fontSize:36, marginBottom:8 }}>👥</div>
+                    <p style={{ color:"var(--text-muted)", fontSize:13, margin:0 }}>아직 팀원이 없어요</p>
                   </div>
                 ) : (
                   <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                     {members.map(m => {
                       const pType = m.worker?.worker_result?.personalityType;
                       const badge = contractBadge(m.contractStatus);
-                      const name = m.worker?.nickname || m.worker?.name || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
+                      const name = m.worker?.nickname || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
                       return (
-                        <div key={m.id} onClick={() => router.push(`/employer/team/${m.id}`)}
-                          style={{ ...cardStyle, padding:14, cursor:"pointer", display:"flex", gap:12, alignItems:"center" }}>
-                          <div style={{ width:48, height:48, borderRadius:"50%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>
+                        <div key={m.id} style={{ ...cardStyle, padding:14, display:"flex", gap:12, alignItems:"center" }}>
+                          <div onClick={() => router.push(`/employer/team/${m.id}`)}
+                            style={{ width:48, height:48, borderRadius:"50%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, cursor:"pointer" }}>
                             {m.worker?.avatar_url
                               ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
                               : (PERSONALITY_EMOJI[pType] || "👤")}
                           </div>
-                          <div style={{ flex:1, minWidth:0 }}>
+                          <div onClick={() => router.push(`/employer/team/${m.id}`)} style={{ flex:1, minWidth:0, cursor:"pointer" }}>
                             <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
                               <span style={{ fontSize:14, fontWeight:700, color:"var(--text)" }}>{name}</span>
+                              {m.member_role === "manager" && <span style={{ fontSize:10, background:"#f59e0b20", color:"#f59e0b", borderRadius:6, padding:"1px 6px", fontWeight:700 }}>매니저</span>}
                               {pType && <span style={{ fontSize:10, background:"var(--surface2)", borderRadius:6, padding:"1px 6px", color:"var(--text-muted)" }}>{pType}</span>}
                               {m.worker?.trust_score != null && (() => {
                                 const g = getTrustGrade(m.worker.trust_score);
@@ -933,277 +889,27 @@ function MyTeamPageContent() {
                             </p>
                             <span style={{ fontSize:11, borderRadius:6, padding:"2px 7px", background:badge.bg, color:badge.color }}>{badge.label}</span>
                           </div>
-                          <span style={{ color:"var(--text-muted)", fontSize:16 }}>›</span>
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
+                            <button onClick={async e => {
+                              e.stopPropagation();
+                              const newRole = m.member_role === "manager" ? "staff" : "manager";
+                              await supabase.from("team_members").update({ member_role: newRole }).eq("id", m.id);
+                              setMembers((prev: any[]) => prev.map((tm: any) => tm.id === m.id ? { ...tm, member_role: newRole } : tm));
+                            }} style={{ background: m.member_role==="manager"?"#f59e0b20":"var(--surface2)", border:`1px solid ${m.member_role==="manager"?"#f59e0b":"var(--border)"}`, borderRadius:8, padding:"4px 8px", fontSize:10, color: m.member_role==="manager"?"#f59e0b":"var(--text-muted)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
+                              {m.member_role === "manager" ? "매니저 해제" : "매니저 지정"}
+                            </button>
+                            <span style={{ color:"var(--text-muted)", fontSize:16, cursor:"pointer" }} onClick={() => router.push(`/employer/team/${m.id}`)}>›</span>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 )}
-              </>
+              </section>
             )}
 
-            {/* ── 사장님: 팀 성향 ── */}
-            {tab === "personality" && (
-              <div>
-                {members.length === 0 && !employerResult ? (
-                  <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>
-                    <div style={{ fontSize:48, marginBottom:8 }}>🔍</div>
-                    <p>팀원이 있어야 성향 분석이 가능해요</p>
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ ...cardStyle, marginBottom:12 }}>
-                      <p style={{ fontSize:13, fontWeight:700, color:"var(--text)", margin:"0 0 12px" }}>팀 성향 현황</p>
-
-                      {/* 사장님 */}
-                      {employerResult && (() => {
-                        const pType = employerResult.personalityType;
-                        if (!pType) return null;
-                        return (
-                          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, padding:"8px 10px", background:"linear-gradient(135deg,#7c3aed10,#ec489910)", borderRadius:10, border:"1px solid #7c3aed20" }}>
-                            <div style={{ width:36, height:36, borderRadius:"50%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>
-                              {user?.avatar_url ? <img src={user.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : PERSONALITY_EMOJI[pType]||"👑"}
-                            </div>
-                            <div style={{ flex:1 }}>
-                              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
-                                <p style={{ fontSize:13, fontWeight:600, color:"var(--text)", margin:0 }}>{user?.nickname || "사장님"}</p>
-                                <span style={{ fontSize:10, background:"#7c3aed20", color:"#7c3aed", borderRadius:6, padding:"1px 6px" }}>사장님</span>
-                              </div>
-                              <p style={{ fontSize:11, color:"#7c3aed", margin:0 }}>{PERSONALITY_EMOJI[pType]} {pType}</p>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* 팀원들 */}
-                      {members.map(m => {
-                        const pType = m.worker?.worker_result?.personalityType;
-                        const name = m.worker?.nickname || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
-                        if (!pType) return null;
-                        return (
-                          <div key={m.id} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
-                            <div style={{ width:36, height:36, borderRadius:"50%", background:"var(--surface2)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>
-                              {m.worker?.avatar_url ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : (PERSONALITY_EMOJI[pType] || (m.worker?.nickname || m.worker?.email || "?")[0].toUpperCase())}
-                            </div>
-                            <div style={{ flex:1 }}>
-                              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
-                                <p style={{ fontSize:13, fontWeight:600, color:"var(--text)", margin:0 }}>{name}</p>
-                                <span style={{ fontSize:10, background:"var(--surface2)", color:"var(--text-muted)", borderRadius:6, padding:"1px 6px" }}>팀원</span>
-                              </div>
-                              <p style={{ fontSize:11, color:"#7c3aed", margin:0 }}>{PERSONALITY_EMOJI[pType]} {pType}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {members.filter(m => m.worker?.worker_result?.personalityType).length === 0 && !employerResult && (
-                        <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", margin:"8px 0 0" }}>
-                          성향 분석을 완료한 팀원이 없어요
-                        </p>
-                      )}
-                    </div>
-                    <button onClick={() => router.push(`/team?userId=${user?.id}`)}
-                      style={{ ...btnPrimary, fontSize:14 }}>
-                      🔍 팀 궁합 상세 분석 보기
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ── 알바생: 현재 소속 ── */}
-            {tab === "mywork" && (
-              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-                {current.length === 0 ? (
-                  <div style={{ textAlign:"center", padding:"60px 0" }}>
-                    <div style={{ fontSize:48, marginBottom:12 }}>🏪</div>
-                    <p style={{ color:"var(--text-muted)", fontSize:14 }}>현재 소속 매장이 없어요</p>
-                    <button onClick={() => router.push("/explore")}
-                      style={{ ...btnPrimary, marginTop:16, width:"auto", padding:"10px 20px", fontSize:13 }}>
-                      공고 탐색하기 →
-                    </button>
-                  </div>
-                ) : current.map(m => {
-                  const subTab = memberSubTab[m.id] || "info";
-                  const setSubTab = (t: "info"|"contract"|"attendance"|"payslip") => {
-                    setMemberSubTab(p => ({...p, [m.id]: t}));
-                    sessionStorage.setItem("myteam_tab", "mywork");
-                  };
-                  const att = memberAttendance[m.id] || [];
-                  const attStats = {
-                    normal: att.filter((a:any) => a.status==="normal").length,
-                    late: att.filter((a:any) => a.status==="late").length,
-                    absent: att.filter((a:any) => a.status==="absent").length,
-                  };
-                  const totalHours = att.filter((a:any) => a.status!=="absent"&&a.status!=="off")
-                    .reduce((s:number,a:any) => s+(a.actual_hours||0), 0);
-                  const estPay = m.wage ? Math.round(totalHours*m.wage) : 0;
-                  const statusEmoji: Record<string,string> = { normal:"✅",late:"⏰",early_leave:"🔜",absent:"❌",off:"📅" };
-                  const statusLabel: Record<string,string> = { normal:"출근",late:"지각",early_leave:"조퇴",absent:"결근",off:"휴무" };
-                  const loadAtt = async () => {
-                    if (memberAttendance[m.id]) return;
-                    const now = new Date();
-                    const ms = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-                    const { data } = await supabase.from("attendance")
-                      .select("work_date,status,actual_hours,check_in,check_out,memo")
-                      .eq("team_member_id", m.id).gte("work_date", ms)
-                      .order("work_date", { ascending:false });
-                    setMemberAttendance(p => ({...p, [m.id]: data||[]}));
-                  };
-                  const currentTabs = [
-                    { id:"info" as const, label:"정보" },
-                    { id:"attendance" as const, label:"근태" },
-                    { id:"payslip" as const, label:"급여" },
-                    { id:"contract" as const, label:`계약서 ${m.contractStatus==="done"?"✅":m.contractStatus==="pending"?"⏳":"⚠️"}` },
-                  ];
-                  return (
-                    <div key={m.id} style={{ ...cardStyle, overflow:"hidden" }}>
-                      {/* 매장 헤더 */}
-                      <div style={{ background:"linear-gradient(135deg,#7c3aed15,#ec489915)", padding:"12px 16px", borderBottom:"1px solid var(--border)" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <span style={{ fontSize:22 }}>{BIZ_EMOJI[m.profile?.business_type]||"🏪"}</span>
-                          <div style={{ flex:1 }}>
-                            <p style={{ fontSize:15, fontWeight:700, color:"var(--text)", margin:"0 0 2px" }}>
-                              {m.profile?.business_name || m.employer?.nickname || "매장"}
-                            </p>
-                            <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>
-                              {m.profile?.business_type} · {m.profile?.region||"위치미정"}
-                            </p>
-                          </div>
-                          <span style={{ fontSize:11, background:"#10b98120", color:"#10b981", borderRadius:6, padding:"3px 8px", fontWeight:600 }}>재직중</span>
-                        </div>
-                      </div>
-                      {/* 서브탭 */}
-                      <div style={{ display:"flex", borderBottom:"1px solid var(--border)" }}>
-                        {currentTabs.map(t => (
-                          <button key={t.id}
-                            onClick={() => { setSubTab(t.id); if(t.id==="attendance") loadAtt(); if(t.id==="contract") loadWorkerContracts(user.id, m.employer_id, m.match_id); }}
-                            style={{ flex:1, background:"none", border:"none", borderBottom:`2px solid ${subTab===t.id?"#7c3aed":"transparent"}`, padding:"10px 4px", fontSize:11, fontWeight:subTab===t.id?700:400, color:subTab===t.id?"#7c3aed":"var(--text-muted)", cursor:"pointer" }}>
-                            {t.label}
-                          </button>
-                        ))}
-                      </div>
-                      <div style={{ padding:"12px 16px" }}>
-                        {/* 정보 탭 */}
-                        {subTab === "info" && (
-                          <>
-                            {/* 출퇴근 버튼 */}
-                            <CheckInButton member={m} userId={user?.id || ""} onRefresh={() => setAttRefreshKey(prev => ({ ...prev, [m.id]: (prev[m.id] || 0) + 1 }))} />
-
-                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
-                              {[
-                                { label:"입사일", value:m.hire_date },
-                                { label:"시급", value:m.wage?`${m.wage.toLocaleString()}원`:"미정" },
-                                { label:"근무 요일", value:m.work_days||"미정" },
-                                { label:"근무 시간", value:m.work_hours?`${m.work_hours}시간/일`:"미정" },
-                              ].map(r => (
-                                <div key={r.label} style={{ background:"var(--surface2)", borderRadius:8, padding:"8px 10px" }}>
-                                  <p style={{ fontSize:10, color:"var(--text-muted)", margin:"0 0 2px" }}>{r.label}</p>
-                                  <p style={{ fontSize:12, fontWeight:600, color:"var(--text)", margin:0 }}>{r.value}</p>
-                                </div>
-                              ))}
-                            </div>
-                            <button onClick={() => router.push(`/chat?employer=${m.employer_id}`)}
-                              style={{ width:"100%", background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"10px", fontSize:13, color:"var(--text-muted)", cursor:"pointer" }}>
-                              💬 사장님과 채팅
-                            </button>
-                          </>
-                        )}
-                        {/* 계약서 탭 */}
-                        {subTab === "contract" && (
-                          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                            {loadingContracts ? (
-                              <div style={{ textAlign:"center", padding:"20px 0", color:"var(--text-muted)", fontSize:13 }}>로딩 중...</div>
-                            ) : workerContracts.length === 0 ? (
-                              <div style={{ textAlign:"center", padding:"20px 0" }}>
-                                <p style={{ color:"var(--text-muted)", fontSize:13, marginBottom:6 }}>아직 계약서가 없어요</p>
-                                <p style={{ fontSize:11, color:"#f59e0b" }}>⚠️ 사장님께 계약서 작성을 요청해보세요</p>
-                              </div>
-                            ) : workerContracts.map((con:any, i:number) => {
-                              const isLatest = i===0 && con.status!=="superseded";
-                              const isSuperseded = con.status==="superseded";
-                              const isPending = !con.worker_signed && !isSuperseded;
-                              return (
-                                <div key={con.id} style={{ background:"var(--surface2)", borderRadius:12, padding:12, border:`1px solid ${isLatest?"#7c3aed30":"var(--border)"}`, opacity:isSuperseded?0.6:1 }}>
-                                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                                    <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-                                      <span style={{ fontSize:12, fontWeight:700, color:"var(--text)" }}>
-                                        {isSuperseded?"이전 계약":isLatest?"현재 계약":`계약 ${i+1}`}
-                                      </span>
-                                      {con.worker_signed&&!isSuperseded&&<span style={{ fontSize:10, background:"#10b98120", color:"#10b981", borderRadius:5, padding:"1px 5px" }}>✅ 완료</span>}
-                                      {isPending&&<span style={{ fontSize:10, background:"#f59e0b20", color:"#f59e0b", borderRadius:5, padding:"1px 5px" }}>⏳ 동의필요</span>}
-                                      {isSuperseded&&<span style={{ fontSize:10, background:"var(--surface)", color:"var(--text-muted)", borderRadius:5, padding:"1px 5px" }}>🔒 대체됨</span>}
-                                    </div>
-                                    <span style={{ fontSize:10, color:"var(--text-muted)" }}>{new Date(con.created_at).toLocaleDateString("ko-KR")}</span>
-                                  </div>
-                                  <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 8px" }}>{con.start_date||"-"} ~ {con.end_date||"기간 미정"}</p>
-                                  <div style={{ display:"flex", gap:6 }}>
-                                    <button onClick={() => router.push(`/contract/view?matchId=${con.match_id}&tab=mywork`)}
-                                      style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:11, color:"var(--text-muted)", cursor:"pointer" }}>
-                                      📄 보기
-                                    </button>
-                                    {isPending && (
-                                      <button onClick={() => router.push(`/contract/view?matchId=${con.match_id}&tab=mywork`)}
-                                        style={{ flex:1, background:"linear-gradient(135deg,#10b981,#059669)", border:"none", borderRadius:8, padding:"7px", fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>
-                                        ✅ 동의하기
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {/* 근태 탭 */}
-                        {subTab === "attendance" && (
-                          <div>
-                            <WorkerAttendanceTab member={m} userId={user?.id} />
-                            <WorkerAttLogs memberId={m.id} refreshKey={attRefreshKey[m.id] || 0} />
-                          </div>
-                        )}
-                        {/* 급여 탭 */}
-                        {subTab === "payslip" && (
-                          user?.id
-                            ? <WorkerPayslipTab workerId={user.id} employerId={m.employer_id} router={router} />
-                            : <p style={{ textAlign:"center", color:"var(--text-muted)", fontSize:13 }}>로딩 중...</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* ── 알바생: 근무 이력 ── */}
-            {tab === "history" && (
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {history.length === 0 ? (
-                  <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>
-                    <div style={{ fontSize:40, marginBottom:8 }}>📋</div>
-                    <p style={{ fontSize:14 }}>근무 이력이 없어요</p>
-                  </div>
-                ) : history.map(m => (
-                  <div key={m.id} style={{ ...cardStyle, padding:"14px 16px", display:"flex", gap:12, alignItems:"center" }}>
-                    <span style={{ fontSize:22, flexShrink:0 }}>{BIZ_EMOJI[m.profile?.business_type]||"🏪"}</span>
-                    <div style={{ flex:1 }}>
-                      <p style={{ fontSize:14, fontWeight:600, color:"var(--text)", margin:"0 0 3px" }}>
-                        {m.profile?.business_name || m.employer?.nickname || "매장"}
-                      </p>
-                      <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 4px" }}>
-                        {m.profile?.business_type} · {m.hire_date} ~
-                      </p>
-                      <span style={{ fontSize:11, background:"var(--surface2)", borderRadius:6, padding:"2px 7px", color:"var(--text-muted)" }}>
-                        {m.status==="resigned"?"퇴직":"계약종료"}
-                      </span>
-                    </div>
-                    {m.wage && <span style={{ fontSize:12, color:"var(--text-muted)", flexShrink:0 }}>{m.wage.toLocaleString()}원</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          </div>
         )}
-      </div>
       </div>
     </main>
   );

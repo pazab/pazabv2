@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import NotificationBell from "@/components/NotificationBell";
 
 interface AppHeaderProps {
   title?: string;
@@ -147,6 +148,9 @@ export default function AppHeader({
             </svg>
           </button>
         )}
+
+        {/* 알림 벨 */}
+        {!showBack && <NotificationBell />}
 
         {/* 프로필 아바타 (탐색 페이지) */}
         {!showSettings && !showBack && (

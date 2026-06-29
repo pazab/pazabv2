@@ -1266,10 +1266,19 @@ function MyPageContent() {
               <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 16px", textAlign: "right" }}>{nicknameInput.length}/20</p>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={async () => {
-                  if (!nicknameInput.trim() || !user) return;
-                  await supabase.from("users").update({ nickname: nicknameInput.trim() }).eq("id", user.id);
-                  setUser(prev => prev ? { ...prev, nickname: nicknameInput.trim() } : prev);
+                  const next = nicknameInput.trim();
+                  if (!next || !user) return;
+                  // 중복 체크 (본인 제외)
+                  const { data: dup } = await supabase.from("users")
+                    .select("id").ilike("nickname", next).neq("id", user.id).limit(1);
+                  if (dup && dup.length > 0) {
+                    setToastMsg("이미 사용 중인 닉네임이에요");
+                    return;
+                  }
+                  await supabase.from("users").update({ nickname: next }).eq("id", user.id);
+                  setUser(prev => prev ? { ...prev, nickname: next } : prev);
                   setShowNicknameModal(false);
+                  setToastMsg("닉네임이 변경됐어요!");
                 }}
                   style={{ ...btnPrimary, flex: 1 }}>
                   변경하기
