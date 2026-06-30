@@ -180,17 +180,17 @@ hire_date   date
 
 ---
 
-## 4. 아직 미실행 SQL (다음 세션 전 Supabase SQL 에디터에서 실행)
+## 4. SQL 실행 현황 (2026-06-30 완료)
 
 ```sql
--- 1. 닉네임 unique index
+-- ✅ 1. 닉네임 unique index (완료)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_lower ON users (lower(nickname))
   WHERE nickname IS NOT NULL AND nickname != '';
 
--- 2. 기존 유저 nickname null인 경우 name으로 채우기
+-- ✅ 2. 기존 유저 nickname null인 경우 name으로 채우기 (완료)
 UPDATE users SET nickname = name WHERE nickname IS NULL AND name IS NOT NULL;
 
--- 3. 초대 수락자 자기 자신 insert RLS
+-- ✅ 3. 초대 수락자 자기 자신 insert RLS (완료)
 CREATE POLICY "team_members_self_join" ON team_members FOR INSERT WITH CHECK (
   auth.uid() = worker_id
 );
@@ -202,8 +202,8 @@ CREATE POLICY "team_members_self_join" ON team_members FOR INSERT WITH CHECK (
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| 닉네임 unique index | ⏳ SQL 미실행 | 위 4번 1번 항목 |
-| team_members_self_join RLS | ⏳ SQL 미실행 | 초대 수락 시 수동 SQL 필요 |
+| 닉네임 unique index | ✅ 완료 | 2026-06-30 실행 |
+| team_members_self_join RLS | ✅ 완료 | 2026-06-30 실행 |
 | 근태 전체보기 `/myteam/attendance` | ❌ 미구현 | 버튼 제거로 임시처리 |
 | 웹푸시 실제 발송 | ⚠️ 미테스트 | VAPID 키 설정됨 |
 | 사장님 팀원 상세 `/employer/team/[id]` | ❌ 미구현 | 근무조건 수정 페이지 |
@@ -260,7 +260,7 @@ export default function DateWheelPicker({
 
 ## 9. 다음 세션 우선순위
 
-1. **Supabase SQL 3개 실행** (위 4번)
+1. ~~**Supabase SQL 3개 실행**~~ ✅ 완료
 2. **근태 전체보기 페이지** `/myteam/attendance?memberId=xxx`
 3. **사장님 팀원 상세** `/employer/team/[id]` — 근무조건 수정
 4. **웹푸시 실제 테스트**
