@@ -32,25 +32,14 @@ export default function CallbackPage() {
 
   const handleCallback = async () => {
     try {
-      const sp = new URLSearchParams(window.location.search);
-      const code = sp.get("code");
-
-      if (code) {
-        setStatus("인증 토큰 교환 중...");
-        const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        if (exchangeError) throw exchangeError;
-        if (exchangeData.session) {
-          await saveAndRedirect(exchangeData.session);
-          return;
-        }
-      }
-
+      // 서버 라우트(/api/auth/callback)에서 이미 코드 교환 완료 → 세션 쿠키 존재
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         await saveAndRedirect(session);
         return;
       }
 
+      // 세션이 없으면 onAuthStateChange로 최대 5초 대기
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event: string, session: any) => {
           if (event === "SIGNED_IN" && session) {
@@ -60,11 +49,10 @@ export default function CallbackPage() {
         }
       );
 
-      setTimeout(() => { subscription.unsubscribe(); router.replace("/"); }, 5000);
+      setTimeout(() => { subscription.unsubscribe(); router.replace("/login?error=session_timeout"); }, 5000);
     } catch (err: any) {
-      console.error("Auth callback verification error:", err);
-      alert("로그인 처리 오류: " + (err.message || JSON.stringify(err)));
-      router.replace("/");
+      console.error("Auth callback error:", err);
+      router.replace("/login?error=" + encodeURIComponent(err.message || "unknown"));
     }
   };
 

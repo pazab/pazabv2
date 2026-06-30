@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { Suspense } from "react";
 import { btnSecondary } from "@/lib/styles";
 
@@ -15,54 +14,36 @@ function LoginContent() {
   useEffect(() => {
     const errParam = searchParams.get("error");
     if (errParam) {
-      setError(`로그인 실패 사유: ${errParam}`);
+      setError(`로그인 실패 사유: ${decodeURIComponent(errParam)}`);
     }
 
-    // 로그인 전 페이지 저장
+    // 로그인 전 페이지 저장 (redirect 정보 보존)
     const from = searchParams.get("from") || document.referrer;
     if (from && !from.includes("/login") && !from.includes("/signup") && !from.includes("/auth")) {
       localStorage.setItem("login_redirect", from);
     }
-    localStorage.removeItem("pending_user_type");
-    localStorage.removeItem("current_mode");
-    localStorage.removeItem("login_redirect");
   }, [searchParams]);
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const redirect = localStorage.getItem("login_redirect") || "";
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback${redirect ? `?next=${encodeURIComponent(redirect)}` : ""}`,
-        },
-      });
-      if (error) throw error;
-    } catch {
-      setError("구글 로그인 중 오류가 발생했어요");
-      setLoading(false);
+  const buildLoginUrl = (provider: "google" | "kakao") => {
+    const next = localStorage.getItem("login_redirect") || searchParams.get("redirect") || "";
+    const url = new URL(`/api/auth/login`, window.location.origin);
+    url.searchParams.set("provider", provider);
+    if (next && !next.includes("/login") && !next.includes("localhost:3000/login")) {
+      url.searchParams.set("next", next);
     }
+    return url.toString();
   };
 
-  const handleKakaoLogin = async () => {
+  const handleGoogleLogin = () => {
     setLoading(true);
     setError("");
-    try {
-      const redirect = localStorage.getItem("login_redirect") || "";
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "kakao",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback${redirect ? `?next=${encodeURIComponent(redirect)}` : ""}`,
-          queryParams: { scope: "profile_nickname profile_image account_email" },
-        },
-      });
-      if (error) throw error;
-    } catch {
-      setError("카카오 로그인 중 오류가 발생했어요");
-      setLoading(false);
-    }
+    window.location.href = buildLoginUrl("google");
+  };
+
+  const handleKakaoLogin = () => {
+    setLoading(true);
+    setError("");
+    window.location.href = buildLoginUrl("kakao");
   };
 
   return (
