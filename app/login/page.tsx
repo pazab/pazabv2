@@ -13,16 +13,20 @@ function LoginContent() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const errParam = searchParams.get("error");
+    if (errParam) {
+      setError(`로그인 실패 사유: ${errParam}`);
+    }
+
     // 로그인 전 페이지 저장
     const from = searchParams.get("from") || document.referrer;
     if (from && !from.includes("/login") && !from.includes("/signup") && !from.includes("/auth")) {
       localStorage.setItem("login_redirect", from);
     }
-    // 데이터베이스 초기화 등으로 인한 브라우저 내 무효 세션 및 로컬 롤 캐시 정리
     localStorage.removeItem("pending_user_type");
     localStorage.removeItem("current_mode");
     localStorage.removeItem("login_redirect");
-  }, []);
+  }, [searchParams]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
