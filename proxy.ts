@@ -6,6 +6,7 @@ const PUBLIC_PATHS = [
   '/',
   '/login',
   '/auth',
+  '/api/auth', // OAuth 로그인/콜백 Route Handler
   '/terms',
   '/privacy',
   '/d',      // 대타 딥링크 (STEP 3)
