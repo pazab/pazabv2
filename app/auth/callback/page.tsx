@@ -64,8 +64,9 @@ export default function CallbackPage() {
       );
 
       setTimeout(() => { subscription.unsubscribe(); router.replace("/"); }, 5000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Auth callback verification error:", err);
+      alert("로그인 에러 상세: " + (err.message || JSON.stringify(err)));
       router.replace("/");
     }
   };
