@@ -166,11 +166,11 @@ export default function BottomNav() {
 
   if (isHiddenPath || !isLoggedIn) return null;
   const tabs = [
-    { icon: "ti-calendar-event", label: "근태/관리", path: "/myteam", active: pathname.startsWith("/myteam") },
-    { icon: "ti-bolt", label: "대타 SOS", path: "/daeta", active: pathname.startsWith("/daeta") },
     { icon: "ti-compass", label: "탐색", path: "/explore", active: pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
+    { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta") },
+    { icon: "ti-calendar-event", label: "근태", path: "/myteam", active: pathname.startsWith("/myteam"), center: true },
     { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat") && !pathname.includes("/paz"), badge: unreadCount },
-    { icon: "ti-user-circle", label: "성향/MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
+    { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];
 
   return (
@@ -219,20 +219,37 @@ export default function BottomNav() {
       }}>
         <div style={{ width: "100%", maxWidth: 480 }}>
         <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", padding: "10px 8px 14px", maxWidth: 480, margin: "0 auto" }}>
-          {tabs.map(tab => (
-            <button key={tab.label} onClick={() => handleTabClick(tab.path)}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: tab.active ? "rgba(139,92,246,0.13)" : "none", border: "none", cursor: "pointer", borderRadius: 14, padding: "8px 16px", position: "relative", transition: "background 0.2s" }}>
-              <div style={{ position: "relative" }}>
-                <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#8b5cf6" : "#52525b", display: "block" }} aria-hidden="true" />
-                {(tab as any).badge > 0 && (
-                  <span style={{ position: "absolute", top: -4, right: -8, background: "#ec4899", color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 10, minWidth: 16, textAlign: "center" }}>
-                    {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
-                  </span>
-                )}
-              </div>
-              <span style={{ fontSize: 10, fontWeight: tab.active ? 500 : 400, color: tab.active ? "#8b5cf6" : "#52525b" }}>{tab.label}</span>
-            </button>
-          ))}
+          {tabs.map(tab => {
+            const isCenter = (tab as any).center;
+            return isCenter ? (
+              <button key={tab.label} onClick={() => handleTabClick(tab.path)}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", position: "relative", padding: "0 8px", marginTop: -18 }}>
+                <div style={{
+                  width: 52, height: 52, borderRadius: "50%",
+                  background: tab.active ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "linear-gradient(135deg,#6d28d9,#db2777)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "0 4px 16px rgba(139,92,246,0.5)",
+                  border: "3px solid rgba(24,24,27,0.97)",
+                }}>
+                  <i className={`ti ${tab.icon}`} style={{ fontSize: 24, color: "#fff", display: "block" }} aria-hidden="true" />
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: tab.active ? "#a78bfa" : "#8b5cf6" }}>{tab.label}</span>
+              </button>
+            ) : (
+              <button key={tab.label} onClick={() => handleTabClick(tab.path)}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: tab.active ? "rgba(139,92,246,0.13)" : "none", border: "none", cursor: "pointer", borderRadius: 14, padding: "8px 16px", position: "relative", transition: "background 0.2s" }}>
+                <div style={{ position: "relative" }}>
+                  <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#8b5cf6" : "#52525b", display: "block" }} aria-hidden="true" />
+                  {(tab as any).badge > 0 && (
+                    <span style={{ position: "absolute", top: -4, right: -8, background: "#ec4899", color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 10, minWidth: 16, textAlign: "center" }}>
+                      {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: 10, fontWeight: tab.active ? 500 : 400, color: tab.active ? "#8b5cf6" : "#52525b" }}>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
         </div>
       </div>
