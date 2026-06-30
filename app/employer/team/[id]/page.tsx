@@ -8,67 +8,85 @@ import AppHeader from "@/components/AppHeader";
 import { getTrustGrade } from "@/lib/utils";
 
 // ─────────────────────────────────────────────
-// 근태 수정 이력 타임라인 (기존 유지)
+// 근태 이력 타임라인 (아코디언, 기본 접힘)
 // ─────────────────────────────────────────────
 function AttendanceLogs({ memberId, refreshKey = 0 }: { memberId: string; refreshKey?: number }) {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     supabase.from("attendance_logs")
       .select("*, users!attendance_logs_actor_id_fkey(nickname, avatar_url)")
       .eq("team_member_id", memberId)
       .order("created_at", { ascending: false })
-      .limit(50)
+      .limit(100)
       .then(({ data }: { data: any }) => { setLogs(data || []); setLoading(false); });
   }, [memberId, refreshKey]);
 
-  const actionLabel: Record<string, string> = {
-    checkin: "🟢 출근 기록", checkout: "🔴 퇴근 기록", update: "✏️ 근태 수정", delete: "🗑️ 근태 삭제",
+  const actionMeta: Record<string, { label: string; color: string }> = {
+    checkin:  { label: "출근 기록", color: "#10b981" },
+    checkout: { label: "퇴근 기록", color: "#3b82f6" },
+    update:   { label: "근태 수정", color: "#f59e0b" },
+    delete:   { label: "근태 삭제", color: "#ef4444" },
   };
-  const roleLabel: Record<string, string> = { employer: "사장님", worker: "알바생" };
-  const visibleLogs = expanded ? logs : logs.slice(0, 5);
+  const roleLabel: Record<string, string> = { employer: "사장님", worker: "알바생", system: "시스템" };
+  const statusLabel: Record<string, string> = { normal: "정상출근", late: "지각", early_leave: "조퇴", absent: "결근", off: "휴무" };
 
   if (loading || logs.length === 0) return null;
 
   return (
-    <div style={{ marginTop: 16 }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 10px" }}>근태 수정 이력</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {visibleLogs.map((log, i) => {
-          const d = log.after_data || log.before_data || {};
-          const actor = log.users;
-          const name = actor?.nickname || roleLabel[log.actor_role] || "알 수 없음";
-          const date = log.after_data?.work_date || log.before_data?.work_date || "";
-          const time = new Date(log.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-          return (
-            <div key={log.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: log.action === "delete" ? "#ef4444" : log.action === "update" ? "#f59e0b" : "#10b981", marginTop: 4 }} />
-                {i < visibleLogs.length - 1 && <div style={{ width: 1, flex: 1, background: "var(--border)", minHeight: 20, marginTop: 2 }} />}
-              </div>
-              <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 10, padding: "8px 10px", marginBottom: 2 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>{actionLabel[log.action] || log.action}</span>
-                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{time}</span>
+    <div style={{ marginTop: 8, borderTop: "1px solid var(--border)" }}>
+      {/* 아코디언 헤더 */}
+      <button onClick={() => setOpen(v => !v)}
+        style={{ width: "100%", background: "none", border: "none", padding: "12px 0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>📋 출퇴근 · 수정 이력 <span style={{ fontSize: 11, fontWeight: 400 }}>({logs.length}건)</span></span>
+        <span style={{ fontSize: 14, color: "var(--text-muted)", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(180deg)" : "none" }}>▼</span>
+      </button>
+
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 16 }}>
+          {logs.map((log, i) => {
+            const d = log.after_data || log.before_data || {};
+            const meta = actionMeta[log.action] || { label: log.action, color: "#6b7280" };
+            const name = log.users?.nickname || roleLabel[log.actor_role] || "알 수 없음";
+            const workDate = d.work_date || "";
+            const time = new Date(log.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+            const checkIn = d.check_in ? String(d.check_in).slice(11, 16) : "";
+            const checkOut = d.check_out ? String(d.check_out).slice(11, 16) : "";
+
+            return (
+              <div key={log.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, marginTop: 5 }} />
+                  {i < logs.length - 1 && <div style={{ width: 1, flex: 1, background: "var(--border)", minHeight: 24, marginTop: 2 }} />}
                 </div>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 2px" }}>{name} · {date}</p>
-                {d.status && <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "1px 6px", color: "var(--text-muted)" }}>
-                  {({ normal: "출근", late: "지각", early_leave: "조퇴", absent: "결근", off: "휴무" } as any)[d.status] || d.status}
-                  {d.check_in ? ` ${d.check_in}` : ""}{d.check_out ? `~${d.check_out}` : ""}{d.actual_hours ? ` (${d.actual_hours}h)` : ""}
-                </span>}
-                {d.memo && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0", background: "var(--surface)", borderRadius: 6, padding: "4px 8px", lineHeight: 1.5 }}>📝 {d.memo}</p>}
+                <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 10, padding: "8px 12px", marginBottom: 2 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: meta.color }}>{meta.label}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{time}</span>
+                  </div>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 4px" }}>
+                    <strong style={{ color: "var(--text)" }}>{name}</strong>
+                    {log.actor_role && <span style={{ marginLeft: 4, fontSize: 10, background: "var(--surface)", borderRadius: 4, padding: "1px 5px" }}>{roleLabel[log.actor_role] || log.actor_role}</span>}
+                    {workDate && <span style={{ marginLeft: 6 }}>{workDate}</span>}
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {d.status && (
+                      <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "var(--text-muted)" }}>
+                        {statusLabel[d.status] || d.status}
+                      </span>
+                    )}
+                    {checkIn && <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "#10b981" }}>출근 {checkIn}</span>}
+                    {checkOut && <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "#3b82f6" }}>퇴근 {checkOut}</span>}
+                    {d.actual_hours ? <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "var(--text-muted)" }}>{d.actual_hours}h</span> : null}
+                  </div>
+                  {d.memo && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "5px 0 0", background: "var(--surface)", borderRadius: 6, padding: "4px 8px", lineHeight: 1.5 }}>📝 {d.memo}</p>}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-      {logs.length > 5 && (
-        <button onClick={() => setExpanded(!expanded)}
-          style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 10, padding: "8px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer", marginTop: 8 }}>
-          {expanded ? "접기 ↑" : `더보기 (${logs.length - 5}개) ↓`}
-        </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );

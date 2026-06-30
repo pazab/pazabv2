@@ -10,13 +10,13 @@ const getServiceClient = () =>
   );
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const cronKey = searchParams.get("key");
-  const expectedKey = process.env.AIGATE_API_KEY || "pazab_cron_secret";
-
-  // 운영 환경에서는 크론 키 보안 검사를 적용합니다.
-  if (process.env.NODE_ENV === "production" && cronKey !== expectedKey) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Vercel Cron은 Authorization: Bearer <CRON_SECRET> 헤더를 자동으로 전송함
+  if (process.env.NODE_ENV === "production") {
+    const auth = (req as any).headers?.get?.("authorization") || "";
+    const cronSecret = process.env.CRON_SECRET || "";
+    if (!cronSecret || auth !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const supabase = getServiceClient();
