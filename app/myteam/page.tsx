@@ -72,7 +72,7 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
       .eq("team_member_id", member.id)
       .eq("work_date", today)
       .maybeSingle()
-      .then(({ data }) => { setTodayAtt(data); setLoading(false); });
+      .then(({ data }: { data: any }) => { setTodayAtt(data); setLoading(false); });
 
     checkLocation();
     const interval = setInterval(checkLocation, 20000); // 20초마다 위치 갱신
@@ -505,7 +505,7 @@ function WorkerAttLogs({ memberId, refreshKey = 0 }: { memberId: string; refresh
     supabase.from("attendance_logs")
       .select("*").eq("team_member_id", memberId)
       .order("created_at", { ascending: false }).limit(20)
-      .then(({ data }) => setLogs(data || []));
+      .then(({ data }: { data: any }) => setLogs(data || []));
   }, [memberId, refreshKey]);
 
   if (logs.length === 0) return null;
@@ -556,7 +556,7 @@ function WorkerPayslipTab({ workerId, employerId, router }: { workerId:string; e
       .eq("employer_id", employerId)
       .order("year", { ascending: false })
       .order("month", { ascending: false })
-      .then(({ data }) => { setPayslips(data || []); setLoading(false); });
+      .then(({ data }: { data: any }) => { setPayslips(data || []); setLoading(false); });
   }, [workerId, employerId]);
 
   if (loading) return <p style={{ textAlign:"center", color:"var(--text-muted)", fontSize:13, padding:"16px 0" }}>로딩 중...</p>;
@@ -609,7 +609,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
       .eq("team_member_id", m.id)
       .gte("work_date", ms)
       .order("work_date", { ascending: false })
-      .then(({ data }) => {
+      .then(({ data }: { data: any }) => {
         const att = data || [];
         setRecentAtt(att.slice(0, 5));
         const workDays = att.filter((a:any) => a.status !== "absent" && a.status !== "off").length;
@@ -767,7 +767,7 @@ function MyTeamPageContent() {
   const userTypeRef = useRef<string>("");
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: { data: any }) => {
       if (!data.user) { router.push("/login"); return; }
       setUser(data.user);
       loadUserType(data.user.id);
@@ -775,7 +775,7 @@ function MyTeamPageContent() {
 
     const handleVisibility = () => {
       if (document.visibilityState !== "visible") return;
-      supabase.auth.getUser().then(({ data }) => {
+      supabase.auth.getUser().then(({ data }: { data: any }) => {
         if (!data.user) return;
         const ut = userTypeRef.current;
         if (ut === "employer" || ut === "both") loadTeam(data.user.id);

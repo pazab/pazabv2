@@ -21,7 +21,7 @@ function AttendanceLogs({ memberId, refreshKey = 0 }: { memberId: string; refres
       .eq("team_member_id", memberId)
       .order("created_at", { ascending: false })
       .limit(50)
-      .then(({ data }) => { setLogs(data || []); setLoading(false); });
+      .then(({ data }: { data: any }) => { setLogs(data || []); setLoading(false); });
   }, [memberId, refreshKey]);
 
   const actionLabel: Record<string, string> = {
