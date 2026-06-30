@@ -32,9 +32,12 @@ function LoginContent() {
     setLoading(true);
     setError("");
     try {
+      const redirect = localStorage.getItem("login_redirect") || "";
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback${redirect ? `?next=${encodeURIComponent(redirect)}` : ""}`,
+        },
       });
       if (error) throw error;
     } catch {
