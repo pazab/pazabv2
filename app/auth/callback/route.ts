@@ -21,7 +21,9 @@ export async function GET(request: Request) {
   const next = searchParams.get("next") ?? "/explore";
 
   if (code) {
-    let supabaseResponse = NextResponse.next();
+    const redirectUrl = `${origin}${next}`;
+    let supabaseResponse = NextResponse.redirect(redirectUrl);
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -76,19 +78,23 @@ export async function GET(request: Request) {
           is_active: true,
         });
 
-        const response = NextResponse.redirect(`${origin}/auth/consent`);
+        const consentResponse = NextResponse.redirect(`${origin}/auth/consent`);
         supabaseResponse.cookies.getAll().forEach(c => {
-          response.cookies.set(c.name, c.value);
+          const originalCookie = supabaseResponse.cookies.get(c.name);
+          consentResponse.cookies.set(c.name, c.value, {
+            path: originalCookie?.path,
+            domain: originalCookie?.domain,
+            secure: originalCookie?.secure,
+            httpOnly: originalCookie?.httpOnly,
+            sameSite: originalCookie?.sameSite,
+            expires: originalCookie?.expires,
+            maxAge: originalCookie?.maxAge
+          });
         });
-        return response;
+        return consentResponse;
       }
 
-      let redirectUrl = `${origin}${next}`;
-      const response = NextResponse.redirect(redirectUrl);
-      supabaseResponse.cookies.getAll().forEach(c => {
-        response.cookies.set(c.name, c.value);
-      });
-      return response;
+      return supabaseResponse;
     }
   }
 
