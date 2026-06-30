@@ -34,6 +34,19 @@ export default function CallbackPage() {
 
   const handleCallback = async () => {
     try {
+      const sp = new URLSearchParams(window.location.search);
+      const code = sp.get("code");
+
+      if (code) {
+        setStatus("인증 토큰 교환 중...");
+        const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeError) throw exchangeError;
+        if (exchangeData.session) {
+          await saveAndRedirect(exchangeData.session);
+          return;
+        }
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session) {
