@@ -10,11 +10,26 @@ import { getTrustGrade } from "@/lib/utils";
 import { sendPushNotification } from "@/lib/usePush";
 import { cardStyle, cardInnerStyle, cardGradientStyle, btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 
+// 거리 계산 헬퍼 함수 (Haversine 공식)
+function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // 지구 반지름(m)
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 // 출퇴근 버튼 컴포넌트
 function CheckInButton({ member, userId, onRefresh }: { member: any; userId: string; onRefresh?: () => void }) {
   const [todayAtt, setTodayAtt] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [distance, setDistance] = useState<number | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
 
   // KST 기준 오늘 날짜
   const today = (() => {
@@ -22,6 +37,33 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
     const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
     return kst.toISOString().split("T")[0];
   })();
+
+  const storeLat = member.profile?.lat;
+  const storeLng = member.profile?.lng;
+
+  const checkLocation = () => {
+    if (storeLat == null || storeLng == null) return;
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const dist = getDistanceMeters(latitude, longitude, storeLat, storeLng);
+        setDistance(dist);
+        setGpsError(null);
+        setGpsLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        let errorMsg = "GPS 위치 정보를 가져올 수 없습니다.";
+        if (err.code === err.PERMISSION_DENIED) {
+          errorMsg = "위치 정보 권한이 거부되었습니다. 브라우저 위치 권한을 허용해 주세요.";
+        }
+        setGpsError(errorMsg);
+        setGpsLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   useEffect(() => {
     if (!member?.id) return;
@@ -31,9 +73,22 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
       .eq("work_date", today)
       .maybeSingle()
       .then(({ data }) => { setTodayAtt(data); setLoading(false); });
-  }, [member?.id]);
+
+    checkLocation();
+    const interval = setInterval(checkLocation, 20000); // 20초마다 위치 갱신
+    return () => clearInterval(interval);
+  }, [member?.id, storeLat, storeLng]);
+
+  // 매장 좌표 정보가 아예 등록되어 있지 않다면 반경 체크 폴백 처리(버튼 무조건 활성)
+  const hasStoreCoords = storeLat != null && storeLng != null;
+  const isInRange = !hasStoreCoords || (distance !== null && distance <= 200);
 
   async function handleCheckIn() {
+    if (!isInRange) {
+      alert("📍 매장 반경 200m 외부에서는 출근할 수 없습니다.");
+      return;
+    }
+
     setProcessing(true);
     const now = new Date();
     const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -67,8 +122,17 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
     if (!error && data) {
       setTodayAtt(data);
       onRefresh?.();
+      
+      // 지각/정시 판정 얼럿 띄우기
+      if (status === "late") {
+        alert(`⏰ 지각으로 출근 처리되었습니다.\n(출근 시각: ${timeStr})`);
+      } else {
+        alert(`✅ 정상 출근 완료!\n(출근 시각: ${timeStr})`);
+      }
+
       // 사장님에게 푸시 알림
       sendPushNotification({ userId: member.employer_id, title: "✅ 출근 알림", body: `${(member as any)?.users?.nickname || "팀원"}님이 출근했어요`, url: `/employer/team/${member.id}`, tag: "attendance" });
+      
       // 출근 로그
       await supabase.from("attendance_logs").insert({
         attendance_id: data.id,
@@ -104,6 +168,8 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
           }),
         });
       }
+    } else if (error) {
+      alert("출근 처리 중 오류가 발생했습니다: " + error.message);
     }
     setProcessing(false);
   }
@@ -135,6 +201,9 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
     if (!error && data) {
       setTodayAtt(data);
       onRefresh?.();
+      
+      alert("🔴 퇴근이 완료되었습니다. 오늘도 수고하셨습니다!");
+
       // 사장님에게 푸시 알림
       sendPushNotification({ userId: member.employer_id, title: "🔴 퇴근 알림", body: `${(member as any)?.users?.nickname || "팀원"}님이 퇴근했어요 (${diffHours}h)`, url: `/employer/team/${member.id}`, tag: "attendance" });
       // 퇴근 로그
@@ -181,6 +250,8 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
           }),
         });
       }
+    } else if (error) {
+      alert("퇴근 처리 중 오류가 발생했습니다: " + error.message);
     }
     setProcessing(false);
   }
@@ -203,16 +274,46 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
   return (
     <div style={{ marginBottom:12 }}>
       {!checkedIn && (
-        <button onClick={handleCheckIn} disabled={processing}
-          style={{ width:"100%", background:"linear-gradient(135deg,#10b981,#059669)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-          {processing ? "처리 중..." : <>🟢 출근하기</>}
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <button onClick={handleCheckIn} disabled={processing || !isInRange || gpsLoading}
+            style={{
+              width:"100%",
+              background: !isInRange ? "var(--border)" : "linear-gradient(135deg,#10b981,#059669)",
+              border:"none",
+              borderRadius:14,
+              padding:14,
+              color:"#fff",
+              fontSize:15,
+              fontWeight:700,
+              cursor: !isInRange ? "not-allowed" : "pointer",
+              display:"flex",
+              alignItems:"center",
+              justifyContent:"center",
+              gap:8,
+              opacity: !isInRange ? 0.6 : 1
+            }}
+          >
+            {processing ? "처리 중..." : gpsLoading ? "위치 확인 중..." : <>🟢 출근하기</>}
+          </button>
+          {hasStoreCoords && (
+            <p style={{ fontSize: 11, color: isInRange ? "#10b981" : "var(--text-muted)", margin: "0 0 4px", textAlign: "center", fontWeight: 600 }}>
+              {gpsLoading ? "📡 내 위치를 측정하고 있습니다..." :
+               isInRange ? `✓ 매장 반경 내에 있습니다. (거리: ${Math.round(distance || 0)}m)` :
+               `📍 매장 외부입니다. (거리: ${Math.round(distance || 0)}m / 200m 이내 가능)`}
+            </p>
+          )}
+          {gpsError && (
+            <p style={{ fontSize: 11, color: "#ef4444", margin: 0, textAlign: "center" }}>
+              ⚠️ {gpsError} (GPS를 활성화해 주세요)
+            </p>
+          )}
+        </div>
       )}
       {checkedIn && !checkedOut && (
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
           <div style={{ background:"#10b98115", borderRadius:12, padding:"10px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <span style={{ fontSize:13, color:"#10b981", fontWeight:600 }}>✅ 출근 완료</span>
-            <span style={{ fontSize:12, color:"var(--text-muted)" }}>{checkInTime}</span>
+            <span style={{ fontSize:13, color:"#10b981", fontWeight:600 }}>✅ 근무 중</span>
+            <span style={{ fontSize:12, color:"var(--text-muted)" }}>{checkInTime} 출근</span>
           </div>
           <button onClick={handleCheckOut} disabled={processing}
             style={{ width:"100%", background:"linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer" }}>
@@ -363,6 +464,9 @@ function WorkerAttendanceTab({ member, userId }: { member: any; userId: string }
               const dateStr = `${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
               const isToday = dateStr === todayStr;
               const isFuture = dateStr > todayStr;
+              const dayOfWeek = new Date(viewYear, viewMonth, day).getDay();
+              const isSunday = dayOfWeek === 0;
+              const isSaturday = dayOfWeek === 6;
               return (
                 <div key={day} style={{
                   borderRadius:8, overflow:"hidden", padding:"4px 2px 3px",
@@ -653,6 +757,8 @@ function MyTeamPageContent() {
   const [members, setMembers] = useState<any[]>([]);
   const [myStore, setMyStore] = useState<any>(null);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [todayWorkersCount, setTodayWorkersCount] = useState(0);
+  const [pendingContractsCount, setPendingContractsCount] = useState(0);
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
@@ -713,17 +819,49 @@ function MyTeamPageContent() {
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
     const ids = data.map(m => m.id);
     const { data: att } = ids.length > 0
-      ? await supabase.from("attendance").select("team_member_id, status").in("team_member_id", ids).gte("work_date", monthStart)
+      ? await supabase.from("attendance").select("team_member_id, status, work_date").in("team_member_id", ids).gte("work_date", monthStart)
       : { data: [] };
 
-    const enriched = data.map(m => ({
-      ...m,
-      worker: (m as any).users,
-      thisMonth: att?.filter(a => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
-      late: att?.filter(a => a.team_member_id === m.id && a.status==="late").length || 0,
-      contractStatus: "none",
-    }));
+    // 계약서 데이터 조회 (worker_id 기반)
+    const workerIds = data.map(m => m.worker_id).filter(Boolean);
+    const { data: contractsData } = workerIds.length > 0
+      ? await supabase.from("contracts")
+          .select("employer_id, worker_id, worker_signed")
+          .eq("employer_id", uid)
+          .in("worker_id", workerIds)
+      : { data: [] };
+
+    const enriched = data.map(m => {
+      const cStatus = (() => {
+        const cList = (contractsData || []).filter((c: any) => c.worker_id === m.worker_id);
+        if (cList.length === 0) return "none";
+        const hasSigned = cList.some((c: any) => c.worker_signed);
+        return hasSigned ? "done" : "pending";
+      })();
+
+      return {
+        ...m,
+        worker: (m as any).users,
+        thisMonth: att?.filter(a => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
+        late: att?.filter(a => a.team_member_id === m.id && a.status==="late").length || 0,
+        contractStatus: cStatus,
+      };
+    });
     setMembers(enriched);
+
+    // 오늘 출근 인원 계산 (KST 기준)
+    const todayStr = (() => {
+      const d = new Date();
+      const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+      return kst.toISOString().split("T")[0];
+    })();
+    const todayActive = att?.filter(a => a.work_date === todayStr && (a.status === "normal" || a.status === "late" || a.status === "early_leave")).length || 0;
+    setTodayWorkersCount(todayActive);
+
+    // 계약 대기 인원 계산 (done이 아닌 것)
+    const pendingContracts = enriched.filter(m => m.contractStatus !== "done").length;
+    setPendingContractsCount(pendingContracts);
+
     if (enriched.length > 0) setTeamOpen(true);
   }
 
@@ -841,13 +979,13 @@ function MyTeamPageContent() {
                       </div>
                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
                         {[
-                          { label:"시급", value: myStore.wage ? `${myStore.wage.toLocaleString()}원` : "미정" },
-                          { label:"근무요일", value: myStore.work_days || "미정" },
-                          { label:"근무시간", value: myStore.work_hours || "미정" },
+                          { label:"총 팀원", value: `${members.length}명` },
+                          { label:"오늘 근무", value: `${todayWorkersCount}명` },
+                          { label:"계약 대기", value: `${pendingContractsCount}건`, color: pendingContractsCount > 0 ? "#f87171" : "#fff" },
                         ].map(r => (
                           <div key={r.label} style={{ background:"rgba(255,255,255,0.15)", borderRadius:10, padding:"8px 10px" }}>
                             <p style={{ fontSize:10, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>{r.label}</p>
-                            <p style={{ fontSize:12, fontWeight:700, color:"#fff", margin:0 }}>{r.value}</p>
+                            <p style={{ fontSize:12, fontWeight:700, color: r.color || "#fff", margin:0 }}>{r.value}</p>
                           </div>
                         ))}
                       </div>
