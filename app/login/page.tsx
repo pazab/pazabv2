@@ -19,7 +19,6 @@ function LoginContent() {
       localStorage.setItem("login_redirect", from);
     }
     // 데이터베이스 초기화 등으로 인한 브라우저 내 무효 세션 및 로컬 롤 캐시 정리
-    supabase.auth.signOut().catch(() => {});
     localStorage.removeItem("pending_user_type");
     localStorage.removeItem("current_mode");
     localStorage.removeItem("login_redirect");
