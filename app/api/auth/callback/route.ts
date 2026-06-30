@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams
@@ -25,15 +24,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/login?error=config_error', request.url))
   }
 
-  const cookieStore = await cookies()
+  // 세션 쿠키를 redirect 응답에 직접 붙이기 위해 모아둠
+  const pendingCookies: Array<{ name: string; value: string; options: Record<string, unknown> }> = []
+
   const supabase = createServerClient(url, key, {
     cookies: {
-      getAll() { return cookieStore.getAll() },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) =>
-          cookieStore.set(name, value, options)
-        )
-      },
+      getAll() { return request.cookies.getAll() },
+      setAll(cookies) { pendingCookies.push(...cookies) },
     },
   })
 
@@ -45,10 +42,15 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  // 세션 쿠키가 설정됐으므로 클라이언트 callback 페이지로 이동 (프로필 확인, 동의 모달 등)
   const dest = new URL('/auth/callback', request.url)
   if (next && next !== '/explore') {
     dest.searchParams.set('next', next)
   }
-  return NextResponse.redirect(dest)
+
+  const response = NextResponse.redirect(dest)
+  // 세션 토큰 쿠키를 redirect 응답에 포함시켜야 클라이언트가 세션을 인식함
+  pendingCookies.forEach(({ name, value, options }) => {
+    response.cookies.set(name, value, options as Parameters<typeof response.cookies.set>[2])
+  })
+  return response
 }
