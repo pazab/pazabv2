@@ -218,7 +218,7 @@ function WorkerProfileStatus({ userId, router, onUpdate }: { userId: string; rou
     <div style={{ textAlign: "center", padding: "10px 0" }}>
       <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 12 }}>아직 구직 공고를 등록하지 않았어요</p>
       <button onClick={() => router.push("/worker/profile?edit=true&return=mypage&section=jobs")}
-        style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+        style={{ background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.35)", color: "#f9a8d4", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
         구직 공고 등록하기 →
       </button>
     </div>
@@ -273,7 +273,7 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
             <div style={{ display: "flex", gap: 8 }}>
               {profile.job_status !== "completed" && (
                 <button onClick={() => router.push(`/worker/profile?edit=true&profileId=${profile.id}&return=mypage&section=jobs`)}
-                  style={{ flex: 1, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "#c4b5fd", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
+                  style={{ flex: 1, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
                   ✏️ 수정
                 </button>
               )}
@@ -523,7 +523,6 @@ function MyPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as "worker" | "employer" | null;
-  const sectionParam = searchParams.get("section") as "analysis" | "jobs" | "lovecall" | null;
   const toastParam = searchParams.get("toast");
 
   useEffect(() => {
@@ -537,14 +536,6 @@ function MyPageContent() {
   const [userId, setUserId] = useState<string | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<"jobs" | "lovecall">(sectionParam === "lovecall" ? "lovecall" : "jobs");
-
-  // 러브콜 탭 진입할 때마다 새로 불러오기
-  useEffect(() => {
-    if (activeSection === "lovecall" && user?.id && viewType) {
-      fetchLoveCalls(user.id, viewType);
-    }
-  }, [activeSection]);
   const [viewType, setViewType] = useState<"worker" | "employer">(tabParam || "worker");
   const [loveCalls, setLoveCalls] = useState<LoveCall[]>([]);
   const [loveCallLoading, setLoveCallLoading] = useState(false);
@@ -565,6 +556,8 @@ function MyPageContent() {
   const [myWorkerProfile, setMyWorkerProfile] = useState<any>(null);
   const [myEmployerProfile, setMyEmployerProfile] = useState<any>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showWorkerCalls, setShowWorkerCalls] = useState(false);
+  const [showEmployerCalls, setShowEmployerCalls] = useState(false);
 
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if (user) loadResultsForType(viewType, user.id); }, [viewType]);
@@ -913,285 +906,205 @@ function MyPageContent() {
 
           {/* 내 프로필 카드 미리보기 버튼 */}
           <button onClick={() => setShowPreviewModal(true)}
-            style={{
-              width: "100%",
-              background: "linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(236, 72, 153, 0.2))",
-              border: "1px solid rgba(255, 255, 255, 0.15)",
-              color: "#fff",
-              fontWeight: 800,
-              padding: "10px 14px",
-              borderRadius: 14,
-              fontSize: 13,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              boxShadow: "0 4px 15px rgba(139,92,246,0.15)",
-              transition: "all 0.15s"
-            }}>
+            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", fontWeight: 700, padding: "10px 14px", borderRadius: 14, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             🔍 내 프로필 카드 미리보기
           </button>
         </div>
 
-        {/* 팀·소속 관리 그리드 타일 */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        {/* 팀·소속 바로가기 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
           <button onClick={() => router.push("/myteam")}
-            style={{
-              ...glassStyle,
-              padding: "16px 14px",
-              textAlign: "left",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-start",
-              gap: 8,
-              cursor: "pointer",
-              transition: "all 0.2s",
-              border: "1px solid rgba(139,92,246,0.2)",
-              background: "rgba(139,92,246,0.04)"
-            }}>
-            <span style={{ fontSize: 24 }}>👥</span>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 800, margin: "0 0 2px", color: "#c4b5fd" }}>내 팀 · 소속</p>
-              <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>소속 매장 및 팀원 관리</p>
-            </div>
+            style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 22 }}>👥</span>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#c4b5fd" }}>내 팀 · 소속</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>소속 매장 및 팀원 관리</p>
           </button>
-
           <button onClick={() => router.push("/invite")}
-            style={{
-              ...glassStyle,
-              padding: "16px 14px",
-              textAlign: "left",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-start",
-              gap: 8,
-              cursor: "pointer",
-              transition: "all 0.2s",
-              border: "1px solid rgba(236,72,153,0.2)",
-              background: "rgba(236,72,153,0.04)"
-            }}>
-            <span style={{ fontSize: 24 }}>🎫</span>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 800, margin: "0 0 2px", color: "#fca5a5" }}>초대 코드</p>
-              <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>신규 팀원 초대하기</p>
-            </div>
+            style={{ background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 22 }}>🎫</span>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#f9a8d4" }}>팀원 초대</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
           </button>
         </div>
 
-        {/* 카테고리 탭 */}
-        <div style={{ ...glassStyle, padding: "8px", marginBottom: 16 }}>
-          <div style={{ display: "flex", gap: 6 }}>
-            {([
-              { key: "jobs", label: "📋 내 공고" },
-              { key: "lovecall", label: "💌 러브콜" },
-            ] as { key: string; label: string }[]).map(tab => (
-              <button key={tab.key} onClick={() => {
-                setActiveSection(tab.key as any);
-                router.push(`/mypage?section=${tab.key}${tabParam ? `&tab=${tabParam}` : ""}`);
-              }}
-                style={{ flex: 1, padding: "12px 4px", borderRadius: 14, border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", background: activeSection === tab.key ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "transparent", color: activeSection === tab.key ? "#fff" : "var(--text-muted)", transition: "all 0.2s" }}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ===== 내 공고 섹션 ===== */}
-        {activeSection === "jobs" && (
-          <div style={{ marginBottom: 14 }}>
-            {/* 알바생 구직 상태 */}
-            {(hasWorkerInterview || user.user_type === "worker" || user.user_type === "both") && (
-              <div style={{ ...glassStyle, padding: 20, marginBottom: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>⚡ 구직 상태</h3>
-                  <button onClick={() => router.push("/worker/profile?edit=true&return=mypage&section=jobs&new=true")}
-                    style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 10, cursor: "pointer" }}>
-                    + 새 구직 공고
+        {/* ── 알바생 섹션 (worker / both) ── */}
+        {(user.user_type === "worker" || user.user_type === "both") && (() => {
+          const wReceived = loveCalls.filter(lc => lc.myRole === "worker" && !lc.isSent);
+          const wSent = loveCalls.filter(lc => lc.myRole === "worker" && lc.isSent);
+          const wTotal = wReceived.length + wSent.length;
+          const wPending = wReceived.filter(lc => lc.status === "pending").length;
+          return (
+            <section style={{ marginBottom: 20 }}>
+              <div style={{ background: "linear-gradient(135deg,#ec4899 60%,#7c3aed)", borderRadius: 16, padding: "14px 18px", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: wTotal > 0 ? 10 : 0 }}>
+                  <div>
+                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: "0 0 2px" }}>내 구직 활동</p>
+                    <p style={{ fontSize: 18, fontWeight: 900, color: "#fff", margin: 0 }}>⚡ 알바생</p>
+                  </div>
+                  <button onClick={() => router.push("/worker/profile?edit=true&return=mypage&new=true")}
+                    style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    + 구직 공고
                   </button>
                 </div>
+                {/* 러브콜 배지 버튼 */}
+                {!loveCallLoading && (
+                  <button onClick={() => setShowWorkerCalls(v => !v)}
+                    style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
+                      💌 러브콜
+                      {wPending > 0 && <span style={{ background: "#fff", color: "#ec4899", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{wPending}개 대기</span>}
+                      {wPending === 0 && wTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{wTotal}건</span>}
+                      {wTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
+                    </span>
+                    <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, transition: "transform 0.2s", transform: showWorkerCalls ? "rotate(180deg)" : "none" }}>▾</span>
+                  </button>
+                )}
+              </div>
+
+              <div style={{ background: "var(--surface)", border: "1px solid rgba(236,72,153,0.18)", borderRadius: 16, padding: "16px", marginBottom: 10 }}>
                 <WorkerProfileStatus userId={user.id} router={router} onUpdate={(p) => setMyWorkerProfile(p)} />
               </div>
-            )}
-            {/* 사장님 공고 */}
-            {(user.user_type === "employer" || hasEmployerInterview || user.user_type === "both") && (
-              <div style={{ ...glassStyle, padding: 20 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>🏪 매장 공고</h3>
-                  <button onClick={() => router.push("/employer/register?return=mypage&section=jobs&tab=employer")}
-                    style={{ background: "linear-gradient(135deg, #ec4899, #be185d)", border: "none", color: "#fff", fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 10, cursor: "pointer" }}>
-                    + 새 매장 공고
+
+              {showWorkerCalls && (
+                <div>
+                  {wReceived.length === 0 && wSent.length === 0 ? (
+                    <div style={{ background: "var(--surface)", border: "1px solid rgba(236,72,153,0.12)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
+                      <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 10px" }}>아직 러브콜이 없어요</p>
+                      <button onClick={() => router.push("/explore?type=worker")}
+                        style={{ background: "rgba(236,72,153,0.12)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", padding: "7px 18px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                        매장 둘러보기 →
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {wReceived.length > 0 && <LoveCallSection title="💌 받은 러브콜" calls={wReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/job/${lc.employer_id}`)} onDelete={handleDelete} router={router} />}
+                      {wSent.length > 0 && <LoveCallSection title="📤 보낸 러브콜" calls={wSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/job/${lc.employer_id}`)} onDelete={handleDelete} router={router} />}
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
+          );
+        })()}
+
+        {/* ── 사장님 섹션 (employer / both) ── */}
+        {(user.user_type === "employer" || user.user_type === "both") && (() => {
+          const eReceived = loveCalls.filter(lc => lc.myRole === "employer" && !lc.isSent);
+          const eSent = loveCalls.filter(lc => lc.myRole === "employer" && lc.isSent);
+          const eTotal = eReceived.length + eSent.length;
+          const ePending = eReceived.filter(lc => lc.status === "pending").length;
+          return (
+          <section style={{ marginBottom: 20 }}>
+            <div style={{ background: "linear-gradient(135deg,#7c3aed 60%,#ec4899)", borderRadius: 16, padding: "14px 18px", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: !loveCallLoading ? 10 : 0 }}>
+                <div>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: "0 0 2px" }}>내 채용 활동</p>
+                  <p style={{ fontSize: 18, fontWeight: 900, color: "#fff", margin: 0 }}>🏪 사장님</p>
+                </div>
+                <button onClick={() => router.push("/employer/register?return=mypage")}
+                  style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  + 매장 공고
+                </button>
+              </div>
+              {!loveCallLoading && (
+                <button onClick={() => setShowEmployerCalls(v => !v)}
+                  style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
+                    💌 러브콜
+                    {ePending > 0 && <span style={{ background: "#fff", color: "#7c3aed", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{ePending}개 대기</span>}
+                    {ePending === 0 && eTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{eTotal}건</span>}
+                    {eTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
+                  </span>
+                  <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, transition: "transform 0.2s", transform: showEmployerCalls ? "rotate(180deg)" : "none" }}>▾</span>
+                </button>
+              )}
+            </div>
+
+            {/* 매장 공고 카드 */}
+            <div style={{ background: "var(--surface)", border: "1px solid rgba(124,58,237,0.18)", borderRadius: 16, padding: "16px", marginBottom: 10 }}>
+              {jobLoading ? (
+                <p style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", margin: 0 }}>불러오는 중...</p>
+              ) : jobs.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "12px 0" }}>
+                  <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 10 }}>등록된 공고가 없어요</p>
+                  <button onClick={() => router.push("/employer/register?return=mypage")}
+                    style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.35)", color: "#c4b5fd", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+                    공고 등록하기 →
                   </button>
                 </div>
-                {jobLoading ? (
-                  <p style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>불러오는 중...</p>
-                ) : jobs.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "20px 0" }}>
-                    <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 12 }}>등록된 공고가 없어요</p>
-                    <button onClick={() => router.push("/employer/register?return=mypage&section=jobs&tab=employer")}
-                      style={{ background: "linear-gradient(135deg, #ec4899, #be185d)", border: "none", color: "#fff", fontWeight: 700, padding: "12px 24px", borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
-                      공고 등록하기 🎉
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    {[...jobs].sort((a, b) => {
-                      const order: Record<string, number> = { active: 0, matched: 1, completed: 2, cancelled: 3 };
-                      const ao = order[a.job_status || "active"] ?? 9;
-                      const bo = order[b.job_status || "active"] ?? 9;
-                      if (ao !== bo) return ao - bo;
-                      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-                    }).map(job => (
-                      <div key={job.id} style={{ background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 14, padding: 14 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                          <div>
-                            <p style={{ fontSize: 15, fontWeight: 700, margin: "0 0 2px" }}>{job.business_name}</p>
-                            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{job.business_type} · {(job.region || "").split(" ").slice(0, 2).join(" ")}</p>
-                          </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[...jobs].sort((a, b) => {
+                    const order: Record<string, number> = { active: 0, matched: 1, completed: 2, cancelled: 3 };
+                    return (order[a.job_status || "active"] ?? 9) - (order[b.job_status || "active"] ?? 9);
+                  }).map(job => (
+                    <div key={job.id} style={{ background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 12, padding: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px" }}>{job.business_name}</p>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{job.business_type} · {(job.region || "").split(" ").slice(0, 2).join(" ")} · {(job.wage || 0).toLocaleString()}원</p>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                           {job.job_status === "completed" ? (
-                            <span style={{ fontSize: 11, color: "#86efac", fontWeight: 600 }}>✅ 채용 완료</span>
+                            <span style={{ fontSize: 11, color: "#86efac", fontWeight: 600 }}>✅ 채용완료</span>
                           ) : job.job_status === "matched" ? (
                             <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 600 }}>🤝 매칭중</span>
                           ) : (
                             <>
-                              <span style={{ fontSize: 11, color: job.is_active ? "#86efac" : "var(--text-muted)", fontWeight: 600 }}>
-                                {job.is_active ? "모집중" : "비공개"}
-                              </span>
+                              <span style={{ fontSize: 11, color: job.is_active ? "#86efac" : "var(--text-muted)", fontWeight: 600 }}>{job.is_active ? "모집중" : "비공개"}</span>
                               <div onClick={() => toggleJobActive(job.id, job.is_active)}
-                                style={{ width: 44, height: 24, borderRadius: 12, background: job.is_active ? "#ec4899" : "var(--surface)", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0, border: "1px solid var(--border)" }}>
-                                <div style={{ position: "absolute", top: 2, left: job.is_active ? 22 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }} />
+                                style={{ width: 40, height: 22, borderRadius: 11, background: job.is_active ? "#ec4899" : "var(--surface)", cursor: "pointer", position: "relative", transition: "background 0.2s", border: "1px solid var(--border)" }}>
+                                <div style={{ position: "absolute", top: 2, left: job.is_active ? 19 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
                               </div>
                             </>
                           )}
                         </div>
-                        </div>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px" }}>💰 {(job.wage || 0).toLocaleString()}원 · 📅 {job.work_days}</p>
-                        {["completed", "matched"].includes(job.job_status) ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <div style={{ flex: 1, background: `${job.job_status === "completed" ? "rgba(34,197,94,0.08)" : "rgba(251,191,36,0.08)"}`, borderRadius: 10, padding: "8px 12px", fontSize: 12, color: job.job_status === "completed" ? "#86efac" : "#fbbf24", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                {job.job_status === "completed" ? "✅ 채용 완료" : "🤝 매칭 진행중"}
-                              </div>
-                              <button onClick={() => deleteJob(job.id)}
-                                style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 10, cursor: "pointer" }}>
-                                🗑️
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                        <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
-                          <div style={{ display: "flex", gap: 8 }}>
-                            <button onClick={() => router.push(`/employer/register?edit=true&jobId=${job.id}&return=mypage&tab=employer&section=jobs`)}
-                              style={{ flex: 1, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
-                              ✏️ 수정
-                            </button>
-                            <button onClick={() => deleteJob(job.id)}
-                              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 10, cursor: "pointer" }}>
-                              🗑️
-                            </button>
-                          </div>
-                          <div style={{ display: "flex", gap: 8 }}>
-                            <button onClick={() => router.replace(`/employer/interview?profileId=${job.id}`)}
-                              style={{ flex: 1, background: job.bot_interview_done ? "rgba(34,197,94,0.1)" : "rgba(139,92,246,0.1)", border: `1px solid ${job.bot_interview_done ? "rgba(34,197,94,0.3)" : "rgba(139,92,246,0.3)"}`, color: job.bot_interview_done ? "#86efac" : "#c4b5fd", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
-                              {job.bot_interview_done ? "✅ 봇 설정 완료 (재설정)" : "🤖 매장봇 설정하기"}
-                            </button>
-                            {job.newQuestionCount > 0 && (
-                              <button onClick={() => router.push(`/employer/questions?profileId=${job.id}`)}
-                                style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 10, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                📬 질문 {job.newQuestionCount}개
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
+                        {!["completed", "matched"].includes(job.job_status) && (
+                          <button onClick={() => router.push(`/employer/register?edit=true&jobId=${job.id}&return=mypage`)}
+                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                            ✏️ 수정
+                          </button>
+                        )}
+                        <button onClick={() => router.replace(`/employer/interview?profileId=${job.id}`)}
+                          style={{ background: job.bot_interview_done ? "rgba(34,197,94,0.1)" : "rgba(139,92,246,0.1)", border: `1px solid ${job.bot_interview_done ? "rgba(34,197,94,0.3)" : "rgba(139,92,246,0.3)"}`, color: job.bot_interview_done ? "#86efac" : "#c4b5fd", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                          {job.bot_interview_done ? "✅ 봇설정" : "🤖 봇설정"}
+                        </button>
+                        {job.newQuestionCount > 0 && (
+                          <button onClick={() => router.push(`/employer/questions?profileId=${job.id}`)}
+                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                            📬 {job.newQuestionCount}개
+                          </button>
+                        )}
+                        <button onClick={() => deleteJob(job.id)}
+                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-        {/* ===== 러브콜 섹션 ===== */}
-        {activeSection === "lovecall" && (
-          <div style={{ marginBottom: 14 }}>
-            {loveCallLoading ? (
-              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, textAlign: "center" }}>
-                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>불러오는 중...</p>
+            {showEmployerCalls && (
+              <div>
+                {eReceived.length === 0 && eSent.length === 0 ? (
+                  <div style={{ background: "var(--surface)", border: "1px solid rgba(124,58,237,0.12)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
+                    <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>아직 러브콜이 없어요</p>
+                  </div>
+                ) : (
+                  <>
+                    {eReceived.length > 0 && <LoveCallSection title="💌 받은 러브콜" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/worker/${lc.counterpart?.user_id || lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 러브콜" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/worker/${lc.counterpart?.user_id || lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                  </>
+                )}
               </div>
-            ) : loveCalls.length === 0 ? (
-              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, textAlign: "center" }}>
-                <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 12 }}>아직 러브콜이 없어요</p>
-                <button onClick={() => router.push("/explore?type=worker")}
-                  style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "#c4b5fd", padding: "8px 16px", borderRadius: 20, cursor: "pointer", fontSize: 13 }}>
-                  매장 둘러보기 →
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* ⚡ 알바생 받은 러브콜 */}
-                {loveCalls.filter(lc => lc.myRole === "worker" && !lc.isSent).length > 0 && (
-                  <LoveCallSection
-                    title="⚡ 알바생으로 받은 러브콜"
-                    calls={loveCalls.filter(lc => lc.myRole === "worker" && !lc.isSent)}
-                    showRespond={true}
-                    respondingId={respondingId}
-                    onRespond={handleRespond}
-                    onCancel={handleCancel}
-                    onNavigate={(lc) => router.push(`/job/${lc.employer_id}`)}
-                    // onProgress 제거
-                    onDelete={handleDelete}
-                    router={router}
-                  />
-                )}
-                {loveCalls.filter(lc => lc.myRole === "worker" && lc.isSent).length > 0 && (
-                  <LoveCallSection
-                    title="⚡ 알바생으로 보낸 러브콜"
-                    calls={loveCalls.filter(lc => lc.myRole === "worker" && lc.isSent)}
-                    showRespond={false}
-                    respondingId={respondingId}
-                    onRespond={handleRespond}
-                    onCancel={handleCancel}
-                    onNavigate={(lc) => router.push(`/job/${lc.employer_id}`)}
-                    // onProgress 제거
-                    onDelete={handleDelete}
-                    router={router}
-                  />
-                )}
-                {loveCalls.filter(lc => lc.myRole === "employer" && !lc.isSent).length > 0 && (
-                  <LoveCallSection
-                    title="👔 사장님으로 받은 러브콜"
-                    calls={loveCalls.filter(lc => lc.myRole === "employer" && !lc.isSent)}
-                    showRespond={true}
-                    respondingId={respondingId}
-                    onRespond={handleRespond}
-                    onCancel={handleCancel}
-                    onNavigate={(lc) => router.push(`/worker/${lc.counterpart?.user_id || lc.worker_id}`)}
-                    // onProgress 제거
-                    onDelete={handleDelete}
-                    router={router}
-                  />
-                )}
-                {loveCalls.filter(lc => lc.myRole === "employer" && lc.isSent).length > 0 && (
-                  <LoveCallSection
-                    title="👔 사장님으로 보낸 러브콜"
-                    calls={loveCalls.filter(lc => lc.myRole === "employer" && lc.isSent)}
-                    showRespond={false}
-                    respondingId={respondingId}
-                    onRespond={handleRespond}
-                    onCancel={handleCancel}
-                    onNavigate={(lc) => router.push(`/worker/${lc.counterpart?.user_id || lc.worker_id}`)}
-                    // onProgress 제거
-                    onDelete={handleDelete}
-                    router={router}
-                  />
-                )}
-              </>
             )}
-          </div>
-        )}
+          </section>
+          );
+        })()}
 
         {/* 로그아웃 */}
         <button onClick={handleLogout}

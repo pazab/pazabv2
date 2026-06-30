@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
+import DateWheelPicker from "@/components/DateWheelPicker";
 
 import { getTrustGrade } from "@/lib/utils";
 import { sendPushNotification } from "@/lib/usePush";
@@ -521,7 +522,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
       {/* 매장 정보 카드 */}
       <div style={{ ...cardStyle, padding: 0, overflow:"hidden" }}>
-        <div style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", padding:"16px 18px" }}>
+        <div style={{ background:"linear-gradient(135deg,#ec4899 60%,#7c3aed)", padding:"16px 18px" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
             <span style={{ fontSize:26 }}>{BIZ_EMOJI[m.profile?.business_type]||"🏪"}</span>
             <div style={{ flex:1 }}>
@@ -549,23 +550,23 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         {/* 입사일 */}
         <div style={{ padding:"10px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", borderBottom:"1px solid var(--border)" }}>
           <span style={{ fontSize:12, color:"var(--text-muted)" }}>입사일</span>
-          {editHireDate ? (
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              <input type="date" value={hireDateInput} onChange={e => setHireDateInput(e.target.value)}
-                style={{ fontSize:12, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, padding:"4px 8px", color:"var(--text)" }} />
-              <button onClick={async () => {
-                await supabase.from("team_members").update({ hire_date: hireDateInput || null }).eq("id", m.id);
-                setEditHireDate(false);
-                onRefresh?.();
-              }} style={{ fontSize:11, background:"#7c3aed", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontWeight:700 }}>저장</button>
-              <button onClick={() => setEditHireDate(false)} style={{ fontSize:11, background:"var(--surface2)", color:"var(--text-muted)", border:"1px solid var(--border)", borderRadius:6, padding:"4px 8px", cursor:"pointer" }}>취소</button>
-            </div>
-          ) : (
-            <button onClick={() => setEditHireDate(true)} style={{ fontSize:12, fontWeight:600, color: m.hire_date ? "var(--text)" : "#f59e0b", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
-              {m.hire_date || "미설정"} <span style={{ fontSize:10, color:"#7c3aed" }}>수정</span>
-            </button>
-          )}
+          <button onClick={() => setEditHireDate(true)} style={{ fontSize:12, fontWeight:600, color: m.hire_date ? "var(--text)" : "#f59e0b", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
+            {hireDateInput || "미설정"} <span style={{ fontSize:10, color:"#7c3aed" }}>수정</span>
+          </button>
         </div>
+        {editHireDate && (
+          <DateWheelPicker
+            value={hireDateInput || new Date().toISOString().split("T")[0]}
+            onChange={v => setHireDateInput(v)}
+            onClose={() => setEditHireDate(false)}
+            onConfirm={async v => {
+              setHireDateInput(v);
+              await supabase.from("team_members").update({ hire_date: v }).eq("id", m.id);
+              setEditHireDate(false);
+              onRefresh?.();
+            }}
+          />
+        )}
         {/* 채팅 */}
         <button onClick={() => router.push(`/chat?employer=${m.employer_id}`)}
           style={{ width:"100%", background:"none", border:"none", padding:"12px 18px", fontSize:13, color:"var(--text-muted)", cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:8 }}>
@@ -650,9 +651,12 @@ function MyTeamPageContent() {
 
   // 사장님 데이터
   const [members, setMembers] = useState<any[]>([]);
+  const [myStore, setMyStore] = useState<any>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
+  const [workOpen, setWorkOpen] = useState(false);
 
   const userTypeRef = useRef<string>("");
 
@@ -691,8 +695,15 @@ function MyTeamPageContent() {
   }
 
   async function loadTeam(uid: string) {
+    // 내 매장 정보
+    const { data: storeData } = await supabase.from("employer_profiles")
+      .select("id, business_name, business_type, region, wage, work_days, work_hours, is_active")
+      .eq("user_id", uid).eq("is_deleted", false)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    setMyStore(storeData || null);
+
     const { data } = await supabase.from("team_members")
-      .select(`id, worker_id, employer_id, match_id, hire_date, status, wage, work_days, work_hours, member_role,
+      .select(`id, worker_id, employer_id, hire_date, status, wage, work_days, work_hours, member_role,
         users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, email, trust_score)`)
       .eq("employer_id", uid).eq("status", "active")
       .order("hire_date", { ascending: false });
@@ -705,67 +716,15 @@ function MyTeamPageContent() {
       ? await supabase.from("attendance").select("team_member_id, status").in("team_member_id", ids).gte("work_date", monthStart)
       : { data: [] };
 
-    const matchIds = data.map(m => m.match_id).filter(Boolean);
-    const { data: contracts } = matchIds.length > 0
-      ? await supabase.from("contracts")
-          .select("match_id, worker_signed, wage, work_days, work_hours, contract_data")
-          .in("match_id", matchIds)
-          .order("created_at", { ascending: false })
-      : { data: [] };
-
-    // employer_profiles에서도 폴백 데이터 조회 (팀원별 공고 매칭)
-    const empProfileIds = (await supabase.from("matches")
-      .select("id, employer_profile_id")
-      .in("id", matchIds.length > 0 ? matchIds : ["none"])).data || [];
-
-    const epIds = empProfileIds.map((e:any) => e.employer_profile_id).filter(Boolean);
-    const { data: epProfiles } = epIds.length > 0
-      ? await supabase.from("employer_profiles").select("id, wage, work_days, work_hours").in("id", epIds)
-      : { data: [] };
-
-    const enriched = data.map(m => {
-      const contract = (contracts||[]).find((c:any) => c.match_id === m.match_id);
-      const cd = contract?.contract_data;
-      const matchEp = empProfileIds.find((e:any) => e.id === m.match_id);
-      const ep = (epProfiles||[]).find((e:any) => e.id === matchEp?.employer_profile_id);
-
-      const getWage = () => {
-        if (cd?.wage) return parseInt(String(cd.wage).replace(/,/g,""));
-        if (contract?.wage) return contract.wage;
-        if (m.wage) return m.wage;
-        if (ep?.wage) return ep.wage;
-        return null;
-      };
-
-      const getWorkDays = () => {
-        if (cd) {
-          if (cd.workDaysMode === "text" && cd.workDaysText) return cd.workDaysText;
-          const days = ["월","화","수","목","금","토","일"]
-            .filter((_:string,i:number) => (cd as any)[`workDays${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i]}`])
-            .join("·");
-          if (days) return days;
-        }
-        return contract?.work_days || m.work_days || ep?.work_days || null;
-      };
-
-      const getWorkHours = () =>
-        cd?.dailyHours || contract?.work_hours || m.work_hours || ep?.work_hours || null;
-
-      return {
-        ...m,
-        worker: (m as any).users,
-        wage: getWage(),
-        work_days: getWorkDays(),
-        work_hours: getWorkHours(),
-        thisMonth: att?.filter(a => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
-        late: att?.filter(a => a.team_member_id === m.id && a.status==="late").length || 0,
-        contractStatus: (() => {
-          if (!contract) return "none";
-          return contract.worker_signed ? "done" : "pending";
-        })(),
-      };
-    });
+    const enriched = data.map(m => ({
+      ...m,
+      worker: (m as any).users,
+      thisMonth: att?.filter(a => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
+      late: att?.filter(a => a.team_member_id === m.id && a.status==="late").length || 0,
+      contractStatus: "none",
+    }));
     setMembers(enriched);
+    if (enriched.length > 0) setTeamOpen(true);
   }
 
   async function loadMyWork(uid: string) {
@@ -788,12 +747,14 @@ function MyTeamPageContent() {
       }
     }
 
-    setCurrent((activeData||[]).map((d: any) => ({
+    const mapped = (activeData||[]).map((d: any) => ({
       ...d,
       employer: d.users,
       profile: profiles.find((p: any) => p.user_id === d.employer_id),
       contractStatus: "none",
-    })));
+    }));
+    setCurrent(mapped);
+    if (mapped.length > 0) setWorkOpen(true);
   }
 
   const isEmployer = userType === "employer" || userType === "both";
@@ -817,23 +778,33 @@ function MyTeamPageContent() {
             {/* ── 내 소속 (worker / both) ── */}
             {isWorker && (
               <section>
-                <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", textTransform:"uppercase", letterSpacing:1 }}>내 소속</p>
-                {current.length === 0 ? (
-                  <div style={{ ...cardStyle, padding:"28px 16px", textAlign:"center" }}>
-                    <div style={{ fontSize:36, marginBottom:8 }}>🏪</div>
-                    <p style={{ color:"var(--text-muted)", fontSize:13, margin:"0 0 12px" }}>소속 매장이 없어요</p>
-                    <button onClick={() => router.push("/explore")}
-                      style={{ ...btnPrimary, width:"auto", padding:"8px 20px", fontSize:13 }}>
-                      공고 탐색하기 →
-                    </button>
+                <button onClick={() => setWorkOpen(v => !v)}
+                  style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", margin:0 }}>내 소속</p>
+                    {current.length > 0 && <span style={{ fontSize:12, background:"rgba(236,72,153,0.15)", color:"#f9a8d4", borderRadius:20, padding:"2px 10px", fontWeight:700 }}>{current.length}곳</span>}
+                    {current.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)", opacity:0.6 }}>없음</span>}
                   </div>
-                ) : (
-                  <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
-                    {current.map(m => (
-                      <WorkerMemberScroll key={m.id} m={m} userId={user?.id||""} router={router}
-                        onRefresh={() => setAttRefreshKey(prev => ({ ...prev, [m.id]: (prev[m.id]||0)+1 }))} />
-                    ))}
-                  </div>
+                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: workOpen ? "rotate(180deg)" : "none", display:"block" }}>⌄</span>
+                </button>
+                {workOpen && (
+                  current.length === 0 ? (
+                    <div style={{ ...cardStyle, padding:"28px 16px", textAlign:"center" }}>
+                      <div style={{ fontSize:36, marginBottom:8 }}>🏪</div>
+                      <p style={{ color:"var(--text-muted)", fontSize:13, margin:"0 0 12px" }}>소속 매장이 없어요</p>
+                      <button onClick={() => router.push("/explore")}
+                        style={{ ...btnPrimary, width:"auto", padding:"8px 20px", fontSize:13 }}>
+                        공고 탐색하기 →
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+                      {current.map(m => (
+                        <WorkerMemberScroll key={m.id} m={m} userId={user?.id||""} router={router}
+                          onRefresh={() => setAttRefreshKey(prev => ({ ...prev, [m.id]: (prev[m.id]||0)+1 }))} />
+                      ))}
+                    </div>
+                  )
                 )}
               </section>
             )}
@@ -841,10 +812,55 @@ function MyTeamPageContent() {
             {/* ── 내 팀 (employer / both) ── */}
             {isEmployer && (
               <section>
-                <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", textTransform:"uppercase", letterSpacing:1 }}>내 팀</p>
+                <button onClick={() => setTeamOpen(v => !v)}
+                  style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", margin:0 }}>내 팀</p>
+                    {members.length > 0 && <span style={{ fontSize:12, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 10px", fontWeight:700 }}>팀원 {members.length}명</span>}
+                    {members.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)", opacity:0.6 }}>없음</span>}
+                  </div>
+                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: teamOpen ? "rotate(180deg)" : "none", display:"block" }}>⌄</span>
+                </button>
+                {teamOpen && (<>
 
-                {/* 요약 + 초대 */}
-                <div style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", borderRadius:16, padding:"14px 20px", marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                {/* 내 매장 카드 */}
+                {myStore && (
+                  <div style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:10 }}>
+                    <div style={{ background:"linear-gradient(135deg,#7c3aed 60%,#ec4899)", padding:"16px 18px" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+                        <span style={{ fontSize:26 }}>{BIZ_EMOJI[myStore.business_type]||"🏪"}</span>
+                        <div style={{ flex:1 }}>
+                          <p style={{ fontSize:16, fontWeight:800, color:"#fff", margin:"0 0 2px" }}>{myStore.business_name}</p>
+                          <p style={{ fontSize:11, color:"rgba(255,255,255,0.75)", margin:0 }}>
+                            {myStore.business_type} · {myStore.region||"위치미정"}
+                          </p>
+                        </div>
+                        <span style={{ fontSize:11, background:"rgba(255,255,255,0.2)", color:"#fff", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>
+                          {myStore.is_active ? "모집중" : "비공개"}
+                        </span>
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                        {[
+                          { label:"시급", value: myStore.wage ? `${myStore.wage.toLocaleString()}원` : "미정" },
+                          { label:"근무요일", value: myStore.work_days || "미정" },
+                          { label:"근무시간", value: myStore.work_hours || "미정" },
+                        ].map(r => (
+                          <div key={r.label} style={{ background:"rgba(255,255,255,0.15)", borderRadius:10, padding:"8px 10px" }}>
+                            <p style={{ fontSize:10, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>{r.label}</p>
+                            <p style={{ fontSize:12, fontWeight:700, color:"#fff", margin:0 }}>{r.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <button onClick={() => router.push(`/employer/register?edit=true&jobId=${myStore.id}&return=myteam`)}
+                      style={{ width:"100%", background:"none", border:"none", padding:"11px 18px", fontSize:12, color:"var(--text-muted)", cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:8 }}>
+                      ✏️ 매장 정보 수정
+                    </button>
+                  </div>
+                )}
+
+                {/* 팀원 수 + 초대 */}
+                <div style={{ background:"linear-gradient(135deg,#7c3aed 60%,#ec4899)", borderRadius:16, padding:"14px 20px", marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                   <div>
                     <p style={{ fontSize:11, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>현재 팀원</p>
                     <p style={{ fontSize:28, fontWeight:900, color:"#fff", margin:0 }}>{members.length}명</p>
@@ -869,7 +885,7 @@ function MyTeamPageContent() {
                       return (
                         <div key={m.id} style={{ ...cardStyle, padding:14, display:"flex", gap:12, alignItems:"center" }}>
                           <div onClick={() => router.push(`/employer/team/${m.id}`)}
-                            style={{ width:48, height:48, borderRadius:"50%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, cursor:"pointer" }}>
+                            style={{ width:48, height:48, borderRadius:"50%", background:"linear-gradient(135deg,#f59e0b,#ef4444)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, cursor:"pointer" }}>
                             {m.worker?.avatar_url
                               ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
                               : (PERSONALITY_EMOJI[pType] || "👤")}
@@ -905,6 +921,7 @@ function MyTeamPageContent() {
                     })}
                   </div>
                 )}
+                </>)}
               </section>
             )}
 
