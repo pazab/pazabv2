@@ -817,13 +817,13 @@ function MyTeamPageContent() {
 
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-    const ids = data.map(m => m.id);
+    const ids = data.map((m: any) => m.id);
     const { data: att } = ids.length > 0
       ? await supabase.from("attendance").select("team_member_id, status, work_date").in("team_member_id", ids).gte("work_date", monthStart)
       : { data: [] };
 
     // 계약서 데이터 조회 (worker_id 기반)
-    const workerIds = data.map(m => m.worker_id).filter(Boolean);
+    const workerIds = data.map((m: any) => m.worker_id).filter(Boolean);
     const { data: contractsData } = workerIds.length > 0
       ? await supabase.from("contracts")
           .select("employer_id, worker_id, worker_signed")
@@ -831,7 +831,7 @@ function MyTeamPageContent() {
           .in("worker_id", workerIds)
       : { data: [] };
 
-    const enriched = data.map(m => {
+    const enriched = data.map((m: any) => {
       const cStatus = (() => {
         const cList = (contractsData || []).filter((c: any) => c.worker_id === m.worker_id);
         if (cList.length === 0) return "none";
@@ -842,8 +842,8 @@ function MyTeamPageContent() {
       return {
         ...m,
         worker: (m as any).users,
-        thisMonth: att?.filter(a => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
-        late: att?.filter(a => a.team_member_id === m.id && a.status==="late").length || 0,
+        thisMonth: att?.filter((a: any) => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
+        late: att?.filter((a: any) => a.team_member_id === m.id && a.status==="late").length || 0,
         contractStatus: cStatus,
       };
     });
@@ -855,11 +855,11 @@ function MyTeamPageContent() {
       const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
       return kst.toISOString().split("T")[0];
     })();
-    const todayActive = att?.filter(a => a.work_date === todayStr && (a.status === "normal" || a.status === "late" || a.status === "early_leave")).length || 0;
+    const todayActive = att?.filter((a: any) => a.work_date === todayStr && (a.status === "normal" || a.status === "late" || a.status === "early_leave")).length || 0;
     setTodayWorkersCount(todayActive);
 
     // 계약 대기 인원 계산 (done이 아닌 것)
-    const pendingContracts = enriched.filter(m => m.contractStatus !== "done").length;
+    const pendingContracts = enriched.filter((m: any) => m.contractStatus !== "done").length;
     setPendingContractsCount(pendingContracts);
 
     if (enriched.length > 0) setTeamOpen(true);
