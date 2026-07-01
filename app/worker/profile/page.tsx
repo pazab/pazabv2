@@ -136,11 +136,11 @@ function WorkerProfileContent() {
       setError("");
       try {
         const path = `worker/videos/${userId}_${Date.now()}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+        const { error: uploadError } = await supabase.storage.from("media").upload(path, file, { upsert: true });
         if (uploadError) {
           setError("동영상 업로드 실패: " + uploadError.message);
         } else {
-          const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+          const { data } = supabase.storage.from("media").getPublicUrl(path);
           setVideoUrl(data.publicUrl);
         }
       } catch (err) {
@@ -173,9 +173,9 @@ function WorkerProfileContent() {
     const path = `worker/${userId}_${Date.now()}.${ext}`;
     const file = new File([croppedBlob], `profile.${ext}`, { type: "image/jpeg" });
 
-    const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true });
     if (!error) {
-      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const { data } = supabase.storage.from("media").getPublicUrl(path);
       const newUrl = `${data.publicUrl}?t=${Date.now()}`;
       setImageUrls(prev => [...prev.slice(0, 9), newUrl]);
     }

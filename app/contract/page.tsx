@@ -119,7 +119,7 @@ function ContractContent() {
 
   const [f, setF] = useState({
     biz: "", bizRegNo: "", ceo: "", ceoPhone: "",
-    bizAddr: "", samePlace: true, workPlace: "",
+    bizAddr: "", bizAddrDetail: "", samePlace: true, workPlace: "",
     bizType: "", jobDesc: "",
     worker: "", workerBirth: "", workerPhone: "", workerAddr: "", workerAddrDetail: "",
     contractType: "fixed",
@@ -173,6 +173,8 @@ function ContractContent() {
         oncomplete: (data: any) => {
           const fullAddress = data.roadAddress || data.jibunAddress;
           updateField(field, fullAddress);
+          if (field === "bizAddr") updateField("bizAddrDetail", "");
+          if (field === "workerAddr") updateField("workerAddrDetail", "");
         },
       }).open();
     };
@@ -472,12 +474,12 @@ function ContractContent() {
       if (selEp?.id) {
         await supabase.from("employer_profiles").update({
           biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
-          address: f.bizAddr, biz_address: f.bizAddr, biz_tel: f.ceoPhone,
+          address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_tel: f.ceoPhone,
         }).eq("id", selEp.id);
       } else if (selMatch?.employer_id) {
         await supabase.from("employer_profiles").update({
           biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
-          address: f.bizAddr, biz_address: f.bizAddr, biz_tel: f.ceoPhone,
+          address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_tel: f.ceoPhone,
         }).eq("user_id", selMatch.employer_id);
       }
       if (selMatch?.worker_id) {
@@ -840,7 +842,7 @@ function ContractContent() {
               <div style={{ fontSize: "8.5pt", color: "#333", display: "flex", flexDirection: "column", gap: 1 }}>
                 <div>사업체명 : {f.biz} &nbsp; (사업자등록번호: {f.bizRegNo})</div>
                 <div>대 표 자 : {f.ceo} &nbsp; (서명/날인)</div>
-                <div>주    소 : {f.bizAddr}</div>
+                <div>주    소 : {[f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" ")}</div>
                 <div>연 락 처 : {f.ceoPhone}</div>
               </div>
             </div>
@@ -1115,6 +1117,14 @@ function ContractContent() {
                       <input style={{ ...inputStyle, flex: 1 }} value={f.bizAddr} onChange={e => updateField("bizAddr", e.target.value)} placeholder="주소 입력" readOnly />
                       <button onClick={() => openAddressSearch("bizAddr")} style={{ ...btnSecondary, width: "auto", fontSize: 11, padding: "10px 12px" }}>🔍 검색</button>
                     </div>
+                    {f.bizAddr && (
+                      <input
+                        style={{ ...inputStyle, marginTop: 6 }}
+                        value={f.bizAddrDetail}
+                        onChange={e => updateField("bizAddrDetail", e.target.value)}
+                        placeholder="상세주소 입력 (동·호수·층 등)"
+                      />
+                    )}
                   </div>
                 </div>
               )}

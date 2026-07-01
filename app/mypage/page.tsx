@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import InviteBottomSheet from "@/components/InviteBottomSheet";
 
 import AppHeader from "@/components/AppHeader";
 import { Suspense } from "react";
@@ -524,6 +525,7 @@ function MyPageContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as "worker" | "employer" | null;
   const toastParam = searchParams.get("toast");
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   useEffect(() => {
     if (toastParam === "bot_updated") {
@@ -857,10 +859,10 @@ function MyPageContent() {
                 if (!file || !user) return;
                 const ext = file.name.split(".").pop();
                 const path = `${user.id}.${ext}`;
-                const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+                const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true });
                 console.log("upload error:", error);
                 if (!error) {
-                  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+                  const { data } = supabase.storage.from("media").getPublicUrl(path);
                   const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
                   console.log("publicUrl:", avatarUrl);
                   const { error: dbErr } = await supabase.from("users").update({ avatar_url: avatarUrl }).eq("id", user.id);
@@ -919,7 +921,7 @@ function MyPageContent() {
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#c4b5fd" }}>내 팀 · 소속</p>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>소속 매장 및 팀원 관리</p>
           </button>
-          <button onClick={() => router.push("/invite")}
+          <button onClick={() => setInviteOpen(true)}
             style={{ background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 22 }}>🎫</span>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#f9a8d4" }}>팀원 초대</p>
@@ -1272,7 +1274,7 @@ function MyPageContent() {
         )}
       </div>
       </div>
-      
+      <InviteBottomSheet isOpen={inviteOpen} onClose={() => setInviteOpen(false)} />
     </main>
   );
 }

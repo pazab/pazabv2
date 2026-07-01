@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import InviteBottomSheet from "@/components/InviteBottomSheet";
+import StoreRegisterModal from "@/components/StoreRegisterModal";
 import DateWheelPicker from "@/components/DateWheelPicker";
 
 import { getTrustGrade } from "@/lib/utils";
@@ -755,12 +756,15 @@ function MyTeamPageContent() {
   const [loading, setLoading] = useState(true);
 
   // 사장님 데이터
-  const [members, setMembers] = useState<any[]>([]);
-  const [myStore, setMyStore] = useState<any>(null);
+  const [myStores, setMyStores] = useState<any[]>([]);
+  const [membersByStore, setMembersByStore] = useState<Record<string, any[]>>({});
+  const [statsByStore, setStatsByStore] = useState<Record<string, { today: number; pending: number }>>({});
   const [teamOpen, setTeamOpen] = useState(false);
-  const [todayWorkersCount, setTodayWorkersCount] = useState(0);
-  const [pendingContractsCount, setPendingContractsCount] = useState(0);
+  const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [storeModalOpen, setStoreModalOpen] = useState(false);
+  const [editingStore, setEditingStore] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
@@ -797,21 +801,28 @@ function MyTeamPageContent() {
     userTypeRef.current = ut;
     if (data?.employer_result) setEmployerResult(data.employer_result);
     if (data) setUser((p: any) => ({ ...p, ...data }));
-    if (ut === "employer" || ut === "both") loadTeam(uid);
-    if (ut === "worker" || ut === "both") loadMyWork(uid);
+    if (ut === "employer" || ut === "both") { setTeamOpen(true); loadTeam(uid); }
+    if (ut === "worker" || ut === "both") { setWorkOpen(true); loadMyWork(uid); }
     setLoading(false);
   }
 
   async function loadTeam(uid: string) {
-    // 내 매장 정보
-    const { data: storeData } = await supabase.from("employer_profiles")
-      .select("id, business_name, business_type, region, wage, work_days, work_hours, is_active")
+    // 모든 매장 로드
+    const { data: stores } = await supabase.from("employer_profiles")
+      .select("id, business_name, business_type, region, wage, work_days, work_hours, is_active, image_url")
       .eq("user_id", uid).eq("is_deleted", false)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    setMyStore(storeData || null);
+      .order("created_at", { ascending: false });
+    const storeList = stores || [];
+    setMyStores(storeList);
 
+    // 첫 진입 시 첫 번째 매장 활성화
+    if (storeList.length > 0) {
+      setActiveStoreId(storeList[0].id);
+    }
+
+    // 모든 팀원 로드 (employer_profile_id 포함)
     const { data } = await supabase.from("team_members")
-      .select(`id, worker_id, employer_id, hire_date, status, wage, work_days, work_hours, member_role,
+      .select(`id, worker_id, employer_id, employer_profile_id, hire_date, status, wage, work_days, work_hours, member_role,
         users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, email, trust_score)`)
       .eq("employer_id", uid).eq("status", "active")
       .order("hire_date", { ascending: false });
@@ -819,52 +830,56 @@ function MyTeamPageContent() {
 
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-    const ids = data.map((m: any) => m.id);
-    const { data: att } = ids.length > 0
-      ? await supabase.from("attendance").select("team_member_id, status, work_date").in("team_member_id", ids).gte("work_date", monthStart)
-      : { data: [] };
-
-    // 계약서 데이터 조회 (worker_id 기반)
-    const workerIds = data.map((m: any) => m.worker_id).filter(Boolean);
-    const { data: contractsData } = workerIds.length > 0
-      ? await supabase.from("contracts")
-          .select("employer_id, worker_id, worker_signed")
-          .eq("employer_id", uid)
-          .in("worker_id", workerIds)
-      : { data: [] };
-
-    const enriched = data.map((m: any) => {
-      const cStatus = (() => {
-        const cList = (contractsData || []).filter((c: any) => c.worker_id === m.worker_id);
-        if (cList.length === 0) return "none";
-        const hasSigned = cList.some((c: any) => c.worker_signed);
-        return hasSigned ? "done" : "pending";
-      })();
-
-      return {
-        ...m,
-        worker: (m as any).users,
-        thisMonth: att?.filter((a: any) => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
-        late: att?.filter((a: any) => a.team_member_id === m.id && a.status==="late").length || 0,
-        contractStatus: cStatus,
-      };
-    });
-    setMembers(enriched);
-
-    // 오늘 출근 인원 계산 (KST 기준)
     const todayStr = (() => {
       const d = new Date();
       const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
       return kst.toISOString().split("T")[0];
     })();
-    const todayActive = att?.filter((a: any) => a.work_date === todayStr && (a.status === "normal" || a.status === "late" || a.status === "early_leave")).length || 0;
-    setTodayWorkersCount(todayActive);
 
-    // 계약 대기 인원 계산 (done이 아닌 것)
-    const pendingContracts = enriched.filter((m: any) => m.contractStatus !== "done").length;
-    setPendingContractsCount(pendingContracts);
+    const ids = data.map((m: any) => m.id);
+    const { data: att } = ids.length > 0
+      ? await supabase.from("attendance").select("team_member_id, status, work_date").in("team_member_id", ids).gte("work_date", monthStart)
+      : { data: [] };
 
-    if (enriched.length > 0) setTeamOpen(true);
+    const workerIds = data.map((m: any) => m.worker_id).filter(Boolean);
+    const { data: contractsData } = workerIds.length > 0
+      ? await supabase.from("contracts").select("employer_id, worker_id, worker_signed").eq("employer_id", uid).in("worker_id", workerIds)
+      : { data: [] };
+
+    const enriched = data.map((m: any) => {
+      const cList = (contractsData || []).filter((c: any) => c.worker_id === m.worker_id);
+      const contractStatus = cList.length === 0 ? "none" : cList.some((c: any) => c.worker_signed) ? "done" : "pending";
+      return {
+        ...m,
+        worker: (m as any).users,
+        thisMonth: att?.filter((a: any) => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
+        late: att?.filter((a: any) => a.team_member_id === m.id && a.status==="late").length || 0,
+        contractStatus,
+      };
+    });
+
+    // 매장별로 팀원 그룹핑 (employer_profile_id 없으면 첫 매장에 배치)
+    const firstStoreId = storeList[0]?.id;
+    const grouped: Record<string, any[]> = {};
+    for (const s of storeList) grouped[s.id] = [];
+    for (const m of enriched) {
+      const storeId = m.employer_profile_id && grouped[m.employer_profile_id] ? m.employer_profile_id : firstStoreId;
+      if (storeId) grouped[storeId] = [...(grouped[storeId] || []), m];
+    }
+    setMembersByStore(grouped);
+
+    // 매장별 통계
+    const stats: Record<string, { today: number; pending: number }> = {};
+    for (const s of storeList) {
+      const sm = grouped[s.id] || [];
+      const smIds = sm.map((m: any) => m.id);
+      stats[s.id] = {
+        today: att?.filter((a: any) => smIds.includes(a.team_member_id) && a.work_date === todayStr && ["normal","late","early_leave"].includes(a.status)).length || 0,
+        pending: sm.filter((m: any) => m.contractStatus !== "done").length,
+      };
+    }
+    setStatsByStore(stats);
+    if (storeList.length > 0) setTeamOpen(true);
   }
 
   async function loadMyWork(uid: string) {
@@ -956,140 +971,182 @@ function MyTeamPageContent() {
                   style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                     <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", margin:0 }}>내 팀</p>
-                    {members.length > 0 && <span style={{ fontSize:12, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 10px", fontWeight:700 }}>팀원 {members.length}명</span>}
-                    {members.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)", opacity:0.6 }}>없음</span>}
+                    {myStores.length > 0 && <span style={{ fontSize:12, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 10px", fontWeight:700 }}>매장 {myStores.length}곳</span>}
+                    {myStores.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)", opacity:0.6 }}>없음</span>}
                   </div>
                   <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: teamOpen ? "rotate(180deg)" : "none", display:"block" }}>⌄</span>
                 </button>
                 {teamOpen && (<>
 
                 {/* 매장 없는 사장님 — 등록 CTA */}
-                {!myStore && (
+                {myStores.length === 0 && (
                   <div style={{ ...cardStyle, padding:"32px 20px", textAlign:"center", marginBottom:10 }}>
                     <div style={{ fontSize:40, marginBottom:10 }}>🏪</div>
                     <p style={{ color:"var(--text)", fontSize:15, fontWeight:700, margin:"0 0 6px" }}>아직 매장이 없어요</p>
                     <p style={{ color:"var(--text-muted)", fontSize:13, margin:"0 0 18px" }}>매장을 등록하면 팀원을 초대하고 근태·급여를 관리할 수 있어요</p>
-                    <button onClick={() => router.push("/employer/register")}
+                    <button onClick={() => { setEditingStore(null); setStoreModalOpen(true); }}
                       style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:14, padding:"12px 28px", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
                       매장 등록하기 →
                     </button>
                   </div>
                 )}
 
-                {/* 내 매장 카드 */}
-                {myStore && (
-                  <div style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:10 }}>
-                    <div style={{ background:"linear-gradient(135deg,#7c3aed 60%,#ec4899)", padding:"16px 18px" }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
-                        <span style={{ fontSize:26 }}>{BIZ_EMOJI[myStore.business_type]||"🏪"}</span>
-                        <div style={{ flex:1 }}>
-                          <p style={{ fontSize:16, fontWeight:800, color:"#fff", margin:"0 0 2px" }}>{myStore.business_name}</p>
-                          <p style={{ fontSize:11, color:"rgba(255,255,255,0.75)", margin:0 }}>
-                            {myStore.business_type} · {myStore.region||"위치미정"}
-                          </p>
-                        </div>
-                        <span style={{ fontSize:11, background:"rgba(255,255,255,0.2)", color:"#fff", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>
-                          {myStore.is_active ? "모집중" : "비공개"}
-                        </span>
-                      </div>
-                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-                        {[
-                          { label:"총 팀원", value: `${members.length}명` },
-                          { label:"오늘 근무", value: `${todayWorkersCount}명` },
-                          { label:"계약 대기", value: `${pendingContractsCount}건`, color: pendingContractsCount > 0 ? "#f87171" : "#fff" },
-                        ].map(r => (
-                          <div key={r.label} style={{ background:"rgba(255,255,255,0.15)", borderRadius:10, padding:"8px 10px" }}>
-                            <p style={{ fontSize:10, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>{r.label}</p>
-                            <p style={{ fontSize:12, fontWeight:700, color: r.color || "#fff", margin:0 }}>{r.value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <button onClick={() => router.push(`/employer/register?edit=true&jobId=${myStore.id}&return=myteam`)}
-                      style={{ width:"100%", background:"none", border:"none", padding:"11px 18px", fontSize:12, color:"var(--text-muted)", cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:8 }}>
-                      ✏️ 매장 정보 수정
-                    </button>
-                  </div>
-                )}
+                {/* Samsung Pass 스타일 — 비활성 카드 위에 쌓이고, 누르면 맨 아래로 내려와 전체 표시 */}
+                {myStores.length > 0 && (() => {
+                  const PEEK = 52; // 비활성 카드 한 장이 보이는 높이 (한 줄만)
+                  const activeStore = myStores.find((s: any) => s.id === activeStoreId) || myStores[0];
+                  const activeMembers = membersByStore[activeStore.id] || [];
+                  const activeStats = statsByStore[activeStore.id] || { today:0, pending:0 };
+                  // 비활성 카드들을 위에, 활성 카드를 맨 아래에 정렬
+                  const sorted = [
+                    ...myStores.filter((s: any) => s.id !== activeStore.id),
+                    activeStore,
+                  ];
+                  const inactiveCount = sorted.length - 1;
 
-                {/* 팀원 수 + 초대 */}
-                <div style={{ background:"linear-gradient(135deg,#7c3aed 60%,#ec4899)", borderRadius:16, padding:"14px 20px", marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div>
-                    <p style={{ fontSize:11, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>현재 팀원</p>
-                    <p style={{ fontSize:28, fontWeight:900, color:"#fff", margin:0 }}>{members.length}명</p>
-                  </div>
-                  <button onClick={() => setInviteOpen(true)}
-                    style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.3)", borderRadius:12, padding:"8px 16px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                    📨 초대하기
-                  </button>
-                </div>
+                  const CARD_GRADIENTS = [
+                    "linear-gradient(135deg,#4c1d95 0%,#5b21b6 100%)",
+                    "linear-gradient(135deg,#1e40af 0%,#1d4ed8 100%)",
+                    "linear-gradient(135deg,#065f46 0%,#047857 100%)",
+                    "linear-gradient(135deg,#9d174d 0%,#be185d 100%)",
+                    "linear-gradient(135deg,#92400e 0%,#b45309 100%)",
+                    "linear-gradient(135deg,#1e3a5f 0%,#164e63 100%)",
+                  ];
 
-                {members.length === 0 && myStore ? (
-                  <div style={{ ...cardStyle, padding:"28px 16px", textAlign:"center" }}>
-                    <div style={{ fontSize:36, marginBottom:8 }}>👥</div>
-                    <p style={{ color:"var(--text)", fontSize:14, fontWeight:700, margin:"0 0 6px" }}>아직 팀원이 없어요</p>
-                    <p style={{ color:"var(--text-muted)", fontSize:12, margin:"0 0 14px" }}>초대 코드로 직원을 팀에 합류시켜보세요</p>
-                    <button onClick={() => setInviteOpen(true)}
-                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:12, padding:"10px 22px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                      📨 팀원 초대하기
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {members.map(m => {
-                      const pType = m.worker?.worker_result?.personalityType;
-                      const badge = contractBadge(m.contractStatus);
-                      const name = m.worker?.nickname || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
-                      return (
-                        <div key={m.id} style={{ ...cardStyle, padding:14, display:"flex", gap:12, alignItems:"center" }}>
-                          <div onClick={() => router.push(`/employer/team/${m.id}`)}
-                            style={{ width:48, height:48, borderRadius:"50%", background:"linear-gradient(135deg,#f59e0b,#ef4444)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, cursor:"pointer" }}>
-                            {m.worker?.avatar_url
-                              ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                              : (PERSONALITY_EMOJI[pType] || "👤")}
-                          </div>
-                          <div onClick={() => router.push(`/employer/team/${m.id}`)} style={{ flex:1, minWidth:0, cursor:"pointer" }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-                              <span style={{ fontSize:14, fontWeight:700, color:"var(--text)" }}>{name}</span>
-                              {m.member_role === "manager" && <span style={{ fontSize:10, background:"#f59e0b20", color:"#f59e0b", borderRadius:6, padding:"1px 6px", fontWeight:700 }}>매니저</span>}
-                              {pType && <span style={{ fontSize:10, background:"var(--surface2)", borderRadius:6, padding:"1px 6px", color:"var(--text-muted)" }}>{pType}</span>}
-                              {m.worker?.trust_score != null && (() => {
-                                const g = getTrustGrade(m.worker.trust_score);
-                                return <span style={{ fontSize:10, color:g.color, fontWeight:700 }}>{g.emoji}</span>;
-                              })()}
+                  return (
+                    <div>
+                      <div style={{ position:"relative", height: inactiveCount * PEEK }}>
+                        {/* 비활성 카드 — 절대 위치로 쌓임 */}
+                        {sorted.slice(0, -1).map((store: any, i: number) => {
+                          const storeMembers = membersByStore[store.id] || [];
+                          const stats = statsByStore[store.id] || { today:0, pending:0 };
+                          return (
+                            <div
+                              key={store.id}
+                              onClick={() => setActiveStoreId(store.id)}
+                              style={{
+                                position:"absolute", top: i * PEEK, left:0, right:0,
+                                height: PEEK,
+                                overflow:"hidden",
+                                borderRadius:16,
+                                cursor:"pointer",
+                                zIndex: inactiveCount - i,
+                                background: CARD_GRADIENTS[i % CARD_GRADIENTS.length],
+                                boxShadow:"0 4px 16px rgba(0,0,0,0.5)",
+                              }}>
+                              {/* 한 줄만 보이는 헤더 */}
+                              <div style={{ display:"flex", alignItems:"center", gap:10, padding:"0 14px", height: PEEK }}>
+                                <span style={{ fontSize:18, flexShrink:0 }}>{BIZ_EMOJI[store.business_type]||"🏪"}</span>
+                                <span style={{ fontSize:13, fontWeight:700, color:"rgba(255,255,255,0.8)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{store.business_name}</span>
+                                <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)", whiteSpace:"nowrap", flexShrink:0 }}>{store.business_type||"업종미정"} · {storeMembers.length}명</span>
+                                {stats.pending > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"#ef4444", flexShrink:0 }} />}
+                                <button onClick={e => { e.stopPropagation(); setDeleteTarget(store); }}
+                                  style={{ background:"rgba(0,0,0,0.25)", border:"none", borderRadius:"50%", width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.7)", fontSize:12, cursor:"pointer", flexShrink:0, lineHeight:1 }}>
+                                  ✕
+                                </button>
+                              </div>
                             </div>
-                            <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 5px" }}>
-                              {m.work_days||"요일미정"} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
-                            </p>
-                            <span
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (m.contractStatus === "none") {
-                                  router.push(`/contract?matchId=${m.match_id}`);
-                                } else {
-                                  router.push(`/contract/view?matchId=${m.match_id}`);
-                                }
-                              }}
-                              style={{ fontSize:11, borderRadius:6, padding:"2px 7px", background:badge.bg, color:badge.color, cursor:"pointer" }}>
-                              {badge.label}
-                            </span>
+                          );
+                        })}
+                      </div>
+
+                      {/* 활성 카드 — 맨 아래, 전체 표시 */}
+                      <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 8px 32px rgba(124,58,237,0.35)" }}>
+                        {/* 활성 카드 헤더 — 색상 */}
+                        <div style={{ background:"linear-gradient(135deg,#7c3aed 0%,#a855f7 55%,#ec4899 100%)", height: PEEK, display:"flex", alignItems:"center", gap:10, padding:"0 14px" }}>
+                          <span style={{ fontSize:20, flexShrink:0 }}>{BIZ_EMOJI[activeStore.business_type]||"🏪"}</span>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <p style={{ fontSize:14, fontWeight:800, color:"#fff", margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeStore.business_name}</p>
+                            <p style={{ fontSize:10, color:"rgba(255,255,255,0.65)", margin:0 }}>{activeStore.business_type||"업종미정"}{activeStore.address ? " · "+activeStore.address.slice(0,12) : ""}</p>
                           </div>
-                          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
-                            <button onClick={async e => {
-                              e.stopPropagation();
-                              const newRole = m.member_role === "manager" ? "staff" : "manager";
-                              await supabase.from("team_members").update({ member_role: newRole }).eq("id", m.id);
-                              setMembers((prev: any[]) => prev.map((tm: any) => tm.id === m.id ? { ...tm, member_role: newRole } : tm));
-                            }} style={{ background: m.member_role==="manager"?"#f59e0b20":"var(--surface2)", border:`1px solid ${m.member_role==="manager"?"#f59e0b":"var(--border)"}`, borderRadius:8, padding:"4px 8px", fontSize:10, color: m.member_role==="manager"?"#f59e0b":"var(--text-muted)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
-                              {m.member_role === "manager" ? "매니저 해제" : "매니저 지정"}
-                            </button>
-                            <span style={{ color:"var(--text-muted)", fontSize:16, cursor:"pointer" }} onClick={() => router.push(`/employer/team/${m.id}`)}>›</span>
-                          </div>
+                          <button onClick={() => { setEditingStore(activeStore); setStoreModalOpen(true); }}
+                            style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, padding:"5px 10px", color:"rgba(255,255,255,0.9)", fontSize:11, cursor:"pointer", flexShrink:0 }}>
+                            ✏️ 수정
+                          </button>
+                          <button onClick={() => setDeleteTarget(activeStore)}
+                            style={{ background:"rgba(239,68,68,0.25)", border:"none", borderRadius:"50%", width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.8)", fontSize:13, cursor:"pointer", flexShrink:0 }}>
+                            ✕
+                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        {/* 통계 */}
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:1, background:"var(--border)" }}>
+                          {[
+                            { label:"총 팀원", value: activeMembers.length },
+                            { label:"오늘 출근", value: activeStats.today },
+                            { label:"계약 대기", value: activeStats.pending, alert: activeStats.pending > 0 },
+                          ].map(s => (
+                            <div key={s.label} style={{ background:"var(--surface)", padding:"9px 8px", textAlign:"center" }}>
+                              <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
+                              <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "#f87171" : "var(--text)", margin:0 }}>{s.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {/* 초대 + 팀원 */}
+                        <div style={{ background:"var(--surface)" }}>
+                          <div style={{ padding:"10px 12px", borderBottom:"1px solid var(--border)" }}>
+                            <button onClick={() => setInviteOpen(true)}
+                              style={{ width:"100%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:10, padding:"9px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                              📨 팀원 초대
+                            </button>
+                          </div>
+                          {activeMembers.length === 0 ? (
+                            <div style={{ textAlign:"center", padding:"20px 0" }}>
+                              <div style={{ fontSize:28, marginBottom:6 }}>👥</div>
+                              <p style={{ color:"var(--text-muted)", fontSize:13, margin:0 }}>아직 팀원이 없어요</p>
+                            </div>
+                          ) : activeMembers.map((m: any) => {
+                            const pType = m.worker?.worker_result?.personalityType;
+                            const badge = contractBadge(m.contractStatus);
+                            const name = m.worker?.nickname || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
+                            return (
+                              <div key={m.id} style={{ padding:"10px 12px", borderTop:"1px solid var(--border)", display:"flex", gap:10, alignItems:"center" }}>
+                                <div onClick={() => router.push(`/employer/team/${m.id}`)}
+                                  style={{ width:40, height:40, borderRadius:"50%", background:"linear-gradient(135deg,#f59e0b,#ef4444)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, cursor:"pointer" }}>
+                                  {m.worker?.avatar_url ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : (PERSONALITY_EMOJI[pType]||"👤")}
+                                </div>
+                                <div onClick={() => router.push(`/employer/team/${m.id}`)} style={{ flex:1, minWidth:0, cursor:"pointer" }}>
+                                  <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:2 }}>
+                                    <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{name}</span>
+                                    {m.member_role === "manager" && <span style={{ fontSize:10, background:"#f59e0b20", color:"#f59e0b", borderRadius:5, padding:"1px 5px", fontWeight:700 }}>매니저</span>}
+                                    {m.worker?.trust_score != null && (() => { const g = getTrustGrade(m.worker.trust_score); return <span style={{ fontSize:10, color:g.color, fontWeight:700 }}>{g.emoji}</span>; })()}
+                                  </div>
+                                  <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 3px" }}>
+                                    {m.work_days||"요일미정"} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
+                                  </p>
+                                  <span onClick={e => { e.stopPropagation(); router.push(m.contractStatus==="none"?`/contract?matchId=${m.match_id}`:`/contract/view?matchId=${m.match_id}`); }}
+                                    style={{ fontSize:11, borderRadius:5, padding:"2px 6px", background:badge.bg, color:badge.color, cursor:"pointer" }}>
+                                    {badge.label}
+                                  </span>
+                                </div>
+                                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5 }}>
+                                  <button onClick={async e => {
+                                    e.stopPropagation();
+                                    const newRole = m.member_role === "manager" ? "staff" : "manager";
+                                    await supabase.from("team_members").update({ member_role: newRole }).eq("id", m.id);
+                                    setMembersByStore(prev => {
+                                      const u = { ...prev };
+                                      u[activeStore.id] = (u[activeStore.id]||[]).map((tm: any) => tm.id === m.id ? { ...tm, member_role: newRole } : tm);
+                                      return u;
+                                    });
+                                  }} style={{ background:m.member_role==="manager"?"#f59e0b20":"var(--surface2)", border:`1px solid ${m.member_role==="manager"?"#f59e0b":"var(--border)"}`, borderRadius:7, padding:"3px 7px", fontSize:10, color:m.member_role==="manager"?"#f59e0b":"var(--text-muted)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
+                                    {m.member_role === "manager" ? "해제" : "매니저"}
+                                  </button>
+                                  <span style={{ color:"var(--text-muted)", fontSize:15, cursor:"pointer" }} onClick={() => router.push(`/employer/team/${m.id}`)}>›</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 매장 추가 */}
+                      <button onClick={() => { setEditingStore(null); setStoreModalOpen(true); }}
+                        style={{ width:"100%", marginTop:10, background:"none", border:"1.5px dashed var(--border)", borderRadius:14, padding:"10px", color:"var(--text-muted)", fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                        + 매장 추가하기
+                      </button>
+                    </div>
+                  );
+                })()}
                 </>)}
               </section>
             )}
@@ -1104,6 +1161,50 @@ function MyTeamPageContent() {
           if (user?.id) loadTeam(user.id);
         }}
       />
+      {/* 매장 삭제 확인 팝업 */}
+      {deleteTarget && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px" }}>
+          <div style={{ background:"var(--surface)", borderRadius:20, padding:"24px 20px", width:"100%", maxWidth:320 }}>
+            <div style={{ fontSize:36, textAlign:"center", marginBottom:12 }}>🗑️</div>
+            <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", textAlign:"center", margin:"0 0 8px" }}>매장 삭제</p>
+            <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", margin:"0 0 20px", lineHeight:1.5 }}>
+              <strong style={{ color:"var(--text)" }}>{deleteTarget.business_name}</strong>을(를) 삭제하면<br/>팀원 연결 정보도 함께 해제됩니다.
+            </p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setDeleteTarget(null)}
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"11px", fontSize:14, color:"var(--text-muted)", cursor:"pointer", fontWeight:600 }}>
+                취소
+              </button>
+              <button onClick={async () => {
+                const { error } = await supabase
+                  .from("employer_profiles")
+                  .delete()
+                  .eq("id", deleteTarget.id)
+                  .eq("user_id", user!.id);
+                if (error) { alert("삭제 실패: " + error.message); return; }
+                setDeleteTarget(null);
+                if (activeStoreId === deleteTarget.id) setActiveStoreId(null);
+                if (user?.id) loadTeam(user.id);
+              }}
+                style={{ flex:1, background:"#ef4444", border:"none", borderRadius:12, padding:"11px", fontSize:14, color:"#fff", cursor:"pointer", fontWeight:700 }}>
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {storeModalOpen && user?.id && (
+        <StoreRegisterModal
+          userId={user.id}
+          existingStore={editingStore || undefined}
+          onClose={() => { setStoreModalOpen(false); setEditingStore(null); }}
+          onSaved={() => {
+            setStoreModalOpen(false);
+            setEditingStore(null);
+            if (user?.id) loadTeam(user.id);
+          }}
+        />
+      )}
     </main>
   );
 }
