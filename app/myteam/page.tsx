@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
+import InviteBottomSheet from "@/components/InviteBottomSheet";
 import DateWheelPicker from "@/components/DateWheelPicker";
 
 import { getTrustGrade } from "@/lib/utils";
@@ -759,6 +760,7 @@ function MyTeamPageContent() {
   const [teamOpen, setTeamOpen] = useState(false);
   const [todayWorkersCount, setTodayWorkersCount] = useState(0);
   const [pendingContractsCount, setPendingContractsCount] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
@@ -901,7 +903,7 @@ function MyTeamPageContent() {
   const contractBadge = (status: string) => ({
     none: { label:"⚠️ 계약서미작성", color:"#ef4444", bg:"#ef444415" },
     pending: { label:"⏳ 서명대기", color:"#f59e0b", bg:"#f59e0b15" },
-    done: { label:"📄 계약완료", color:"#10b981", bg:"#10b98115" },
+    done: { label:"🎉 정상계약 완료", color:"#10b981", bg:"#10b98115" },
   }[status] || { label:"⚠️ 미작성", color:"#ef4444", bg:"#ef444415" });
 
   return (
@@ -961,6 +963,19 @@ function MyTeamPageContent() {
                 </button>
                 {teamOpen && (<>
 
+                {/* 매장 없는 사장님 — 등록 CTA */}
+                {!myStore && (
+                  <div style={{ ...cardStyle, padding:"32px 20px", textAlign:"center", marginBottom:10 }}>
+                    <div style={{ fontSize:40, marginBottom:10 }}>🏪</div>
+                    <p style={{ color:"var(--text)", fontSize:15, fontWeight:700, margin:"0 0 6px" }}>아직 매장이 없어요</p>
+                    <p style={{ color:"var(--text-muted)", fontSize:13, margin:"0 0 18px" }}>매장을 등록하면 팀원을 초대하고 근태·급여를 관리할 수 있어요</p>
+                    <button onClick={() => router.push("/employer/register")}
+                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:14, padding:"12px 28px", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                      매장 등록하기 →
+                    </button>
+                  </div>
+                )}
+
                 {/* 내 매장 카드 */}
                 {myStore && (
                   <div style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:10 }}>
@@ -1003,16 +1018,21 @@ function MyTeamPageContent() {
                     <p style={{ fontSize:11, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>현재 팀원</p>
                     <p style={{ fontSize:28, fontWeight:900, color:"#fff", margin:0 }}>{members.length}명</p>
                   </div>
-                  <button onClick={() => router.push("/invite")}
+                  <button onClick={() => setInviteOpen(true)}
                     style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.3)", borderRadius:12, padding:"8px 16px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
                     📨 초대하기
                   </button>
                 </div>
 
-                {members.length === 0 ? (
+                {members.length === 0 && myStore ? (
                   <div style={{ ...cardStyle, padding:"28px 16px", textAlign:"center" }}>
                     <div style={{ fontSize:36, marginBottom:8 }}>👥</div>
-                    <p style={{ color:"var(--text-muted)", fontSize:13, margin:0 }}>아직 팀원이 없어요</p>
+                    <p style={{ color:"var(--text)", fontSize:14, fontWeight:700, margin:"0 0 6px" }}>아직 팀원이 없어요</p>
+                    <p style={{ color:"var(--text-muted)", fontSize:12, margin:"0 0 14px" }}>초대 코드로 직원을 팀에 합류시켜보세요</p>
+                    <button onClick={() => setInviteOpen(true)}
+                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:12, padding:"10px 22px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                      📨 팀원 초대하기
+                    </button>
                   </div>
                 ) : (
                   <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
@@ -1041,7 +1061,18 @@ function MyTeamPageContent() {
                             <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 5px" }}>
                               {m.work_days||"요일미정"} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
                             </p>
-                            <span style={{ fontSize:11, borderRadius:6, padding:"2px 7px", background:badge.bg, color:badge.color }}>{badge.label}</span>
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (m.contractStatus === "none") {
+                                  router.push(`/contract?matchId=${m.match_id}`);
+                                } else {
+                                  router.push(`/contract/view?matchId=${m.match_id}`);
+                                }
+                              }}
+                              style={{ fontSize:11, borderRadius:6, padding:"2px 7px", background:badge.bg, color:badge.color, cursor:"pointer" }}>
+                              {badge.label}
+                            </span>
                           </div>
                           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
                             <button onClick={async e => {
@@ -1066,6 +1097,13 @@ function MyTeamPageContent() {
           </div>
         )}
       </div>
+      <InviteBottomSheet
+        isOpen={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onSuccess={() => {
+          if (user?.id) loadTeam(user.id);
+        }}
+      />
     </main>
   );
 }

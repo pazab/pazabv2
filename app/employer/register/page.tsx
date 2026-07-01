@@ -55,6 +55,7 @@ interface JobForm {
   sido: string;
   gugun: string;
   addressDetail: string;
+  fullAddress: string;
   lat: number | null;
   lng: number | null;
   wage: string;
@@ -79,7 +80,7 @@ interface JobForm {
 
 const emptyForm = (): JobForm => ({
   businessName: "", categoryId: "", categoryIds: [], customCategory: "", businessType: "",
-  sido: "", gugun: "", addressDetail: "", lat: null, lng: null,
+  sido: "", gugun: "", addressDetail: "", fullAddress: "", lat: null, lng: null,
   wage: String(MIN_WAGE), wageNegotiable: false, workDays: "", daysNegotiable: false, workHours: "", workStartHour: null, workEndHour: null,
   selectedTags: [], staffCount: "1", mealProvided: false, parking: false,
   breakHours: 0.5, weeklyHoliday: "일",
@@ -255,6 +256,7 @@ function EmployerRegisterContent() {
       sido: parts[0] || "",
       gugun: parts[1] || "",
       addressDetail: parts.slice(2).join(" "),
+      fullAddress: profile.address || profile.region || "",
       lat: profile.lat || null,
       lng: profile.lng || null,
       wage: String(profile.wage || MIN_WAGE),
@@ -325,6 +327,7 @@ function EmployerRegisterContent() {
           if (parts[0]) updateForm("sido", parts[0]);
           if (parts[1]) updateForm("gugun", parts[1]);
           updateForm("addressDetail", parts.slice(2).join(" "));
+          updateForm("fullAddress", fullAddress);
           geocodeAddress(fullAddress);
         }
       }).open();
@@ -404,6 +407,7 @@ function EmployerRegisterContent() {
       worst_matches: interviewResult?.worstMatches || null,
       caution: interviewResult?.caution || null,
       analyzed_mbti: interviewResult?.analyzedMbti || null,
+      address: form.fullAddress || [form.sido, form.gugun, form.addressDetail].filter(Boolean).join(" "),
       address_detail: form.addressDetail,
       lat: form.lat,
       lng: form.lng,
@@ -654,6 +658,7 @@ function EmployerRegisterContent() {
                           if (parts[0]) updateForm("sido", parts[0]);
                           if (parts[1]) updateForm("gugun", parts[1]);
                           updateForm("addressDetail", parts.slice(2).join(" "));
+                          updateForm("fullAddress", addr);
                           if (place.x && place.y) {
                             updateForm("lng", parseFloat(place.x));
                             updateForm("lat", parseFloat(place.y));

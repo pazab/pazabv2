@@ -4,127 +4,250 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import ContractOfficialForm, { getOfficialFormHTML } from "@/components/ContractOfficialForm";
+import {
+  inputStyle,
+  btnPrimary,
+  btnSecondary,
+  cardStyle,
+  divider,
+} from "@/lib/styles";
 
-// 인라인 편집 필드
-function E({ v, onChange, w="80px", ph="" }: { v:string; onChange:(s:string)=>void; w?:string; ph?:string }) {
-  const ref = React.useRef<HTMLSpanElement>(null);
+// 공식 계약서 뷰어용 Read-only 필드 컴포넌트
+function E({ v, ph = "" }: { v: string; ph?: string; onChange?: (s: string) => void; w?: string }) {
   return (
-    <span contentEditable suppressContentEditableWarning
-      ref={ref}
-      onFocus={e => {
-        // 포커스 시 placeholder면 내용 비우기
-        if (!v && e.currentTarget.textContent === ph) {
-          e.currentTarget.textContent = "";
-        }
+    <span
+      style={{
+        display: "inline-block",
+        borderBottom: "1px solid #111",
+        padding: "0 4px",
+        fontWeight: 700,
+        color: "#111",
+        fontSize: "inherit",
+        fontFamily: "inherit",
+        wordBreak: "break-all",
+        whiteSpace: "normal",
+        maxWidth: "100%",
       }}
-      onBlur={e => {
-        const text = e.currentTarget.textContent || "";
-        onChange(text === ph ? "" : text);
-      }}
-      style={{ display:"inline-block", minWidth:w, borderBottom:"1px solid #222",
-        padding:"0 2px", outline:"none",
-        background: v ? "rgba(255,252,180,0.7)" : "rgba(255,252,180,0.3)",
-        cursor:"text", fontFamily:"inherit", fontSize:"inherit", lineHeight:"inherit" }}>
-      {v || <span style={{ color:"#aaa", fontStyle:"italic", pointerEvents:"none" }}>{ph}</span>}
+    >
+      {v || <span style={{ color: "#aaa", fontStyle: "italic" }}>({ph || "미입력"})</span>}
     </span>
   );
 }
 
-function CB({ checked, onChange, label }: { checked:boolean; onChange:(v:boolean)=>void; label:string }) {
+function CB({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <label style={{ display:"inline-flex", alignItems:"center", gap:2, cursor:"pointer", marginRight:6, fontSize:"9pt" }}>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ width:12, height:12 }} />
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 3, cursor: "pointer", marginRight: 8, fontSize: "9pt", color: "#111" }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ width: 12, height: 12 }} />
       {label}
     </label>
   );
 }
 
-type CT = "parttime"|"standard_unlimited"|"standard_fixed"|"minor";
-const DAYS = ["월","화","수","목","금","토","일"];
-const DAYKEYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+type CT = "parttime" | "standard_unlimited" | "standard_fixed" | "minor";
+const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+const DAYKEYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const RESPONSIVE_CSS = `
+  .contract-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 16px 16px 100px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .form-section {
+    width: 100%;
+  }
+  .preview-section {
+    width: 100%;
+  }
+  
+  @media (min-width: 900px) {
+    .contract-layout {
+      flex-direction: row;
+      align-items: flex-start;
+      max-width: 1200px;
+      margin: 0 auto;
+      gap: 28px;
+      padding: 24px 24px 100px;
+    }
+    .form-section {
+      flex: 1.1;
+      position: sticky;
+      top: 80px;
+      max-height: calc(100vh - 140px);
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .form-section::-webkit-scrollbar {
+      width: 6px;
+    }
+    .form-section::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+    }
+    .preview-section {
+      flex: 1;
+      min-width: 450px;
+    }
+  }
+`;
 
 function ContractContent() {
   const router = useRouter();
   const sp = useSearchParams();
   const matchId = sp.get("matchId") || "";
   const mode = sp.get("mode") || "";
-  const fromParam = sp.get("from") || ""; // "chat" | "team" | ""
+  const fromParam = sp.get("from") || "";
 
   const { showToast, ToastUI } = useToast();
   const [loading, setLoading] = useState(true);
   const [matches, setMatches] = useState<any[]>([]);
   const [selMatch, setSelMatch] = useState<any>(null);
-  const [ct, setCt] = useState<CT>("parttime");
-  const [step, setStep] = useState<"select"|"edit">("select");
+  const [ct, setCt] = useState<CT>("standard_unlimited");
+  const [step, setStep] = useState<"select" | "edit">("select");
   const [saving, setSaving] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [existingContract, setExistingContract] = useState<any>(null);
+  const [myEps, setMyEps] = useState<any[]>([]);
+  const [selEp, setSelEp] = useState<any>(null);
+  const [myUserId, setMyUserId] = useState<string>("");
+
+  // 모바일 폼 아코디언 상태
+  const [formTab, setFormTab] = useState<"biz" | "worker" | "work" | "wage" | "ins">("biz");
 
   const [f, setF] = useState({
-    biz:"", bizRegNo:"", ceo:"", ceoPhone:"",
-    bizAddr:"", samePlace:true, workPlace:"",
-    bizType:"", jobDesc:"",
-    worker:"", workerBirth:"", workerPhone:"", workerAddr:"",
-    contractType:"fixed",
-    startDate:"", endDate:"",
-    workDaysMon:false, workDaysTue:false, workDaysWed:false,
-    workDaysThu:false, workDaysFri:false, workDaysSat:false, workDaysSun:false,
-    workDaysMode:"check", workDaysText:"",
-    workStart:"", workEnd:"", breakTime:"30",
-    workStartMon:"09:00", workEndMon:"18:00", breakTimeMon:"30",
-    workStartTue:"09:00", workEndTue:"18:00", breakTimeTue:"30",
-    workStartWed:"09:00", workEndWed:"18:00", breakTimeWed:"30",
-    workStartThu:"09:00", workEndThu:"18:00", breakTimeThu:"30",
-    workStartFri:"09:00", workEndFri:"18:00", breakTimeFri:"30",
-    workStartSat:"09:00", workEndSat:"18:00", breakTimeSat:"30",
-    workStartSun:"09:00", workEndSun:"18:00", breakTimeSun:"30",
-    weeklyHours:"", dailyHours:"",
-    wage:"", payDay:"말일", payMethod:"계좌이체",
-    insEmp:false, insAcc:false, insPension:false, insHealth:false,
-    contractDate:"",
-    school:"", grade:"",
-    parentName:"", parentRel:"부", parentBirth:"", parentAddr:"", parentTel:"",
-    wageType:"hour",
-    hasBonus:false,
-    bonusAmount:"",
-    hasExtraWage:false,
-    extraWageDetails:"",
-    weeklyHoliday:"일",
-    overtimePremiumRate:"50",
-    hasFamilyCert:true,
-    hasParentConsent:true,
-    breakStart:"12:00",
-    breakEnd:"13:00",
+    biz: "", bizRegNo: "", ceo: "", ceoPhone: "",
+    bizAddr: "", samePlace: true, workPlace: "",
+    bizType: "", jobDesc: "",
+    worker: "", workerBirth: "", workerPhone: "", workerAddr: "",
+    contractType: "fixed",
+    startDate: "", endDate: "",
+    workDaysMon: false, workDaysTue: false, workDaysWed: false,
+    workDaysThu: false, workDaysFri: false, workDaysSat: false, workDaysSun: false,
+    workDaysMode: "check", workDaysText: "",
+    workStart: "", workEnd: "", breakTime: "30",
+    workStartMon: "09:00", workEndMon: "18:00", breakTimeMon: "30",
+    workStartTue: "09:00", workEndTue: "18:00", breakTimeTue: "30",
+    workStartWed: "09:00", workEndWed: "18:00", breakTimeWed: "30",
+    workStartThu: "09:00", workEndThu: "18:00", breakTimeThu: "30",
+    workStartFri: "09:00", workEndFri: "18:00", breakTimeFri: "30",
+    workStartSat: "09:00", workEndSat: "18:00", breakTimeSat: "30",
+    workStartSun: "09:00", workEndSun: "18:00", breakTimeSun: "30",
+    weeklyHours: "", dailyHours: "",
+    wage: "", payDay: "말일", payMethod: "계좌이체",
+    insEmp: false, insAcc: false, insPension: false, insHealth: false,
+    contractDate: "",
+    school: "", grade: "",
+    parentName: "", parentRel: "부", parentBirth: "", parentAddr: "", parentTel: "",
+    wageType: "hour",
+    hasBonus: false,
+    bonusAmount: "",
+    hasExtraWage: false,
+    extraWageDetails: "",
+    weeklyHoliday: "일",
+    overtimePremiumRate: "50",
+    hasFamilyCert: true,
+    hasParentConsent: true,
+    breakStart: "12:00",
+    breakEnd: "13:00",
   });
 
-  const set = (k:string) => (v:string) => setF(p => ({...p, [k]:v}));
-  const setB = (k:string) => (v:boolean) => setF(p => ({...p, [k]:v}));
+  const updateField = (k: string, v: any) => {
+    setF((p) => {
+      const next = { ...p, [k]: v };
+      if (k === "bizAddr" && p.samePlace) {
+        next.workPlace = v;
+      }
+      return next;
+    });
+  };
 
-  const selectedDays = DAYS.filter((_,i) => (f as any)[`workDays${DAYKEYS[i]}`]);
+  const selectedDays = DAYS.filter((_, i) => (f as any)[`workDays${DAYKEYS[i]}`]);
 
-  useEffect(() => { if (matchId) load(); else setLoading(false); }, [matchId]);
+  // Daum Postcode 우편번호 서비스 연동
+  const openAddressSearch = (field: "bizAddr" | "workerAddr") => {
+    const loadPostcode = () => {
+      new (window as any).daum.Postcode({
+        oncomplete: (data: any) => {
+          const fullAddress = data.roadAddress || data.jibunAddress;
+          updateField(field, fullAddress);
+        },
+      }).open();
+    };
+
+    if ((window as any).daum?.Postcode) {
+      loadPostcode();
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+    s.onload = loadPostcode;
+    document.head.appendChild(s);
+  };
+
+  useEffect(() => {
+    loadInit();
+  }, [matchId]);
+
+  const loadInit = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      setMyUserId(user.id);
+      // 스키마 확정 컬럼만 선택 (없는 컬럼 선택 시 쿼리 전체 실패)
+      const { data: eps } = await supabase
+        .from("employer_profiles")
+        .select("id, business_name, business_type, address, region, user_id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      let finalEps = eps;
+      // 확장 컬럼 별도 병합 시도
+      if (eps && eps.length > 0) {
+        const { data: epsExt } = await supabase
+          .from("employer_profiles")
+          .select("id, biz_reg_number, ceo_name, biz_address, biz_tel")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+        if (epsExt) {
+          finalEps = eps.map((ep: any) => {
+            const ext = epsExt.find((e: any) => e.id === ep.id) || {};
+            return { ...ep, ...ext };
+          });
+        }
+      }
+      if (finalEps && finalEps.length > 0) {
+        setMyEps(finalEps);
+        setSelEp(finalEps[0]);
+        applyEpToForm(finalEps[0], user.id, null);
+      }
+    }
+    if (matchId) await load();
+    else setLoading(false);
+  };
 
   const load = async () => {
     const { data: cur } = await supabase.from("matches")
       .select("employer_id, worker_id").eq("id", matchId).single();
-    if (!cur) { setLoading(false); return; }
+    if (!cur) {
+      setLoading(false);
+      return;
+    }
 
     const { data: all } = await supabase.from("matches")
       .select("id, employer_id, worker_id, employer_profile_id, created_at, matched_at")
       .eq("employer_id", cur.employer_id).eq("worker_id", cur.worker_id)
-      .eq("progress_status","hired").order("created_at",{ascending:false});
+      .eq("progress_status", "hired").order("created_at", { ascending: false });
 
-    const enriched = await Promise.all((all||[]).map(async (m: any, i: number) => {
+    const enriched = await Promise.all((all || []).map(async (m: any, i: number) => {
       let ep = null;
       if (m.employer_profile_id) {
-        // 매칭된 공고로 조회
         const { data } = await supabase.from("employer_profiles")
           .select("business_name, business_type, region, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
           .eq("id", m.employer_profile_id).maybeSingle();
         ep = data;
       }
       if (!ep) {
-        // 공고 없으면 employer_id로 폴백 (초대 코드로 등록된 경우)
         const { data } = await supabase.from("employer_profiles")
           .select("business_name, business_type, region, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
           .eq("user_id", m.employer_id)
@@ -132,7 +255,7 @@ function ContractContent() {
           .limit(1).maybeSingle();
         ep = data;
       }
-      return { ...m, ep, idx:(all?.length||0)-i };
+      return { ...m, ep, idx: (all?.length || 0) - i };
     }));
     setMatches(enriched);
 
@@ -144,7 +267,6 @@ function ContractContent() {
     const cur2 = enriched.find(m => m.id === matchId) || enriched[0];
     if (cur2) initF(cur2, eu.data, wu.data);
 
-    // mode=update: 기존 계약서 불러와서 바로 편집 화면
     if (mode === "update" && matchId) {
       const { data: existing } = await supabase.from("contracts")
         .select("*").eq("match_id", matchId)
@@ -153,28 +275,26 @@ function ContractContent() {
         setF(existing.contract_data);
         setCt(existing.contract_data.contractType || "parttime");
         setExistingContract(existing);
-        setStep("edit"); // 바로 편집 화면으로
+        setStep("edit");
       }
     }
 
     setLoading(false);
   };
 
-  const initF = (m:any, eu:any, wu:any) => {
+  const initF = (m: any, eu: any, wu: any) => {
     setSelMatch(m);
     const ep = m.ep;
     const today = new Date();
     const md = new Date(m.matched_at || m.created_at);
     const wd = ep?.work_days || "";
-    const dayFlags: Record<string,boolean> = {};
-    DAYS.forEach((d,i) => { dayFlags[`workDays${DAYKEYS[i]}`] = wd.includes(d); });
+    const dayFlags: Record<string, boolean> = {};
+    DAYS.forEach((d, i) => { dayFlags[`workDays${DAYKEYS[i]}`] = wd.includes(d); });
 
-    // Clean up work_hours for start/end time extraction
     const cleanWorkHours = (ep?.work_hours || "").split("(")[0].trim();
-    const [ws,we] = cleanWorkHours.includes("~")
-      ? cleanWorkHours.split("~").map((s:string)=>s.trim()) : ["",""];
+    const [ws, we] = cleanWorkHours.includes("~")
+      ? cleanWorkHours.split("~").map((s: string) => s.trim()) : ["", ""];
 
-    // Parse default break time and weekly holiday
     const breakMatch = (ep?.work_hours || "").match(/휴게\s*(\d+)분/);
     const breakHoursMatch = (ep?.work_hours || "").match(/휴게\s*(\d+(\.\d+)?)시간/);
     let defaultBreak = "30";
@@ -189,58 +309,91 @@ function ContractContent() {
     const holidayMatch = (ep?.work_hours || "").match(/주휴일\s*:\s*([가-힣a-zA-Z]+)/);
     const defaultHoliday = holidayMatch ? holidayMatch[1] : "일";
 
-    const dayHours: Record<string,string> = {};
+    const dayHours: Record<string, string> = {};
     DAYKEYS.forEach(dk => {
       dayHours[`workStart${dk}`] = ws || "09:00";
       dayHours[`workEnd${dk}`] = we || "18:00";
       dayHours[`breakTime${dk}`] = defaultBreak;
     });
 
-    setF(p => ({...p,
-      biz: ep?.business_name||"",
-      bizRegNo: ep?.biz_reg_number||"",
-      ceo: ep?.ceo_name||eu?.real_name||eu?.nickname||"",
-      ceoPhone: ep?.biz_tel||eu?.phone||"",
-      bizAddr: ep?.biz_address||ep?.region||"",
-      samePlace: !ep?.biz_address||ep?.biz_address===ep?.region,
-      workPlace: ep?.region||"",
-      bizType: ep?.business_type||"",
+    setF(p => ({
+      ...p,
+      biz: ep?.business_name || "",
+      bizRegNo: ep?.biz_reg_number || "",
+      ceo: ep?.ceo_name || eu?.real_name || eu?.nickname || "",
+      ceoPhone: ep?.biz_tel || eu?.phone || "",
+      bizAddr: ep?.biz_address || ep?.region || "",
+      samePlace: !ep?.biz_address || ep?.biz_address === ep?.region,
+      workPlace: ep?.region || "",
+      bizType: ep?.business_type || "",
       jobDesc: ep?.business_type ? `${ep.business_type} 관련 업무` : "",
-      worker: wu?.real_name||wu?.nickname||"",
-      workerBirth: wu?.birth_date ? wu.birth_date.replace(/-/g,". ") : "",
-      workerPhone: wu?.phone||"",
-      workerAddr: wu?.address||"",
-      startDate: `${md.getFullYear()}. ${String(md.getMonth()+1).padStart(2,"0")}. ${String(md.getDate()).padStart(2,"0")}.`,
+      worker: wu?.real_name || wu?.nickname || "",
+      workerBirth: wu?.birth_date ? wu.birth_date.replace(/-/g, ". ") : "",
+      workerPhone: wu?.phone || "",
+      workerAddr: wu?.address || "",
+      startDate: `${md.getFullYear()}. ${String(md.getMonth() + 1).padStart(2, "0")}. ${String(md.getDate()).padStart(2, "0")}.`,
       ...dayFlags,
       ...dayHours,
       workStart: ws, workEnd: we,
-      dailyHours: ws&&we ? String(Math.round((parseInt(we)-parseInt(ws))*10)/10) : "",
+      dailyHours: ws && we ? String(Math.round((parseInt(we) - parseInt(ws)) * 10) / 10) : "",
       wage: ep?.wage ? Number(ep.wage).toLocaleString() : "",
       weeklyHoliday: defaultHoliday,
-      contractDate: `${today.getFullYear()}년  ${String(today.getMonth()+1).padStart(2,"0")}월  ${String(today.getDate()).padStart(2,"0")}일`,
+      contractDate: `${today.getFullYear()}년  ${String(today.getMonth() + 1).padStart(2, "0")}월  ${String(today.getDate()).padStart(2, "0")}일`,
     }));
   };
 
-  const workDaysStr = f.workDaysMode==="text" ? f.workDaysText : selectedDays.join("·");
+  const buildFullAddr = (ep: any) => {
+    if (ep?.biz_address) return ep.biz_address;
+    if (ep?.address) return ep.address;
+    // sido/sigungu/eupmyeondong 조합
+    const parts = [ep?.sido, ep?.sigungu, ep?.eupmyeondong].filter(Boolean);
+    if (parts.length > 0) return parts.join(" ");
+    // region + address_detail 조합 (등록 페이지 저장 방식)
+    const region = ep?.region || "";
+    const detail = ep?.address_detail || "";
+    if (region && detail && !region.includes(detail)) return `${region} ${detail}`;
+    return region || detail;
+  };
 
-  // 전화번호 자동 포맷
+  const applyEpToForm = (ep: any, userId: string, wu: any) => {
+    const today = new Date();
+    const fullAddr = buildFullAddr(ep);
+    setF(p => ({
+      ...p,
+      biz: ep?.business_name || "",
+      bizRegNo: ep?.biz_reg_number || "",
+      ceo: ep?.ceo_name || "",
+      ceoPhone: ep?.biz_tel || "",
+      bizAddr: fullAddr,
+      samePlace: true,
+      workPlace: fullAddr,
+      bizType: ep?.business_type || "",
+      jobDesc: ep?.business_type ? `${ep.business_type} 관련 업무` : "",
+      worker: wu?.real_name || wu?.nickname || p.worker,
+      workerBirth: wu?.birth_date ? wu.birth_date.replace(/-/g, ". ") : p.workerBirth,
+      workerPhone: wu?.phone || p.workerPhone,
+      workerAddr: wu?.address || p.workerAddr,
+      contractDate: `${today.getFullYear()}년  ${String(today.getMonth() + 1).padStart(2, "0")}월  ${String(today.getDate()).padStart(2, "0")}일`,
+    }));
+  };
+
+  const workDaysStr = f.workDaysMode === "text" ? f.workDaysText : selectedDays.join("·");
+
   const formatPhone = (v: string) => {
     const n = v.replace(/\D/g, "");
     if (n.length <= 3) return n;
-    if (n.length <= 7) return `${n.slice(0,3)}-${n.slice(3)}`;
-    if (n.length <= 11) return `${n.slice(0,3)}-${n.slice(3,7)}-${n.slice(7)}`;
-    return `${n.slice(0,3)}-${n.slice(3,7)}-${n.slice(7,11)}`;
+    if (n.length <= 7) return `${n.slice(0, 3)}-${n.slice(3)}`;
+    if (n.length <= 11) return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7)}`;
+    return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7, 11)}`;
   };
 
-  // 사업자번호 자동 포맷
   const formatBizNo = (v: string) => {
     const n = v.replace(/\D/g, "");
     if (n.length <= 3) return n;
-    if (n.length <= 5) return `${n.slice(0,3)}-${n.slice(3)}`;
-    return `${n.slice(0,3)}-${n.slice(3,5)}-${n.slice(5,10)}`;
+    if (n.length <= 5) return `${n.slice(0, 3)}-${n.slice(3)}`;
+    return `${n.slice(0, 3)}-${n.slice(3, 5)}-${n.slice(5, 10)}`;
   };
 
-  // 저장 전 검증
   const validate = (): string | null => {
     if (!f.biz.trim()) return "사업체명을 입력해주세요.";
     if (!f.ceo.trim()) return "대표자 성명을 입력해주세요.";
@@ -260,25 +413,27 @@ function ContractContent() {
   const buildPayload = () => ({
     employer_id: selMatch.employer_id,
     worker_id: selMatch.worker_id,
-    start_date: f.startDate.replace(/\.\s*/g,"-").replace(/-$/,"").trim()||null,
-    end_date: f.contractType!=="unlimited"&&f.endDate
-      ? f.endDate.replace(/\.\s*/g,"-").replace(/-$/,"").trim() : null,
-    wage: f.wage ? parseInt(f.wage.replace(/,/g,"")) : null,
+    start_date: f.startDate.replace(/\.\s*/g, "-").replace(/-$/, "").trim() || null,
+    end_date: f.contractType !== "unlimited" && f.endDate
+      ? f.endDate.replace(/\.\s*/g, "-").replace(/-$/, "").trim() : null,
+    wage: f.wage ? parseInt(f.wage.replace(/,/g, "")) : null,
     work_days: workDaysStr,
-    work_hours: f.dailyHours||null,
-    contract_data: {...f, contractType: ct},
-    status: "pending", // 새 계약서는 pending (알바생 동의 후 active)
+    work_hours: f.dailyHours || null,
+    contract_data: { ...f, contractType: ct },
+    status: "pending",
     employer_signed: true,
     worker_signed: false,
     signed_at: new Date().toISOString(),
   });
 
-  const doSave = async (saveMode: "overwrite"|"new") => {
+  const doSave = async (saveMode: "overwrite" | "new") => {
     if (!selMatch) return;
 
-    // 저장 전 검증
     const err = validate();
-    if (err) { showToast(`⚠️ ${err}`, "error"); return; }
+    if (err) {
+      showToast(`⚠️ ${err}`, "error");
+      return;
+    }
 
     setShowSaveModal(false);
     setSaving(true);
@@ -286,13 +441,11 @@ function ContractContent() {
     let error = null;
 
     if (saveMode === "overwrite" && existingContract) {
-      // 덮어쓰기: 동의 초기화
       const r = await supabase.from("contracts")
         .update({ ...payload, status: "pending", worker_signed: false })
         .eq("id", existingContract.id);
       error = r.error;
     } else {
-      // 새 계약서: 기존 계약서들 superseded 처리
       await supabase.from("contracts")
         .update({ status: "superseded" })
         .eq("match_id", selMatch.id)
@@ -304,17 +457,35 @@ function ContractContent() {
     }
 
     if (!error) {
-      if (selMatch.employer_id) {
+      // 1. 대표자 프로필 및 근로자 연락처 동기화
+      if (selMatch?.employer_id) {
         await supabase.from("users").update({ phone: f.ceoPhone }).eq("id", selMatch.employer_id);
+      }
+      if (selEp?.id) {
         await supabase.from("employer_profiles").update({
-          biz_reg_number: f.bizRegNo, ceo_name: f.ceo, biz_address: f.bizAddr, biz_tel: f.ceoPhone,
+          biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
+          address: f.bizAddr, biz_address: f.bizAddr, biz_tel: f.ceoPhone,
+        }).eq("id", selEp.id);
+      } else if (selMatch?.employer_id) {
+        await supabase.from("employer_profiles").update({
+          biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
+          address: f.bizAddr, biz_address: f.bizAddr, biz_tel: f.ceoPhone,
         }).eq("user_id", selMatch.employer_id);
       }
-      if (selMatch.worker_id) {
+      if (selMatch?.worker_id) {
         await supabase.from("users").update({ phone: f.workerPhone, address: f.workerAddr }).eq("id", selMatch.worker_id);
       }
 
-      // 채팅에 시스템 메시지 전송
+      // 2. 최종 계약 정보를 team_members 테이블에 실시간 덮어쓰기 (동기화)
+      if (selMatch.id) {
+        await supabase.from("team_members").update({
+          wage: payload.wage,
+          work_days: payload.work_days,
+          work_hours: payload.work_hours,
+        }).eq("match_id", selMatch.id);
+      }
+
+      // 3. 채팅방 알림 메시지 전송
       const sendMatchId = selMatch.id || matchId;
       if (sendMatchId) {
         const { data: { user } } = await supabase.auth.getUser();
@@ -340,23 +511,24 @@ function ContractContent() {
           }
         }
       }
+
       showToast(saveMode === "overwrite"
         ? "✅ 계약서가 수정됐어요! 알바생 재동의 필요"
         : "✅ 새 계약서가 발행됐어요! 알바생 동의 대기중");
 
-      // from 파라미터 기반 이동
       setTimeout(() => {
         if (fromParam === "chat" && selMatch?.id) {
           router.replace(`/chat/${selMatch.id}`);
         } else if (fromParam === "team") {
           router.back();
         } else {
-          // 기본: 채팅창으로 (계약서는 채팅 기반 흐름)
           if (selMatch?.id) router.replace(`/chat/${selMatch.id}`);
           else router.back();
         }
       }, 1000);
-    } else showToast("저장 오류: " + error.message, "error");
+    } else {
+      showToast("저장 오류: " + error.message, "error");
+    }
     setSaving(false);
   };
 
@@ -371,7 +543,6 @@ function ContractContent() {
 
     if (existing) {
       if (existing.worker_signed) {
-        // 동의 완료 → 무조건 새 계약서 (주의 메시지)
         const confirmed = window.confirm(
           "📄 새 근로계약서 작성\n\n" +
           "⚠️ 주의사항\n" +
@@ -385,7 +556,6 @@ function ContractContent() {
         if (!confirmed) return;
         doSave("new");
       } else {
-        // 미서명 → 선택 모달
         setExistingContract(existing);
         setShowSaveModal(true);
       }
@@ -406,7 +576,7 @@ function ContractContent() {
         scale: 2.5,
         useCORS: true,
         backgroundColor: "#ffffff",
-        width: 794, // 210mm at 96dpi
+        width: 794,
       });
 
       const imgData = canvas.toDataURL("image/png");
@@ -445,9 +615,8 @@ function ContractContent() {
     setTimeout(() => w.print(), 600);
   };
 
-  // ── 계약서 본문 ──
   const ContractBody = () => {
-    const titles: Record<CT,string> = {
+    const titles: Record<CT, string> = {
       parttime: "단시간근로자 표준근로계약서",
       standard_unlimited: "표준근로계약서 (기간의 정함이 없는 경우)",
       standard_fixed: "표준근로계약서 (기간의 정함이 있는 경우)",
@@ -455,166 +624,156 @@ function ContractContent() {
     };
 
     return (
-      <div style={{fontFamily:"'Noto Sans KR',sans-serif",fontSize:"9.5pt",color:"#000",lineHeight:1.6}}>
-        <div className="title">{titles[ct]}</div>
-        <div className="subtitle">(「근로기준법」 제17조에 따른 서면 근로계약)</div>
-        <div className="law" style={{marginBottom:16}}>사업주와 근로자는 다음과 같이 근로계약을 체결한다.</div>
+      <div style={{ fontFamily: "'Noto Sans KR',sans-serif", fontSize: "9.5pt", color: "#000", lineHeight: 1.6 }}>
+        <div className="title" style={{ fontSize: "14pt", fontWeight: 900, textAlign: "center", marginBottom: 6 }}>{titles[ct]}</div>
+        <div className="subtitle" style={{ fontSize: "9pt", color: "#666", textAlign: "center", marginBottom: 12 }}>(「근로기준법」 제17조에 따른 서면 근로계약)</div>
+        <div className="law" style={{ marginBottom: 16, fontSize: "9.5pt" }}>사업주와 근로자는 다음과 같이 근로계약을 체결한다.</div>
 
-        {/* 1. 계약 기간 / 개시일 */}
-        <div className="section">1. 근로계약기간</div>
-        <div className="indent">
+        {/* 1. 계약 기간 */}
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>1. 근로계약기간</div>
+        <div className="indent" style={{ paddingLeft: 12 }}>
           {ct === "standard_unlimited" ? (
             <span>
-              근로개시일: <E v={f.startDate} onChange={set("startDate")} w="140px" ph="년   월   일" /> 부터
+              근로개시일: <E v={f.startDate} ph="년   월   일" /> 부터
             </span>
           ) : (
             <span>
-              근로계약기간: <E v={f.startDate} onChange={set("startDate")} w="140px" ph="년   월   일" /> 부터 &nbsp;
-              <E v={f.endDate} onChange={set("endDate")} w="140px" ph="년   월   일" /> 까지
+              근로계약기간: <E v={f.startDate} ph="년   월   일" /> 부터 &nbsp;
+              <E v={f.endDate} ph="년   월   일" /> 까지
             </span>
           )}
         </div>
 
         {/* 2. 근무장소 */}
-        <div className="section">2. 근무장소</div>
-        <div className="indent">
-          <E v={f.workPlace} onChange={set("workPlace")} w="340px" ph="실제 근무할 장소 주소 입력" />
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>2. 근무장소</div>
+        <div className="indent" style={{ paddingLeft: 12 }}>
+          <E v={f.workPlace} ph="실제 근무할 장소 주소 입력" />
         </div>
 
         {/* 3. 업무내용 */}
-        <div className="section">3. 업무의 내용</div>
-        <div className="indent">
-          <E v={f.jobDesc} onChange={set("jobDesc")} w="340px" ph="담당 직종 및 상세 업무 내용 입력" />
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>3. 업무의 내용</div>
+        <div className="indent" style={{ paddingLeft: 12 }}>
+          <E v={f.jobDesc} ph="담당 직종 및 상세 업무 내용 입력" />
         </div>
 
         {/* 4. 소정근로시간 / 근무 요일 */}
         {ct !== "parttime" ? (
           <>
-            <div className="section">4. 소정근로시간</div>
-            <div className="indent">
-              <E v={f.workStart} onChange={set("workStart")} w="45px" ph="09:00" /> 부터 &nbsp;
-              <E v={f.workEnd} onChange={set("workEnd")} w="45px" ph="18:00" /> 까지 &nbsp;
-              (휴게시간: <E v={f.breakStart} onChange={set("breakStart")} w="45px" ph="12:00" /> ~ &nbsp;
-              <E v={f.breakEnd} onChange={set("breakEnd")} w="45px" ph="13:00" />)
-              <div style={{marginTop:2}}>
-                (1일 소정근로시간: <E v={f.dailyHours} onChange={set("dailyHours")} w="30px" ph="8" />시간, &nbsp;
-                1주 소정근로시간: <E v={f.weeklyHours} onChange={set("weeklyHours")} w="30px" ph="40" />시간)
+            <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>4. 소정근로시간</div>
+            <div className="indent" style={{ paddingLeft: 12 }}>
+              <E v={f.workStart} ph="09:00" /> 부터 &nbsp;
+              <E v={f.workEnd} ph="18:00" /> 까지 &nbsp;
+              (휴게시간: <E v={f.breakStart} ph="12:00" /> ~ &nbsp;
+              <E v={f.breakEnd} ph="13:00" />)
+              <div style={{ marginTop: 2 }}>
+                (1일 소정근로시간: <E v={f.dailyHours} ph="8" />시간, &nbsp;
+                1주 소정근로시간: <E v={f.weeklyHours} ph="40" />시간)
               </div>
             </div>
 
-            <div className="section">5. 근무일 / 휴일</div>
-            <div className="indent">
-              매주 <E v={f.workDaysText} onChange={set("workDaysText")} w="30px" ph="5" />일 근무
-              {f.workDaysMode === "check" && selectedDays.length > 0 && (" (근무일: " + selectedDays.join("·") + ")")}, 주휴일 매주 <E v={f.weeklyHoliday} onChange={set("weeklyHoliday")} w="30px" ph="일" />요일
-              <div className="note" style={{marginTop:2}}>
+            <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>5. 근무일 / 휴일</div>
+            <div className="indent" style={{ paddingLeft: 12 }}>
+              매주 <E v={f.workDaysText} ph="5" />일 근무
+              {f.workDaysMode === "check" && selectedDays.length > 0 && (" (근무일: " + selectedDays.join("·") + ")")}, 주휴일 매주 <E v={f.weeklyHoliday} ph="일" />요일
+              <div className="note" style={{ marginTop: 2, fontSize: "8pt", color: "#666" }}>
                 • 공휴일(대체공휴일 포함)은 근로기준법이 정하는 바에 따르며, 근로자의 날은 유급휴일로 함
               </div>
             </div>
           </>
         ) : (
           <>
-            <div className="section">4. 근로일 및 근로일별 근로시간</div>
-            <div className="indent" style={{overflowX:"auto", marginBottom:4}}>
-              <table style={{width:"100%",minWidth:320,borderCollapse:"collapse",marginBottom:6,tableLayout:"fixed"}}>
+            <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>4. 근로일 및 근로일별 근로시간</div>
+            <div className="indent" style={{ paddingLeft: 12, overflowX: "auto", marginBottom: 4 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 6, tableLayout: "fixed", border: "1px solid #ddd" }}>
                 <tbody>
-                  <tr>
-                    <td className="th2" style={{width:"75px",background:"#f5f5f5",fontWeight:600,textAlign:"center"}}>근무일</td>
+                  <tr style={{ borderBottom: "1px solid #ddd" }}>
+                    <td className="th2" style={{ width: "75px", background: "#f5f5f5", fontWeight: 600, textAlign: "center", padding: "4px" }}>근무일</td>
                     {selectedDays.map(d => (
-                      <td key={d} className="th2" style={{background:"#f5f5f5",fontWeight:600,textAlign:"center"}}>{d}요일</td>
+                      <td key={d} className="th2" style={{ background: "#f5f5f5", fontWeight: 600, textAlign: "center", padding: "4px", borderLeft: "1px solid #ddd" }}>{d}요일</td>
                     ))}
                   </tr>
-                  <tr>
-                    <td className="th" style={{background:"#fff",fontSize:"8.5pt",textAlign:"center"}}>시작 시간</td>
+                  <tr style={{ borderBottom: "1px solid #ddd" }}>
+                    <td className="th" style={{ background: "#fff", fontSize: "8.5pt", textAlign: "center", padding: "4px" }}>시작 시간</td>
                     {selectedDays.map(d => {
                       const idx = DAYS.indexOf(d);
                       const key = "workStart" + DAYKEYS[idx];
                       return (
-                        <td key={d} style={{textAlign:"center",padding:"4px 2px"}}>
-                          <E v={(f as any)[key]} onChange={set(key)} w="42px" ph="09:00" />
+                        <td key={d} style={{ textAlign: "center", padding: "4px 2px", borderLeft: "1px solid #ddd" }}>
+                          <E v={(f as any)[key]} ph="09:00" />
                         </td>
                       );
                     })}
                   </tr>
-                  <tr>
-                    <td className="th" style={{background:"#fff",fontSize:"8.5pt",textAlign:"center"}}>종료 시간</td>
+                  <tr style={{ borderBottom: "1px solid #ddd" }}>
+                    <td className="th" style={{ background: "#fff", fontSize: "8.5pt", textAlign: "center", padding: "4px" }}>종료 시간</td>
                     {selectedDays.map(d => {
                       const idx = DAYS.indexOf(d);
                       const key = "workEnd" + DAYKEYS[idx];
                       return (
-                        <td key={d} style={{textAlign:"center",padding:"4px 2px"}}>
-                          <E v={(f as any)[key]} onChange={set(key)} w="42px" ph="18:00" />
+                        <td key={d} style={{ textAlign: "center", padding: "4px 2px", borderLeft: "1px solid #ddd" }}>
+                          <E v={(f as any)[key]} ph="18:00" />
                         </td>
                       );
                     })}
                   </tr>
-                  <tr>
-                    <td className="th" style={{background:"#fff",fontSize:"8.5pt",textAlign:"center"}}>휴게 (분)</td>
+                  <tr style={{ borderBottom: "1px solid #ddd" }}>
+                    <td className="th" style={{ background: "#fff", fontSize: "8.5pt", textAlign: "center", padding: "4px" }}>휴게 (분)</td>
                     {selectedDays.map(d => {
                       const idx = DAYS.indexOf(d);
                       const key = "breakTime" + DAYKEYS[idx];
                       return (
-                        <td key={d} style={{textAlign:"center",padding:"4px 2px"}}>
-                          <E v={(f as any)[key]} onChange={set(key)} w="28px" ph="30" />분
+                        <td key={d} style={{ textAlign: "center", padding: "4px 2px", borderLeft: "1px solid #ddd" }}>
+                          <E v={(f as any)[key]} ph="30" />분
                         </td>
                       );
                     })}
                   </tr>
                 </tbody>
               </table>
-              <div style={{marginTop:4}}>
-                주휴일: 매주 <E v={f.weeklyHoliday} onChange={set("weeklyHoliday")} w="30px" ph="일" />요일
+              <div style={{ marginTop: 4 }}>
+                주휴일: 매주 <E v={f.weeklyHoliday} ph="일" />요일
               </div>
-              <div className="note" style={{marginTop:2}}>
+              <div className="note" style={{ marginTop: 2, fontSize: "8pt", color: "#666" }}>
                 • 공휴일(대체공휴일 포함)은 근로기준법이 정하는 바에 따르며, 근로자의 날은 유급휴일로 함
               </div>
             </div>
           </>
         )}
 
-        {/* 5 / 6. 임금 조건 */}
-        <div className="section">{ct === "parttime" ? "5" : "6"}. 임금</div>
-        <div className="indent">
-          <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-            <CB checked={f.wageType === "hour"} onChange={v=>v&&set("wageType")("hour")} label="시간급" />
-            <CB checked={f.wageType === "day"} onChange={v=>v&&set("wageType")("day")} label="일급" />
-            <CB checked={f.wageType === "month"} onChange={v=>v&&set("wageType")("month")} label="월급" />
-            &nbsp;: &nbsp;<E v={f.wage} onChange={v => { const n = v.replace(/[^0-9]/g,""); set("wage")(n ? Number(n).toLocaleString() : ""); }} w="80px" ph="10,030" /> 원
+        {/* 임금 조건 */}
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{ct === "parttime" ? "5" : "6"}. 임금</div>
+        <div className="indent" style={{ paddingLeft: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <span>• 임금형태: {f.wageType === "hour" ? "시간급" : f.wageType === "day" ? "일급" : "월급"} </span>
+            &nbsp;: &nbsp;<E v={f.wage} ph="10,030" /> 원
           </div>
 
-          <div style={{marginTop:4,display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
-            • 상여금: &nbsp;
-            <CB checked={f.hasBonus} onChange={setB("hasBonus")} label="있음" />
-            <CB checked={!f.hasBonus} onChange={v=>setB("hasBonus")(!v)} label="없음" />
-            {f.hasBonus && <>(&nbsp;<E v={f.bonusAmount} onChange={set("bonusAmount")} w="80px" ph="금액 입력" /> 원)</>}
+          <div style={{ marginTop: 4 }}>
+            • 상여금: {f.hasBonus ? `있음 (금액: ${f.bonusAmount} 원)` : "없음"}
           </div>
 
-          <div style={{marginTop:4,display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
-            • 그 밖의 수당(약정수당): &nbsp;
-            <CB checked={f.hasExtraWage} onChange={setB("hasExtraWage")} label="있음" />
-            <CB checked={!f.hasExtraWage} onChange={v=>setB("hasExtraWage")(!v)} label="없음" />
-            {f.hasExtraWage && <>(&nbsp;<E v={f.extraWageDetails} onChange={set("extraWageDetails")} w="200px" ph="예: 식대 10만원" />)</>}
+          <div style={{ marginTop: 4 }}>
+            • 그 밖의 수당(약정수당): {f.hasExtraWage ? `있음 (내역: ${f.extraWageDetails})` : "없음"}
           </div>
 
           {ct === "parttime" && (
-            <div style={{marginTop:4}}>
-              • 초과근로에 대한 가산임금률: <E v={f.overtimePremiumRate} onChange={set("overtimePremiumRate")} w="35px" ph="50" /> %
+            <div style={{ marginTop: 4 }}>
+              • 초과근로에 대한 가산임금률: <E v={f.overtimePremiumRate} ph="50" /> %
             </div>
           )}
 
-          <div style={{marginTop:4}}>
-            • 임금지급일: 매월(매주 또는 매일) <E v={f.payDay} onChange={set("payDay")} w="40px" ph="말일" /> 일 (휴일의 경우는 전날 지급)
+          <div style={{ marginTop: 4 }}>
+            • 임금지급일: 매월(매주 또는 매일) <E v={f.payDay} ph="말일" /> 일 (휴일의 경우는 전날 지급)
           </div>
 
-          <div style={{marginTop:4}}>
-            • 지급방법: &nbsp;
-            <CB checked={f.payMethod === "계좌이체"} onChange={v=>v&&set("payMethod")("계좌이체")} label="근로자 명의 계좌 입금" />
-            <CB checked={f.payMethod === "현금"} onChange={v=>v&&set("payMethod")("현금")} label="근로자에게 직접 지급" />
+          <div style={{ marginTop: 4 }}>
+            • 지급방법: {f.payMethod}
           </div>
         </div>
 
-        {/* 6 / 7. 연차유급휴가 */}
-        <div className="section">{ct === "parttime" ? "6" : "7"}. 연차유급휴가</div>
-        <div className="indent">
+        {/* 연차유급휴가 */}
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{ct === "parttime" ? "6" : "7"}. 연차유급휴가</div>
+        <div className="indent" style={{ paddingLeft: 12 }}>
           {ct === "parttime" ? (
             "• 통상근로자의 근로시간에 비례하여 연차유급휴가를 부여함"
           ) : (
@@ -622,115 +781,82 @@ function ContractContent() {
           )}
         </div>
 
-        {/* 연소근로자 전용 가족관계증명서 */}
+        {/* 연소근로자 가족관계증명서 */}
         {ct === "minor" && (
           <>
-            <div className="section">8. 가족관계증명서 및 동의서 구비</div>
-            <div className="indent">
-              • 가족관계기록사항에 관한 증명서 제출 여부: &nbsp;
-              <CB checked={f.hasFamilyCert} onChange={setB("hasFamilyCert")} label="제출함" />
-              <CB checked={!f.hasFamilyCert} onChange={v=>setB("hasFamilyCert")(!v)} label="미제출" />
-              <br/>
-              • 친권자 또는 후견인 동의서 구비 여부: &nbsp;
-              <CB checked={f.hasParentConsent} onChange={setB("hasParentConsent")} label="구비함" />
-              <CB checked={!f.hasParentConsent} onChange={v=>setB("hasParentConsent")(!v)} label="미구비" />
+            <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>8. 가족관계증명서 및 동의서 구비</div>
+            <div className="indent" style={{ paddingLeft: 12 }}>
+              • 가족관계기록사항에 관한 증명서 제출 여부: {f.hasFamilyCert ? "제출함" : "미제출"}
+              <br />
+              • 친권자 또는 후견인 동의서 구비 여부: {f.hasParentConsent ? "구비함" : "미구비"}
             </div>
           </>
         )}
 
-        {/* 7 / 8 / 9. 사회보험 */}
-        <div className="section">{ct === "minor" ? "9" : ct === "parttime" ? "7" : "8"}. 사회보험 적용여부</div>
-        <div className="indent">
-          <div className="ins-row" style={{marginTop:2}}>
-            {[
-              {key:"insEmp", label:"고용보험"},
-              {key:"insAcc", label:"산재보험"},
-              {key:"insPension", label:"국민연금"},
-              {key:"insHealth", label:"건강보험"},
-            ].map(ins => (
-              <div key={ins.key} className="ins-item">
-                <span className="box">{(f as any)[ins.key] ? "✓" : ""}</span>
-                {ins.label}
-                <CB checked={(f as any)[ins.key]} onChange={setB(ins.key)} label="" />
-              </div>
-            ))}
+        {/* 사회보험 */}
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{ct === "minor" ? "9" : ct === "parttime" ? "7" : "8"}. 사회보험 적용여부</div>
+        <div className="indent" style={{ paddingLeft: 12 }}>
+          <div style={{ display: "flex", gap: 12, marginTop: 2 }}>
+            {["고용보험", "산재보험", "국민연금", "건강보험"].map((lbl, idx) => {
+              const keys = ["insEmp", "insAcc", "insPension", "insHealth"];
+              const isChecked = (f as any)[keys[idx]];
+              return (
+                <span key={lbl} style={{ fontSize: "9.5pt" }}>
+                  [{isChecked ? "✓" : " "}] {lbl}
+                </span>
+              );
+            })}
           </div>
         </div>
 
-        {/* 8 / 9 / 10. 교부 의무 */}
-        <div className="section">{ct === "minor" ? "10" : ct === "parttime" ? "8" : "9"}. 근로계약서 교부</div>
-        <div className="indent">
+        {/* 교부 및 성실 이행 */}
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{ct === "minor" ? "10" : ct === "parttime" ? "8" : "9"}. 근로계약서 교부</div>
+        <div className="indent" style={{ paddingLeft: 12, fontSize: "8.5pt", color: "#666" }}>
           • 사업주는 근로계약을 체결함과 동시에 본 계약서를 사본하여 근로자의 교부요구와 관계없이 근로자에게 교부함(근로기준법 제17조 이행)
         </div>
 
-        {/* 9 / 10 / 11. 성실 이행 */}
-        <div className="section">{ct === "minor" ? "11" : ct === "parttime" ? "9" : "10"}. 근로계약 등의 성실한 이행의무</div>
-        <div className="indent">
+        <div className="section" style={{ fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{ct === "minor" ? "11" : ct === "parttime" ? "9" : "10"}. 근로계약 등의 성실한 이행의무</div>
+        <div className="indent" style={{ paddingLeft: 12, fontSize: "8.5pt", color: "#666" }}>
           • 사업주와 근로자는 각자가 근로계약, 취업규칙, 단체협약을 지키고 성실하게 이행하여야 함
         </div>
 
-        {/* 10 / 11 / 12. 기타 */}
-        <div className="section">{ct === "minor" ? "12" : ct === "parttime" ? "10" : "11"}. 그 밖의 사항</div>
-        <div className="indent">
-          {ct === "minor" ? (
-            "• 13세 이상 15세 미만인 자에 대해서는 고용노동부장관의 취직인허증을 교부받아야 함. 이 계약에 정함이 없는 사항은 근로기준법 및 관련 법령에 따름"
-          ) : (
-            "• 이 계약에 정하지 않은 사항은 근로관계법령이 정하는 바에 따름"
-          )}
-        </div>
-
-        {/* 날짜 및 서명 */}
-        <div className="sign-area" style={{marginTop:30}}>
-          <div style={{textAlign:"center",marginBottom:18,fontSize:"9.5pt"}}>
-            <E v={f.contractDate} onChange={set("contractDate")} w="180px" ph="년     월     일" />
+        {/* 서명부 */}
+        <div className="sign-area" style={{ marginTop: 24, borderTop: "1px dashed #bbb", paddingTop: 16 }}>
+          <div style={{ textAlign: "center", marginBottom: 14, fontWeight: 700 }}>
+            {f.contractDate}
           </div>
-          
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {/* 사업주 서명 */}
-            <div style={{background:"#f9f9f9",border:"1px solid #ddd",borderRadius:8,padding:10}}>
-              <span style={{fontWeight:700,fontSize:"10pt",display:"block",marginBottom:4}}>사 업 주 (구인자)</span>
-              <div style={{display:"flex",flexDirection:"column",gap:2,fontSize:"9pt"}}>
-                <div>사업체명 : <E v={f.biz} onChange={set("biz")} w="140px" ph="상호 입력" /> &nbsp;
-                  (사업자번호: <E v={f.bizRegNo} onChange={v => set("bizRegNo")(formatBizNo(v))} w="100px" ph="000-00-00000" />)
-                </div>
-                <div>대 표 자 : <E v={f.ceo} onChange={set("ceo")} w="80px" ph="대표자 성명" /> (서명 또는 날인)</div>
-                <div>주    소 : <E v={f.bizAddr} onChange={set("bizAddr")} w="280px" ph="사업장 소재지 주소 입력" /></div>
-                <div>연 락 처 : <E v={f.ceoPhone} onChange={v => set("ceoPhone")(formatPhone(v))} w="110px" ph="010-0000-0000" /></div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ background: "#f8f9fa", border: "1px solid #ddd", borderRadius: 8, padding: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: "9.5pt", display: "block", marginBottom: 4, color: "#7c3aed" }}>사 업 주 (구인자)</span>
+              <div style={{ fontSize: "8.5pt", color: "#333", display: "flex", flexDirection: "column", gap: 1 }}>
+                <div>사업체명 : {f.biz} &nbsp; (사업자등록번호: {f.bizRegNo})</div>
+                <div>대 표 자 : {f.ceo} &nbsp; (서명/날인)</div>
+                <div>주    소 : {f.bizAddr}</div>
+                <div>연 락 처 : {f.ceoPhone}</div>
               </div>
             </div>
 
-            {/* 근로자 서명 */}
-            <div style={{background:"#f9f9f9",border:"1px solid #ddd",borderRadius:8,padding:10}}>
-              <span style={{fontWeight:700,fontSize:"10pt",display:"block",marginBottom:4}}>근 로 자 (구직자)</span>
-              <div style={{display:"flex",flexDirection:"column",gap:2,fontSize:"9pt"}}>
-                <div>성    명 : <E v={f.worker} onChange={set("worker")} w="80px" ph="근로자 성명" /> &nbsp;
-                  (생년월일: <E v={f.workerBirth} onChange={set("workerBirth")} w="100px" ph="YYYY. MM. DD." />)
-                </div>
-                <div>주    소 : <E v={f.workerAddr} onChange={set("workerAddr")} w="280px" ph="상세 주소(등본 주소) 입력" /></div>
-                <div>연 락 처 : <E v={f.workerPhone} onChange={v => set("workerPhone")(formatPhone(v))} w="110px" ph="010-0000-0000" /> (서명 또는 날인)</div>
+            <div style={{ background: "#f8f9fa", border: "1px solid #ddd", borderRadius: 8, padding: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: "9.5pt", display: "block", marginBottom: 4, color: "#ec4899" }}>근 로 자 (구직자)</span>
+              <div style={{ fontSize: "8.5pt", color: "#333", display: "flex", flexDirection: "column", gap: 1 }}>
+                <div>성    명 : {f.worker} &nbsp; (생년월일: {f.workerBirth})</div>
+                <div>주    소 : {f.workerAddr}</div>
+                <div>연 락 처 : {f.workerPhone} &nbsp; (서명/날인)</div>
               </div>
             </div>
 
-            {/* 연소근로자 친권자 동의서 내장 */}
             {ct === "minor" && (
-              <div style={{background:"#fff3cd",border:"1px solid #ffeeba",borderRadius:8,padding:12,marginTop:12}}>
-                <span style={{fontWeight:700,fontSize:"10.5pt",display:"block",color:"#856404",marginBottom:6,textAlign:"center"}}>
-                  👨‍👩‍👦 친권자 (후견인) 동의서
-                </span>
-                <p style={{fontSize:"8.5pt",color:"#666",lineHeight:1.4,marginBottom:8,textAlign:"center"}}>
-                  본인은 위 연소근로자(만 18세 미만)의 친권자로서,<br/>
-                  위 사업장에서의 표준 근로계약 체결 및 근로 행위에 동의합니다.
+              <div style={{ background: "#fff9db", border: "1px solid #ffe3e3", borderRadius: 8, padding: 10 }}>
+                <span style={{ fontWeight: 700, fontSize: "9.5pt", display: "block", color: "#e8590c", marginBottom: 4, textAlign: "center" }}>👨‍👩‍👦 친권자 (후견인) 동의서</span>
+                <p style={{ fontSize: "8pt", color: "#666", margin: "0 0 6px", textAlign: "center", lineHeight: 1.4 }}>
+                  본인은 위 연소근로자(만 18세 미만)의 친권자로서, 위 매장에서의 근로계약 체결에 동의합니다.
                 </p>
-                <div style={{display:"flex",flexDirection:"column",gap:2,fontSize:"9pt"}}>
-                  <div>친권자 성명 : <E v={f.parentName} onChange={set("parentName")} w="80px" ph="성명" /> &nbsp;
-                    관계 : &nbsp;
-                    <CB checked={f.parentRel==="부"} onChange={v=>v&&set("parentRel")("부")} label="부" />
-                    <CB checked={f.parentRel==="모"} onChange={v=>v&&set("parentRel")("모")} label="모" />
-                    <CB checked={f.parentRel==="기타"} onChange={v=>v&&set("parentRel")("기타")} label="기타" />
-                  </div>
-                  <div>생년월일 : <E v={f.parentBirth} onChange={set("parentBirth")} w="100px" ph="YYYY. MM. DD." /></div>
-                  <div>주    소 : <E v={f.parentAddr} onChange={set("parentAddr")} w="280px" ph="주소 입력" /></div>
-                  <div>연 락 처 : <E v={f.parentTel} onChange={v => set("parentTel")(formatPhone(v))} w="110px" ph="010-0000-0000" /> (서명)</div>
+                <div style={{ fontSize: "8.5pt", color: "#333", display: "flex", flexDirection: "column", gap: 1 }}>
+                  <div>친권자 성명 : {f.parentName} &nbsp; (관계: {f.parentRel})</div>
+                  <div>생년월일 : {f.parentBirth}</div>
+                  <div>주    소 : {f.parentAddr}</div>
+                  <div>연 락 처 : {f.parentTel} &nbsp; (서명)</div>
                 </div>
               </div>
             )}
@@ -741,35 +867,37 @@ function ContractContent() {
   };
 
   if (loading) return (
-    <main style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <p style={{color:"var(--text-muted)"}}>로딩 중...</p>
+    <main style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <p style={{ color: "var(--text-muted)" }}>로딩 중...</p>
       {ToastUI}
     </main>
   );
 
   return (
-    <main style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",maxWidth:480,margin:"0 auto",paddingBottom:80}}>
+    <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", width: "100%", paddingBottom: 80 }}>
+      <style dangerouslySetInnerHTML={{ __html: RESPONSIVE_CSS }} />
+      {ToastUI}
+
       {/* 저장 선택 모달 */}
       {showSaveModal && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:"var(--surface)",borderRadius:"20px 20px 0 0",padding:24,width:"100%",maxWidth:480}}>
-            <p style={{fontSize:15,fontWeight:700,color:"var(--text)",marginBottom:6}}>기존 계약서가 있어요</p>
-            <p style={{fontSize:12,color:"var(--text-muted)",marginBottom:20}}>
-              📄 {existingContract?.contract_data?.contractType === "parttime" ? "단시간근로자" :
-                  existingContract?.contract_data?.contractType === "minor" ? "연소근로자" : "표준"} 근로계약서
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 480 }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>기존 계약서가 존재합니다.</p>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 20 }}>
+              📄 {existingContract?.contract_data?.contractType === "parttime" ? "단시간근로자" : "표준"} 근로계약서
               &nbsp;({new Date(existingContract?.created_at).toLocaleDateString("ko-KR")})
             </p>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <button onClick={() => doSave("overwrite")}
-                style={{background:"linear-gradient(135deg,#7c3aed,#ec4899)",border:"none",borderRadius:14,padding:14,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+                style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 14, padding: 14, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                 ✏️ 기존 계약서 수정 (덮어쓰기)
               </button>
               <button onClick={() => doSave("new")}
-                style={{background:"var(--surface2)",border:"1px solid var(--border)",borderRadius:14,padding:14,color:"var(--text)",fontSize:14,fontWeight:600,cursor:"pointer"}}>
+                style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: 14, color: "var(--text)", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 📄 새 계약서로 추가 (재계약)
               </button>
               <button onClick={() => setShowSaveModal(false)}
-                style={{background:"none",border:"none",padding:10,color:"var(--text-muted)",fontSize:13,cursor:"pointer"}}>
+                style={{ background: "none", border: "none", padding: 10, color: "var(--text-muted)", fontSize: 13, cursor: "pointer" }}>
                 취소
               </button>
             </div>
@@ -778,77 +906,461 @@ function ContractContent() {
       )}
 
       {/* 헤더 */}
-      <div style={{position:"sticky",top:0,zIndex:20,background:"rgba(24,24,27,0.97)",backdropFilter:"blur(12px)",borderBottom:"1px solid var(--border)",padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
-        <button onClick={() => step==="edit" ? setStep("select") : router.back()}
-          style={{background:"none",border:"none",color:"var(--text-muted)",fontSize:20,cursor:"pointer",padding:"0 4px"}}>←</button>
-        <span style={{fontSize:16,fontWeight:700,color:"var(--text)"}}>근로계약서</span>
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)", padding: "12px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: 1200, margin: "0 auto" }}>
+          <button onClick={() => step === "edit" ? setStep("select") : router.back()}
+            style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer", padding: "0 4px" }}>←</button>
+          <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>근로계약서 작성</span>
+        </div>
       </div>
 
       {step === "select" ? (
-        <div style={{padding:16}}>
-          <p style={{fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:12}}>계약서 종류 선택</p>
+        <div style={{ padding: 16, maxWidth: 480, margin: "0 auto" }}>
+
+          {/* 업장 선택 */}
+          {myEps.length > 0 && (
+            <>
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>사업체 선택</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+                {myEps.map(ep => (
+                  <button key={ep.id} onClick={() => {
+                    setSelEp(ep);
+                    applyEpToForm(ep, myUserId, null);
+                  }}
+                    style={{
+                      background: selEp?.id === ep.id ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                      border: "1.5px solid " + (selEp?.id === ep.id ? "#7c3aed" : "var(--border)"),
+                      borderRadius: 20,
+                      padding: "8px 16px",
+                      color: selEp?.id === ep.id ? "#fff" : "var(--text)",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}>
+                    🏢 {ep.business_name || "업장"}
+                  </button>
+                ))}
+              </div>
+              {selEp && (
+                <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", marginBottom: 18, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.7 }}>
+                  {selEp.business_name && <div><span style={{ color: "var(--text)", fontWeight: 700 }}>{selEp.business_name}</span></div>}
+                  {selEp.ceo_name && <div>대표: {selEp.ceo_name}</div>}
+                  {selEp.biz_reg_number && <div>사업자번호: {selEp.biz_reg_number}</div>}
+                  {buildFullAddr(selEp) && <div>주소: {buildFullAddr(selEp)}</div>}
+                  {selEp.biz_tel && <div>연락처: {selEp.biz_tel}</div>}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* 계약서 종류 선택 */}
+          <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>계약서 종류 선택</p>
           {([
-            {id:"parttime" as CT, label:"단시간근로자 표준근로계약서", desc:"주 15시간 미만 또는 단시간 알바 (가장 일반적)"},
-            {id:"standard_unlimited" as CT, label:"표준근로계약서 (무기계약)", desc:"기간의 정함이 없는 일반 근로계약"},
-            {id:"standard_fixed" as CT, label:"표준근로계약서 (기간제)", desc:"근무 기간을 명시하는 계약직 근로계약"},
-            {id:"minor" as CT, label:"연소근로자 표준근로계약서", desc:"만 18세 미만 청소년 — 친권자 동의 포함"},
+            { id: "standard_unlimited" as CT, label: "표준근로계약서 (무기계약)", desc: "기간의 정함이 없는 일반 근로계약" },
+            { id: "standard_fixed" as CT, label: "표준근로계약서 (기간제)", desc: "근무 기간을 명시하는 계약직 근로계약" },
+            { id: "minor" as CT, label: "연소근로자 표준근로계약서", desc: "만 18세 미만 청소년 — 친권자 동의 포함" },
+            { id: "parttime" as CT, label: "단시간근로자 표준근로계약서", desc: "주 15시간 미만 또는 단시간 알바 (가장 일반적)" },
           ]).map(c => (
             <div key={c.id} onClick={() => setCt(c.id)}
-              style={{background:ct===c.id ? "linear-gradient(135deg,#7c3aed15,#ec489915)" : "var(--surface)", border:"1.5px solid " + (ct===c.id ? "#7c3aed" : "var(--border)"), borderRadius:14, padding:"14px 16px", marginBottom:10, cursor:"pointer", transition:"all 0.15s"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid " + (ct===c.id ? "#7c3aed" : "var(--border)"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  {ct===c.id && <div style={{width:10,height:10,borderRadius:"50%",background:"#7c3aed"}} />}
+              style={{ background: ct === c.id ? "linear-gradient(135deg,#7c3aed15,#ec489915)" : "var(--surface)", border: "1.5px solid " + (ct === c.id ? "#7c3aed" : "var(--border)"), borderRadius: 14, padding: "14px 16px", marginBottom: 10, cursor: "pointer", transition: "all 0.15s" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid " + (ct === c.id ? "#7c3aed" : "var(--border)"), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {ct === c.id && <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#7c3aed" }} />}
                 </div>
-                <span style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{c.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{c.label}</span>
               </div>
-              <p style={{fontSize:11,color:"var(--text-muted)",margin:"0 0 0 26px"}}>{c.desc}</p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 0 26px" }}>{c.desc}</p>
             </div>
           ))}
+
+          {/* matchId 있을 때만 매칭 계약 선택 */}
           {matches.length > 1 && <>
-            <p style={{fontSize:13,fontWeight:700,color:"var(--text)",margin:"16px 0 10px"}}>계약 선택</p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", margin: "16px 0 10px" }}>연결된 계약 선택</p>
             {matches.map(m => (
-              <div key={m.id} onClick={() => { setSelMatch(m); initF(m,null,null); }}
-                style={{background:selMatch?.id===m.id?"var(--surface2)":"var(--surface)", border:"1.5px solid " + (selMatch?.id===m.id?"#7c3aed":"var(--border)"), borderRadius:12, padding:"12px 14px", marginBottom:8, cursor:"pointer"}}>
-                <span style={{fontSize:13,color:"var(--text)"}}>계약 #{m.idx} — {m.ep?.business_name||"매장"}</span>
+              <div key={m.id} onClick={() => { setSelMatch(m); initF(m, null, null); }}
+                style={{ background: selMatch?.id === m.id ? "var(--surface2)" : "var(--surface)", border: "1.5px solid " + (selMatch?.id === m.id ? "#7c3aed" : "var(--border)"), borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}>
+                <span style={{ fontSize: 13, color: "var(--text)" }}>계약 #{m.idx} — {m.ep?.business_name || "매장"}</span>
               </div>
             ))}
           </>}
+
           <button onClick={() => setStep("edit")}
-            style={{width:"100%",background:"linear-gradient(135deg,#8b5cf6,#7c3aed)",border:"none",color:"#fff",fontWeight:700,padding:16,borderRadius:16,fontSize:15,cursor:"pointer",marginTop:8}}>
+            style={{ width: "100%", background: "linear-gradient(135deg,#8b5cf6,#7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 16, borderRadius: 16, fontSize: 15, cursor: "pointer", marginTop: 8 }}>
             계약서 작성 시작 →
           </button>
         </div>
       ) : (
-        <div style={{padding:"12px 12px 80px"}}>
-          <div style={{background:"rgba(255,235,59,0.12)",border:"1px solid rgba(255,235,59,0.4)",borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#fbbf24"}}>
-            ✏️ 노란 빈칸을 탭해서 직접 수정 · 저장 후 출력하세요
+        <div className="contract-layout">
+          
+          {/* 📋 모바일/데스크톱 입력 폼 */}
+          <div className="form-section">
+            <div style={cardStyle}>
+              <h3 style={{ fontSize: 14, fontWeight: 900, color: "#fff", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 4 }}>
+                📋 근로계약 상세 정보 입력
+              </h3>
+
+              {/* 탭 헤더 */}
+              <div style={{ display: "flex", gap: 4, overflowX: "auto", paddingBottom: 6, marginBottom: 12 }}>
+                {[
+                  { id: "biz", label: "🏢 사업체" },
+                  { id: "worker", label: "👤 근로자" },
+                  { id: "work", label: "📅 근무일/시간" },
+                  { id: "wage", label: "💰 임금" },
+                  { id: "ins", label: "🛡️ 보험/서명" },
+                ].map(t => (
+                  <button key={t.id} onClick={() => setFormTab(t.id as any)}
+                    style={{
+                      background: formTab === t.id ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "6px 12px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#fff",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* 탭 본문 1: 사업체 */}
+              {formTab === "biz" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {myEps.length > 0 && (
+                    <div>
+                      <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>업장 선택</label>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {myEps.map(ep => (
+                          <button key={ep.id} onClick={() => {
+                            setSelEp(ep);
+                            applyEpToForm(ep, myUserId, null);
+                          }}
+                            style={{
+                              background: selEp?.id === ep.id ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                              border: "1.5px solid " + (selEp?.id === ep.id ? "#7c3aed" : "var(--border)"),
+                              borderRadius: 16,
+                              padding: "5px 12px",
+                              color: selEp?.id === ep.id ? "#fff" : "var(--text)",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}>
+                            {ep.business_name || "업장"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>회사명/상호</label>
+                    <input style={inputStyle} value={f.biz} onChange={e => updateField("biz", e.target.value)} placeholder="예) 파스쿠찌 신창점" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>사업자등록번호</label>
+                    <input style={inputStyle} value={f.bizRegNo} onChange={e => updateField("bizRegNo", formatBizNo(e.target.value))} placeholder="000-00-00000" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>대표자 성명</label>
+                    <input style={inputStyle} value={f.ceo} onChange={e => updateField("ceo", e.target.value)} placeholder="성명 입력" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>대표 연락처</label>
+                    <input style={inputStyle} value={f.ceoPhone} onChange={e => updateField("ceoPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>사업장 소재지 주소</label>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input style={{ ...inputStyle, flex: 1 }} value={f.bizAddr} onChange={e => updateField("bizAddr", e.target.value)} placeholder="주소 입력" readOnly />
+                      <button onClick={() => openAddressSearch("bizAddr")} style={{ ...btnSecondary, width: "auto", fontSize: 11, padding: "10px 12px" }}>🔍 검색</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 탭 본문 2: 근로자 */}
+              {formTab === "worker" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>근로자 이름</label>
+                    <input style={inputStyle} value={f.worker} onChange={e => updateField("worker", e.target.value)} placeholder="근로자 이름" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>생년월일</label>
+                    <input style={inputStyle} value={f.workerBirth} onChange={e => updateField("workerBirth", e.target.value)} placeholder="YYYY. MM. DD." />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>연락처</label>
+                    <input style={inputStyle} value={f.workerPhone} onChange={e => updateField("workerPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>주소 (등본지 주소)</label>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input style={{ ...inputStyle, flex: 1 }} value={f.workerAddr} onChange={e => updateField("workerAddr", e.target.value)} placeholder="주소 입력" readOnly />
+                      <button onClick={() => openAddressSearch("workerAddr")} style={{ ...btnSecondary, width: "auto", fontSize: 11, padding: "10px 12px" }}>🔍 검색</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 탭 본문 3: 근무일 및 시간 */}
+              {formTab === "work" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, color: "var(--text-muted)" }}>계약 개시일</label>
+                      <input style={inputStyle} value={f.startDate} onChange={e => updateField("startDate", e.target.value)} placeholder="YYYY. MM. DD." />
+                    </div>
+                    {ct !== "standard_unlimited" && (
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 11, color: "var(--text-muted)" }}>계약 종료일</label>
+                        <input style={inputStyle} value={f.endDate} onChange={e => updateField("endDate", e.target.value)} placeholder="YYYY. MM. DD." />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>실제 근무장소 주소</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                      <input type="checkbox" checked={f.samePlace} onChange={e => {
+                        const chk = e.target.checked;
+                        updateField("samePlace", chk);
+                        if (chk) updateField("workPlace", f.bizAddr);
+                      }} id="chkSamePlace" />
+                      <label htmlFor="chkSamePlace" style={{ fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>사업장 주소와 동일함</label>
+                    </div>
+                    {!f.samePlace && (
+                      <input style={inputStyle} value={f.workPlace} onChange={e => updateField("workPlace", e.target.value)} placeholder="근무 주소 입력" />
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>담당업무(내용)</label>
+                    <input style={inputStyle} value={f.jobDesc} onChange={e => updateField("jobDesc", e.target.value)} placeholder="예) 홀 서빙 및 결제 업무" />
+                  </div>
+
+                  <div style={divider} />
+
+                  {ct !== "parttime" ? (
+                    <>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>시작 시각</label>
+                          <input style={inputStyle} value={f.workStart} onChange={e => updateField("workStart", e.target.value)} placeholder="09:00" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>종료 시각</label>
+                          <input style={inputStyle} value={f.workEnd} onChange={e => updateField("workEnd", e.target.value)} placeholder="18:00" />
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>휴게 시작</label>
+                          <input style={inputStyle} value={f.breakStart} onChange={e => updateField("breakStart", e.target.value)} placeholder="12:00" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>휴게 종료</label>
+                          <input style={inputStyle} value={f.breakEnd} onChange={e => updateField("breakEnd", e.target.value)} placeholder="13:00" />
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>1일 소정시간(h)</label>
+                          <input style={inputStyle} value={f.dailyHours} onChange={e => updateField("dailyHours", e.target.value)} placeholder="8" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>1주 소정시간(h)</label>
+                          <input style={inputStyle} value={f.weeklyHours} onChange={e => updateField("weeklyHours", e.target.value)} placeholder="40" />
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--text-muted)" }}>주휴일</label>
+                        <input style={inputStyle} value={f.weeklyHoliday} onChange={e => updateField("weeklyHoliday", e.target.value)} placeholder="일" />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 4px" }}>소정 근로요일 선택</p>
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
+                        {DAYS.map((d, i) => {
+                          const key = `workDays${DAYKEYS[i]}`;
+                          const active = (f as any)[key];
+                          return (
+                            <button key={d} onClick={() => updateField(key, !active)}
+                              style={{
+                                background: active ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                                border: "none",
+                                borderRadius: 16,
+                                width: 32,
+                                height: 32,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: "#fff",
+                                cursor: "pointer",
+                              }}>
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {selectedDays.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.15)", padding: 10, borderRadius: 10 }}>
+                          <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>요일별 상세 시간 (미작성 시 기본 09:00~18:00)</p>
+                          {selectedDays.map(d => {
+                            const idx = DAYS.indexOf(d);
+                            const keyStart = "workStart" + DAYKEYS[idx];
+                            const keyEnd = "workEnd" + DAYKEYS[idx];
+                            const keyBreak = "breakTime" + DAYKEYS[idx];
+                            return (
+                              <div key={d} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                <span style={{ fontSize: 11, width: 34, fontWeight: 700 }}>{d}요일:</span>
+                                <input style={{ ...inputStyle, padding: "6px", fontSize: 11 }} value={(f as any)[keyStart]} onChange={e => updateField(keyStart, e.target.value)} placeholder="09:00" />
+                                <span>~</span>
+                                <input style={{ ...inputStyle, padding: "6px", fontSize: 11 }} value={(f as any)[keyEnd]} onChange={e => updateField(keyEnd, e.target.value)} placeholder="18:00" />
+                                <span style={{ fontSize: 10, whiteSpace: "nowrap" }}>휴게(분):</span>
+                                <input style={{ ...inputStyle, padding: "6px", fontSize: 11, width: 46 }} value={(f as any)[keyBreak]} onChange={e => updateField(keyBreak, e.target.value)} placeholder="30" />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* 탭 본문 4: 임금 */}
+              {formTab === "wage" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금 구분</label>
+                    <select style={inputStyle} value={f.wageType} onChange={e => updateField("wageType", e.target.value)}>
+                      <option value="hour">시간급</option>
+                      <option value="day">일급</option>
+                      <option value="month">월급</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금액 (원)</label>
+                    <input style={inputStyle} value={f.wage} onChange={e => {
+                      const n = e.target.value.replace(/[^0-9]/g, "");
+                      updateField("wage", n ? Number(n).toLocaleString() : "");
+                    }} placeholder="최저시급 10,030" />
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <input type="checkbox" checked={f.hasBonus} onChange={e => updateField("hasBonus", e.target.checked)} id="chkBonus" />
+                      <label htmlFor="chkBonus" style={{ fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>상여금 있음</label>
+                    </div>
+                    {f.hasBonus && (
+                      <input style={inputStyle} value={f.bonusAmount} onChange={e => updateField("bonusAmount", e.target.value)} placeholder="연도별 상여 금액" />
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <input type="checkbox" checked={f.hasExtraWage} onChange={e => updateField("hasExtraWage", e.target.checked)} id="chkExtra" />
+                      <label htmlFor="chkExtra" style={{ fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>약정외 수당 있음</label>
+                    </div>
+                    {f.hasExtraWage && (
+                      <input style={inputStyle} value={f.extraWageDetails} onChange={e => updateField("extraWageDetails", e.target.value)} placeholder="상세 내역 (예: 식대 10만원)" />
+                    )}
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금 지급일 (매달 몇 일)</label>
+                    <input style={inputStyle} value={f.payDay} onChange={e => updateField("payDay", e.target.value)} placeholder="예) 10, 25, 말일 등" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금 지급방법</label>
+                    <select style={inputStyle} value={f.payMethod} onChange={e => updateField("payMethod", e.target.value)}>
+                      <option value="계좌이체">근로자 명의 계좌 입금</option>
+                      <option value="현금">현금 직접 지급</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* 탭 본문 5: 사회보험 및 서명 */}
+              {formTab === "ins" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", margin: 0 }}>사회보험 적용여부</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {[
+                      { key: "insEmp", label: "고용보험" },
+                      { key: "insAcc", label: "산재보험" },
+                      { key: "insPension", label: "국민연금" },
+                      { key: "insHealth", label: "건강보험" },
+                    ].map(ins => (
+                      <div key={ins.key} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.15)", padding: 8, borderRadius: 10 }}>
+                        <input type="checkbox" checked={(f as any)[ins.key]} onChange={e => updateField(ins.key, e.target.checked)} id={ins.key} />
+                        <label htmlFor={ins.key} style={{ fontSize: 12, cursor: "pointer" }}>{ins.label}</label>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={divider} />
+
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>작성일 (계약 체결일)</label>
+                    <input style={inputStyle} value={f.contractDate} onChange={e => updateField("contractDate", e.target.value)} placeholder="YYYY년 MM월 DD일" />
+                  </div>
+
+                  {ct === "minor" && (
+                    <div style={{ background: "rgba(251,191,36,0.06)", border: "1px dashed rgba(251,191,36,0.3)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", margin: 0 }}>👨‍👩‍👦 친권자 동의 정보</p>
+                      <input style={inputStyle} value={f.parentName} onChange={e => updateField("parentName", e.target.value)} placeholder="동의자 성명" />
+                      <input style={inputStyle} value={f.parentBirth} onChange={e => updateField("parentBirth", e.target.value)} placeholder="동의자 생년월일" />
+                      <input style={inputStyle} value={f.parentAddr} onChange={e => updateField("parentAddr", e.target.value)} placeholder="동의자 주소" />
+                      <input style={inputStyle} value={f.parentTel} onChange={e => updateField("parentTel", formatPhone(e.target.value))} placeholder="동의자 연락처" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
           </div>
-          {/* 근무 장소 토글 (편집 UI) */}
-          <div style={{background:"var(--surface2)",borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:12,color:"var(--text-muted)",display:"flex",alignItems:"center",gap:8}}>
-            <CB checked={f.samePlace} onChange={v => { setB("samePlace")(v); if(v) set("workPlace")(f.bizAddr); }} label="근무장소 = 사업장 소재지" />
+
+          {/* 📄 인쇄/미리보기 영역 */}
+          <div className="preview-section">
+            <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6, paddingLeft: 4 }}>
+              📄 공식 표준 계약서 미리보기 (실시간 반영)
+            </span>
+            <div id="contract-print" style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: "24px 20px",
+              border: "1px solid #ccc",
+              overflowX: "auto",
+              minWidth: "320px",
+              WebkitOverflowScrolling: "touch"
+            }}>
+              <ContractBody />
+              <p style={{ fontSize: "7.5pt", color: "#bbb", textAlign: "center", marginTop: 16, borderTop: "1px solid #eee", paddingTop: 8 }}>
+                ※ 본 계약서는 파잡(PAZAB) AI 매칭 플랫폼을 통해 작성되었습니다.
+              </p>
+            </div>
           </div>
-          <div id="contract-print" style={{background:"#fff",borderRadius:10,padding:"16px 14px",border:"1px solid #ccc",overflowX:"auto"}}>
-            <ContractBody />
-            <p style={{fontSize:"7.5pt",color:"#bbb",textAlign:"center",marginTop:16,borderTop:"1px solid #eee",paddingTop:8}}>
-              ※ 본 계약서는 파잡(PAZAB) AI 매칭 플랫폼을 통해 작성되었습니다.
-            </p>
-          </div>
-          {/* 공식 양식 숨김 렌더 (인쇄/PDF용) */}
-          <div id="official-form-render" style={{position:"absolute",left:"-9999px",top:0,zIndex:-1,background:"#fff"}}>
+
+          {/* 공식 양식 숨김 렌더 (인쇄/PDF 생성용) */}
+          <div id="official-form-render" style={{ position: "absolute", left: "-9999px", top: 0, zIndex: -1, background: "#fff" }}>
             <ContractOfficialForm data={f} contractType={ct} />
           </div>
-          <div style={{position:"fixed",bottom:0,left:0,right:0,padding:"10px 16px 14px",background:"rgba(24,24,27,0.97)",backdropFilter:"blur(12px)",borderTop:"1px solid var(--border)",maxWidth:480,margin:"0 auto"}}>
-            <div style={{display:"flex",gap:6}}>
+
+          {/* 하단 플로팅 액션 바 */}
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: "10px 16px 14px", background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--border)", maxWidth: 1200, margin: "0 auto", zIndex: 10 }}>
+            <div style={{ display: "flex", gap: 6, maxWidth: 480, margin: "0 auto" }}>
               <button onClick={saveContract} disabled={saving}
-                style={{flex:1,background:"var(--surface2)",border:"1px solid var(--border)",color:"var(--text)",fontWeight:600,padding:"12px 10px",borderRadius:12,fontSize:12,cursor:"pointer"}}>
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: "12px 10px", borderRadius: 12, fontSize: 12, cursor: "pointer" }}>
                 {saving ? "저장 중..." : "💾 저장"}
               </button>
               <button onClick={print}
-                style={{flex:1,background:"var(--surface2)",border:"1px solid var(--border)",color:"var(--text)",fontWeight:600,padding:"12px 10px",borderRadius:12,fontSize:12,cursor:"pointer"}}>
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: "12px 10px", borderRadius: 12, fontSize: 12, cursor: "pointer" }}>
                 📄 화면인쇄
               </button>
               <button onClick={downloadPDF} disabled={saving}
-                style={{flex:2,background:"linear-gradient(135deg,#7c3aed,#ec4899)",border:"none",color:"#fff",fontWeight:700,padding:"12px 10px",borderRadius:12,fontSize:12,cursor:"pointer"}}>
+                style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", color: "#fff", fontWeight: 700, padding: "12px 10px", borderRadius: 12, fontSize: 12, cursor: "pointer" }}>
                 📥 공식 양식 PDF
               </button>
             </div>
@@ -861,7 +1373,7 @@ function ContractContent() {
 
 export default function ContractPage() {
   return (
-    <Suspense fallback={<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}><p style={{color:"var(--text-muted)"}}>로딩 중...</p></div>}>
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}><p style={{ color: "var(--text-muted)" }}>로딩 중...</p></div>}>
       <ContractContent />
     </Suspense>
   );
