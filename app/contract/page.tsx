@@ -114,14 +114,14 @@ function ContractContent() {
   const [selEp, setSelEp] = useState<any>(null);
   const [myUserId, setMyUserId] = useState<string>("");
 
-  // 모바일 폼 아코디언 상태
-  const [formTab, setFormTab] = useState<"biz" | "worker" | "work" | "wage" | "ins">("biz");
+  // 스텝 위자드 상태 (0=사업체, 1=근로자, 2=근무, 3=임금, 4=보험/서명)
+  const [wizardStep, setWizardStep] = useState(0);
 
   const [f, setF] = useState({
     biz: "", bizRegNo: "", ceo: "", ceoPhone: "",
     bizAddr: "", samePlace: true, workPlace: "",
     bizType: "", jobDesc: "",
-    worker: "", workerBirth: "", workerPhone: "", workerAddr: "",
+    worker: "", workerBirth: "", workerPhone: "", workerAddr: "", workerAddrDetail: "",
     contractType: "fixed",
     startDate: "", endDate: "",
     workDaysMon: false, workDaysTue: false, workDaysWed: false,
@@ -387,6 +387,14 @@ function ContractContent() {
     return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7, 11)}`;
   };
 
+  // "YYYY. MM. DD." ↔ "YYYY-MM-DD" (date input 호환)
+  const toDateInput = (v: string) => v.replace(/\.\s*/g, "-").replace(/-$/, "").trim();
+  const fromDateInput = (v: string) => {
+    if (!v) return "";
+    const [y, m, d] = v.split("-");
+    return `${y}. ${m}. ${d}.`;
+  };
+
   const formatBizNo = (v: string) => {
     const n = v.replace(/\D/g, "");
     if (n.length <= 3) return n;
@@ -473,7 +481,7 @@ function ContractContent() {
         }).eq("user_id", selMatch.employer_id);
       }
       if (selMatch?.worker_id) {
-        await supabase.from("users").update({ phone: f.workerPhone, address: f.workerAddr }).eq("id", selMatch.worker_id);
+        await supabase.from("users").update({ phone: f.workerPhone, address: [f.workerAddr, f.workerAddrDetail].filter(Boolean).join(" ") }).eq("id", selMatch.worker_id);
       }
 
       // 2. 최종 계약 정보를 team_members 테이블에 실시간 덮어쓰기 (동기화)
@@ -841,7 +849,7 @@ function ContractContent() {
               <span style={{ fontWeight: 700, fontSize: "9.5pt", display: "block", marginBottom: 4, color: "#ec4899" }}>근 로 자 (구직자)</span>
               <div style={{ fontSize: "8.5pt", color: "#333", display: "flex", flexDirection: "column", gap: 1 }}>
                 <div>성    명 : {f.worker} &nbsp; (생년월일: {f.workerBirth})</div>
-                <div>주    소 : {f.workerAddr}</div>
+                <div>주    소 : {[f.workerAddr, f.workerAddrDetail].filter(Boolean).join(" ")}</div>
                 <div>연 락 처 : {f.workerPhone} &nbsp; (서명/날인)</div>
               </div>
             </div>
@@ -996,38 +1004,69 @@ function ContractContent() {
           {/* 📋 모바일/데스크톱 입력 폼 */}
           <div className="form-section">
             <div style={cardStyle}>
-              <h3 style={{ fontSize: 14, fontWeight: 900, color: "#fff", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 4 }}>
-                📋 근로계약 상세 정보 입력
-              </h3>
+              {/* 스텝 위자드 헤더 */}
+              {(() => {
+                const steps = [
+                  { label: "사업체", icon: "🏢" },
+                  { label: "근로자", icon: "👤" },
+                  { label: "근무", icon: "📅" },
+                  { label: "임금", icon: "💰" },
+                  { label: "보험·서명", icon: "🛡️" },
+                ];
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    {/* 스텝 라벨 */}
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      {steps.map((s, i) => (
+                        <button key={i} onClick={() => setWizardStep(i)}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                            opacity: i === wizardStep ? 1 : 0.45,
+                            transition: "opacity 0.15s",
+                            padding: 0,
+                          }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: "50%",
+                            background: i < wizardStep ? "linear-gradient(135deg,#7c3aed,#ec4899)"
+                              : i === wizardStep ? "linear-gradient(135deg,#8b5cf6,#f472b6)"
+                              : "var(--surface2)",
+                            border: i === wizardStep ? "2px solid #f472b6" : "2px solid transparent",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: i < wizardStep ? 13 : 14,
+                            color: "#fff",
+                            fontWeight: 700,
+                          }}>
+                            {i < wizardStep ? "✓" : s.icon}
+                          </div>
+                          <span style={{ fontSize: 9, color: i === wizardStep ? "#f472b6" : "var(--text-muted)", fontWeight: i === wizardStep ? 700 : 400 }}>
+                            {s.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {/* 진행 바 */}
+                    <div style={{ height: 3, background: "var(--surface2)", borderRadius: 99, overflow: "hidden" }}>
+                      <div style={{
+                        height: "100%",
+                        width: `${(wizardStep / (steps.length - 1)) * 100}%`,
+                        background: "linear-gradient(90deg,#7c3aed,#ec4899)",
+                        borderRadius: 99,
+                        transition: "width 0.3s ease",
+                      }} />
+                    </div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", margin: "10px 0 0" }}>
+                      {steps[wizardStep].icon} {steps[wizardStep].label} 정보
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400, marginLeft: 8 }}>
+                        {wizardStep + 1} / {steps.length}
+                      </span>
+                    </p>
+                  </div>
+                );
+              })()}
 
-              {/* 탭 헤더 */}
-              <div style={{ display: "flex", gap: 4, overflowX: "auto", paddingBottom: 6, marginBottom: 12 }}>
-                {[
-                  { id: "biz", label: "🏢 사업체" },
-                  { id: "worker", label: "👤 근로자" },
-                  { id: "work", label: "📅 근무일/시간" },
-                  { id: "wage", label: "💰 임금" },
-                  { id: "ins", label: "🛡️ 보험/서명" },
-                ].map(t => (
-                  <button key={t.id} onClick={() => setFormTab(t.id as any)}
-                    style={{
-                      background: formTab === t.id ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
-                      border: "none",
-                      borderRadius: 8,
-                      padding: "6px 12px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#fff",
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                    }}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* 탭 본문 1: 사업체 */}
-              {formTab === "biz" && (
+              {/* 스텝 0: 사업체 */}
+              {wizardStep === 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {myEps.length > 0 && (
                     <div>
@@ -1080,244 +1119,356 @@ function ContractContent() {
                 </div>
               )}
 
-              {/* 탭 본문 2: 근로자 */}
-              {formTab === "worker" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* 스텝 1: 근로자 */}
+              {wizardStep === 1 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>근로자 이름</label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>근로자 이름</label>
                     <input style={inputStyle} value={f.worker} onChange={e => updateField("worker", e.target.value)} placeholder="근로자 이름" />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>생년월일</label>
-                    <input style={inputStyle} value={f.workerBirth} onChange={e => updateField("workerBirth", e.target.value)} placeholder="YYYY. MM. DD." />
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>생년월일</label>
+                    <input type="date" style={inputStyle} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>연락처</label>
-                    <input style={inputStyle} value={f.workerPhone} onChange={e => updateField("workerPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" />
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>연락처</label>
+                    <input type="tel" style={inputStyle} value={f.workerPhone} onChange={e => updateField("workerPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" inputMode="tel" />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>주소 (등본지 주소)</label>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input style={{ ...inputStyle, flex: 1 }} value={f.workerAddr} onChange={e => updateField("workerAddr", e.target.value)} placeholder="주소 입력" readOnly />
-                      <button onClick={() => openAddressSearch("workerAddr")} style={{ ...btnSecondary, width: "auto", fontSize: 11, padding: "10px 12px" }}>🔍 검색</button>
-                    </div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>주소 (등본지 주소)</label>
+                    <button onClick={() => openAddressSearch("workerAddr")}
+                      style={{ width: "100%", background: "var(--surface2)", border: "1.5px solid var(--border)", borderRadius: 12, padding: "13px 16px", color: f.workerAddr ? "var(--text)" : "var(--text-muted)", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>🔍</span>
+                      <span>{f.workerAddr || "주소 검색 (도로명/지번)"}</span>
+                    </button>
+                    {f.workerAddr && (
+                      <input
+                        style={{ ...inputStyle, marginTop: 6 }}
+                        value={f.workerAddrDetail}
+                        onChange={e => updateField("workerAddrDetail", e.target.value)}
+                        placeholder="상세주소 입력 (동·호수·층 등)"
+                      />
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* 탭 본문 3: 근무일 및 시간 */}
-              {formTab === "work" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 11, color: "var(--text-muted)" }}>계약 개시일</label>
-                      <input style={inputStyle} value={f.startDate} onChange={e => updateField("startDate", e.target.value)} placeholder="YYYY. MM. DD." />
-                    </div>
-                    {ct !== "standard_unlimited" && (
-                      <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: 11, color: "var(--text-muted)" }}>계약 종료일</label>
-                        <input style={inputStyle} value={f.endDate} onChange={e => updateField("endDate", e.target.value)} placeholder="YYYY. MM. DD." />
-                      </div>
-                    )}
-                  </div>
-
+              {/* 스텝 2: 근무일 및 시간 */}
+              {wizardStep === 2 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {/* 계약 기간 */}
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>실제 근무장소 주소</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                      <input type="checkbox" checked={f.samePlace} onChange={e => {
-                        const chk = e.target.checked;
-                        updateField("samePlace", chk);
-                        if (chk) updateField("workPlace", f.bizAddr);
-                      }} id="chkSamePlace" />
-                      <label htmlFor="chkSamePlace" style={{ fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>사업장 주소와 동일함</label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계약 개시일</label>
+                    <input type="date" style={inputStyle} value={toDateInput(f.startDate)} onChange={e => updateField("startDate", fromDateInput(e.target.value))} />
+                  </div>
+                  {ct !== "standard_unlimited" && (
+                    <div>
+                      <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계약 종료일</label>
+                      <input type="date" style={inputStyle} value={toDateInput(f.endDate)} onChange={e => updateField("endDate", fromDateInput(e.target.value))} />
                     </div>
+                  )}
+
+                  {/* 근무장소 */}
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>실제 근무장소</label>
+                    <button onClick={() => {
+                      updateField("samePlace", !f.samePlace);
+                      if (!f.samePlace) updateField("workPlace", f.bizAddr);
+                    }}
+                      style={{
+                        width: "100%", background: f.samePlace ? "linear-gradient(135deg,#7c3aed20,#ec489920)" : "var(--surface2)",
+                        border: "1.5px solid " + (f.samePlace ? "#7c3aed" : "var(--border)"),
+                        borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 13,
+                        textAlign: "left", cursor: "pointer", fontWeight: f.samePlace ? 700 : 400,
+                      }}>
+                      {f.samePlace ? "✓ 사업장 주소와 동일" : "사업장 주소와 동일 (탭하여 선택)"}
+                    </button>
                     {!f.samePlace && (
-                      <input style={inputStyle} value={f.workPlace} onChange={e => updateField("workPlace", e.target.value)} placeholder="근무 주소 입력" />
+                      <input style={{ ...inputStyle, marginTop: 6 }} value={f.workPlace} onChange={e => updateField("workPlace", e.target.value)} placeholder="근무 주소 입력" />
                     )}
                   </div>
 
+                  {/* 담당업무 preset 버튼 */}
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>담당업무(내용)</label>
-                    <input style={inputStyle} value={f.jobDesc} onChange={e => updateField("jobDesc", e.target.value)} placeholder="예) 홀 서빙 및 결제 업무" />
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>담당업무</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                      {["홀 서빙", "주방 보조", "카운터", "매장 청소", "배달", "재고 관리"].map(preset => (
+                        <button key={preset} onClick={() => updateField("jobDesc", f.jobDesc === preset ? "" : preset)}
+                          style={{
+                            background: f.jobDesc === preset ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                            border: "none", borderRadius: 20, padding: "8px 14px",
+                            color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                          }}>
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                    <input style={inputStyle} value={f.jobDesc} onChange={e => updateField("jobDesc", e.target.value)} placeholder="직접 입력 또는 위에서 선택" />
                   </div>
 
                   <div style={divider} />
 
+                  {/* 근무 요일 (공통) */}
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>근무 요일</label>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {DAYS.map((d, i) => {
+                        const key = `workDays${DAYKEYS[i]}`;
+                        const active = (f as any)[key];
+                        return (
+                          <button key={d} onClick={() => updateField(key, !active)}
+                            style={{
+                              flex: 1, background: active ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                              border: "none", borderRadius: 10, padding: "10px 0",
+                              fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
+                            }}>
+                            {d}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 시간 입력 */}
                   {ct !== "parttime" ? (
                     <>
-                      <div style={{ display: "flex", gap: 10 }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>시작 시각</label>
-                          <input style={inputStyle} value={f.workStart} onChange={e => updateField("workStart", e.target.value)} placeholder="09:00" />
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>출근 시각</label>
+                          <input type="time" style={inputStyle} value={f.workStart} onChange={e => updateField("workStart", e.target.value)} />
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>종료 시각</label>
-                          <input style={inputStyle} value={f.workEnd} onChange={e => updateField("workEnd", e.target.value)} placeholder="18:00" />
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>퇴근 시각</label>
+                          <input type="time" style={inputStyle} value={f.workEnd} onChange={e => updateField("workEnd", e.target.value)} />
                         </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 10 }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>휴게 시작</label>
-                          <input style={inputStyle} value={f.breakStart} onChange={e => updateField("breakStart", e.target.value)} placeholder="12:00" />
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 시작</label>
+                          <input type="time" style={inputStyle} value={f.breakStart} onChange={e => updateField("breakStart", e.target.value)} />
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>휴게 종료</label>
-                          <input style={inputStyle} value={f.breakEnd} onChange={e => updateField("breakEnd", e.target.value)} placeholder="13:00" />
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 종료</label>
+                          <input type="time" style={inputStyle} value={f.breakEnd} onChange={e => updateField("breakEnd", e.target.value)} />
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 10 }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>1일 소정시간(h)</label>
-                          <input style={inputStyle} value={f.dailyHours} onChange={e => updateField("dailyHours", e.target.value)} placeholder="8" />
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>1일 소정시간(h)</label>
+                          <input type="number" inputMode="decimal" style={inputStyle} value={f.dailyHours} onChange={e => updateField("dailyHours", e.target.value)} placeholder="8" />
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)" }}>1주 소정시간(h)</label>
-                          <input style={inputStyle} value={f.weeklyHours} onChange={e => updateField("weeklyHours", e.target.value)} placeholder="40" />
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>1주 소정시간(h)</label>
+                          <input type="number" inputMode="decimal" style={inputStyle} value={f.weeklyHours} onChange={e => updateField("weeklyHours", e.target.value)} placeholder="40" />
                         </div>
                       </div>
                       <div>
-                        <label style={{ fontSize: 11, color: "var(--text-muted)" }}>주휴일</label>
-                        <input style={inputStyle} value={f.weeklyHoliday} onChange={e => updateField("weeklyHoliday", e.target.value)} placeholder="일" />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 4px" }}>소정 근로요일 선택</p>
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
-                        {DAYS.map((d, i) => {
-                          const key = `workDays${DAYKEYS[i]}`;
-                          const active = (f as any)[key];
-                          return (
-                            <button key={d} onClick={() => updateField(key, !active)}
+                        <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>주휴일</label>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {DAYS.map(d => (
+                            <button key={d} onClick={() => updateField("weeklyHoliday", d)}
                               style={{
-                                background: active ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
-                                border: "none",
-                                borderRadius: 16,
-                                width: 32,
-                                height: 32,
-                                fontSize: 12,
-                                fontWeight: 700,
-                                color: "#fff",
-                                cursor: "pointer",
+                                flex: 1, background: f.weeklyHoliday === d ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                                border: "none", borderRadius: 10, padding: "10px 0",
+                                fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
                               }}>
                               {d}
                             </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    selectedDays.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.15)", padding: 12, borderRadius: 12 }}>
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>요일별 근무 시간</p>
+                        {selectedDays.map(d => {
+                          const idx = DAYS.indexOf(d);
+                          const keyStart = "workStart" + DAYKEYS[idx];
+                          const keyEnd = "workEnd" + DAYKEYS[idx];
+                          const keyBreak = "breakTime" + DAYKEYS[idx];
+                          return (
+                            <div key={d}>
+                              <p style={{ fontSize: 12, fontWeight: 700, margin: "0 0 6px" }}>{d}요일</p>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px", gap: 6 }}>
+                                <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyStart]} onChange={e => updateField(keyStart, e.target.value)} />
+                                <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyEnd]} onChange={e => updateField(keyEnd, e.target.value)} />
+                                <div style={{ position: "relative" }}>
+                                  <input type="number" inputMode="numeric" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyBreak]} onChange={e => updateField(keyBreak, e.target.value)} placeholder="30" />
+                                  <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)", pointerEvents: "none" }}>분</span>
+                                </div>
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
-
-                      {selectedDays.length > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.15)", padding: 10, borderRadius: 10 }}>
-                          <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>요일별 상세 시간 (미작성 시 기본 09:00~18:00)</p>
-                          {selectedDays.map(d => {
-                            const idx = DAYS.indexOf(d);
-                            const keyStart = "workStart" + DAYKEYS[idx];
-                            const keyEnd = "workEnd" + DAYKEYS[idx];
-                            const keyBreak = "breakTime" + DAYKEYS[idx];
-                            return (
-                              <div key={d} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <span style={{ fontSize: 11, width: 34, fontWeight: 700 }}>{d}요일:</span>
-                                <input style={{ ...inputStyle, padding: "6px", fontSize: 11 }} value={(f as any)[keyStart]} onChange={e => updateField(keyStart, e.target.value)} placeholder="09:00" />
-                                <span>~</span>
-                                <input style={{ ...inputStyle, padding: "6px", fontSize: 11 }} value={(f as any)[keyEnd]} onChange={e => updateField(keyEnd, e.target.value)} placeholder="18:00" />
-                                <span style={{ fontSize: 10, whiteSpace: "nowrap" }}>휴게(분):</span>
-                                <input style={{ ...inputStyle, padding: "6px", fontSize: 11, width: 46 }} value={(f as any)[keyBreak]} onChange={e => updateField(keyBreak, e.target.value)} placeholder="30" />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </>
+                    )
                   )}
                 </div>
               )}
 
-              {/* 탭 본문 4: 임금 */}
-              {formTab === "wage" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* 스텝 3: 임금 */}
+              {wizardStep === 3 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {/* 임금 구분 버튼 */}
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금 구분</label>
-                    <select style={inputStyle} value={f.wageType} onChange={e => updateField("wageType", e.target.value)}>
-                      <option value="hour">시간급</option>
-                      <option value="day">일급</option>
-                      <option value="month">월급</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금액 (원)</label>
-                    <input style={inputStyle} value={f.wage} onChange={e => {
-                      const n = e.target.value.replace(/[^0-9]/g, "");
-                      updateField("wage", n ? Number(n).toLocaleString() : "");
-                    }} placeholder="최저시급 10,030" />
-                  </div>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <input type="checkbox" checked={f.hasBonus} onChange={e => updateField("hasBonus", e.target.checked)} id="chkBonus" />
-                      <label htmlFor="chkBonus" style={{ fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>상여금 있음</label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>임금 구분</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {[{ v: "hour", label: "시간급" }, { v: "day", label: "일급" }, { v: "month", label: "월급" }].map(o => (
+                        <button key={o.v} onClick={() => updateField("wageType", o.v)}
+                          style={{
+                            flex: 1, background: f.wageType === o.v ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                            border: "none", borderRadius: 12, padding: "13px 0",
+                            color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                          }}>
+                          {o.label}
+                        </button>
+                      ))}
                     </div>
-                    {f.hasBonus && (
-                      <input style={inputStyle} value={f.bonusAmount} onChange={e => updateField("bonusAmount", e.target.value)} placeholder="연도별 상여 금액" />
-                    )}
                   </div>
+
+                  {/* 임금액 */}
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <input type="checkbox" checked={f.hasExtraWage} onChange={e => updateField("hasExtraWage", e.target.checked)} id="chkExtra" />
-                      <label htmlFor="chkExtra" style={{ fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>약정외 수당 있음</label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                      임금액 (원) — 2026년 최저시급 10,030원
+                    </label>
+                    <input type="tel" inputMode="numeric" style={inputStyle} value={f.wage}
+                      onChange={e => {
+                        const n = e.target.value.replace(/[^0-9]/g, "");
+                        updateField("wage", n ? Number(n).toLocaleString() : "");
+                      }} placeholder="10,030" />
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      {["10,030", "11,000", "12,000", "13,000"].map(v => (
+                        <button key={v} onClick={() => updateField("wage", v)}
+                          style={{ flex: 1, background: f.wage === v ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)", border: "none", borderRadius: 8, padding: "8px 0", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                          {v}
+                        </button>
+                      ))}
                     </div>
-                    {f.hasExtraWage && (
-                      <input style={inputStyle} value={f.extraWageDetails} onChange={e => updateField("extraWageDetails", e.target.value)} placeholder="상세 내역 (예: 식대 10만원)" />
-                    )}
                   </div>
+
+                  {/* 상여금 토글 */}
+                  <button onClick={() => updateField("hasBonus", !f.hasBonus)}
+                    style={{ background: f.hasBonus ? "linear-gradient(135deg,#7c3aed20,#ec489920)" : "var(--surface2)", border: "1.5px solid " + (f.hasBonus ? "#7c3aed" : "var(--border)"), borderRadius: 12, padding: "13px 16px", color: "var(--text)", fontSize: 13, textAlign: "left", cursor: "pointer", fontWeight: f.hasBonus ? 700 : 400 }}>
+                    {f.hasBonus ? "✓ 상여금 있음" : "상여금 없음 (탭하여 변경)"}
+                  </button>
+                  {f.hasBonus && (
+                    <input type="tel" inputMode="numeric" style={inputStyle} value={f.bonusAmount} onChange={e => updateField("bonusAmount", e.target.value)} placeholder="상여 금액 (원)" />
+                  )}
+
+                  {/* 기타수당 토글 */}
+                  <button onClick={() => updateField("hasExtraWage", !f.hasExtraWage)}
+                    style={{ background: f.hasExtraWage ? "linear-gradient(135deg,#7c3aed20,#ec489920)" : "var(--surface2)", border: "1.5px solid " + (f.hasExtraWage ? "#7c3aed" : "var(--border)"), borderRadius: 12, padding: "13px 16px", color: "var(--text)", fontSize: 13, textAlign: "left", cursor: "pointer", fontWeight: f.hasExtraWage ? 700 : 400 }}>
+                    {f.hasExtraWage ? "✓ 약정수당 있음" : "약정수당 없음 (탭하여 변경)"}
+                  </button>
+                  {f.hasExtraWage && (
+                    <input style={inputStyle} value={f.extraWageDetails} onChange={e => updateField("extraWageDetails", e.target.value)} placeholder="예) 식대 10만원" />
+                  )}
+
+                  {/* 지급일 버튼 */}
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금 지급일 (매달 몇 일)</label>
-                    <input style={inputStyle} value={f.payDay} onChange={e => updateField("payDay", e.target.value)} placeholder="예) 10, 25, 말일 등" />
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>임금 지급일</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {["5일", "10일", "15일", "20일", "25일", "말일"].map(d => (
+                        <button key={d} onClick={() => updateField("payDay", d.replace("일", ""))}
+                          style={{
+                            background: f.payDay === d.replace("일", "") || f.payDay === d ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                            border: "none", borderRadius: 20, padding: "9px 16px",
+                            color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                          }}>
+                          {d}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* 지급방법 버튼 */}
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>임금 지급방법</label>
-                    <select style={inputStyle} value={f.payMethod} onChange={e => updateField("payMethod", e.target.value)}>
-                      <option value="계좌이체">근로자 명의 계좌 입금</option>
-                      <option value="현금">현금 직접 지급</option>
-                    </select>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>지급방법</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {[{ v: "계좌이체", label: "🏦 계좌이체" }, { v: "현금", label: "💵 현금" }].map(o => (
+                        <button key={o.v} onClick={() => updateField("payMethod", o.v)}
+                          style={{
+                            flex: 1, background: f.payMethod === o.v ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                            border: "none", borderRadius: 12, padding: "13px 0",
+                            color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                          }}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* 탭 본문 5: 사회보험 및 서명 */}
-              {formTab === "ins" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", margin: 0 }}>사회보험 적용여부</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {[
-                      { key: "insEmp", label: "고용보험" },
-                      { key: "insAcc", label: "산재보험" },
-                      { key: "insPension", label: "국민연금" },
-                      { key: "insHealth", label: "건강보험" },
-                    ].map(ins => (
-                      <div key={ins.key} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.15)", padding: 8, borderRadius: 10 }}>
-                        <input type="checkbox" checked={(f as any)[ins.key]} onChange={e => updateField(ins.key, e.target.checked)} id={ins.key} />
-                        <label htmlFor={ins.key} style={{ fontSize: 12, cursor: "pointer" }}>{ins.label}</label>
-                      </div>
-                    ))}
+              {/* 스텝 4: 사회보험 및 서명 */}
+              {wizardStep === 4 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>사회보험 적용 여부 (해당하는 항목 선택)</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      {[
+                        { key: "insEmp", label: "고용보험", icon: "💼" },
+                        { key: "insAcc", label: "산재보험", icon: "🏥" },
+                        { key: "insPension", label: "국민연금", icon: "🏦" },
+                        { key: "insHealth", label: "건강보험", icon: "❤️" },
+                      ].map(ins => {
+                        const on = (f as any)[ins.key];
+                        return (
+                          <button key={ins.key} onClick={() => updateField(ins.key, !on)}
+                            style={{
+                              background: on ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                              border: "2px solid " + (on ? "#7c3aed" : "var(--border)"),
+                              borderRadius: 14, padding: "16px 8px",
+                              color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                              display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                            }}>
+                            <span style={{ fontSize: 22 }}>{ins.icon}</span>
+                            <span>{ins.label}</span>
+                            <span style={{ fontSize: 10, opacity: 0.8 }}>{on ? "적용" : "미적용"}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  <div style={divider} />
-
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)" }}>작성일 (계약 체결일)</label>
-                    <input style={inputStyle} value={f.contractDate} onChange={e => updateField("contractDate", e.target.value)} placeholder="YYYY년 MM월 DD일" />
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계약 체결일</label>
+                    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "13px 16px", fontSize: 13, color: "var(--text)" }}>
+                      {f.contractDate || "오늘 날짜 자동 입력"}
+                    </div>
                   </div>
 
                   {ct === "minor" && (
-                    <div style={{ background: "rgba(251,191,36,0.06)", border: "1px dashed rgba(251,191,36,0.3)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", margin: 0 }}>👨‍👩‍👦 친권자 동의 정보</p>
+                    <div style={{ background: "rgba(251,191,36,0.06)", border: "1px dashed rgba(251,191,36,0.3)", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", margin: 0 }}>👨‍👩‍👦 친권자 동의 정보</p>
                       <input style={inputStyle} value={f.parentName} onChange={e => updateField("parentName", e.target.value)} placeholder="동의자 성명" />
-                      <input style={inputStyle} value={f.parentBirth} onChange={e => updateField("parentBirth", e.target.value)} placeholder="동의자 생년월일" />
+                      <input type="date" style={inputStyle} value={f.parentBirth} onChange={e => updateField("parentBirth", e.target.value)} />
                       <input style={inputStyle} value={f.parentAddr} onChange={e => updateField("parentAddr", e.target.value)} placeholder="동의자 주소" />
-                      <input style={inputStyle} value={f.parentTel} onChange={e => updateField("parentTel", formatPhone(e.target.value))} placeholder="동의자 연락처" />
+                      <input type="tel" inputMode="tel" style={inputStyle} value={f.parentTel} onChange={e => updateField("parentTel", formatPhone(e.target.value))} placeholder="동의자 연락처" />
                     </div>
                   )}
                 </div>
               )}
+
+              {/* 이전 / 다음 네비게이션 */}
+              <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+                {wizardStep > 0 && (
+                  <button onClick={() => setWizardStep(s => s - 1)}
+                    style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: "13px", borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                    ← 이전
+                  </button>
+                )}
+                {wizardStep < 4 ? (
+                  <button onClick={() => setWizardStep(s => s + 1)}
+                    style={{ flex: 2, background: "linear-gradient(135deg,#8b5cf6,#7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: "13px", borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                    다음 →
+                  </button>
+                ) : (
+                  <button onClick={saveContract} disabled={saving}
+                    style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", color: "#fff", fontWeight: 700, padding: "13px", borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                    {saving ? "저장 중..." : "💾 계약서 저장"}
+                  </button>
+                )}
+              </div>
 
             </div>
           </div>
@@ -1351,10 +1502,6 @@ function ContractContent() {
           {/* 하단 플로팅 액션 바 */}
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: "10px 16px 14px", background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--border)", maxWidth: 1200, margin: "0 auto", zIndex: 10 }}>
             <div style={{ display: "flex", gap: 6, maxWidth: 480, margin: "0 auto" }}>
-              <button onClick={saveContract} disabled={saving}
-                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: "12px 10px", borderRadius: 12, fontSize: 12, cursor: "pointer" }}>
-                {saving ? "저장 중..." : "💾 저장"}
-              </button>
               <button onClick={print}
                 style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: "12px 10px", borderRadius: 12, fontSize: 12, cursor: "pointer" }}>
                 📄 화면인쇄
