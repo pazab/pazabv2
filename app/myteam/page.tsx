@@ -810,7 +810,7 @@ function MyTeamPageContent() {
     // 모든 매장 로드
     const { data: stores } = await supabase.from("employer_profiles")
       .select("id, business_name, business_type, region, wage, work_days, work_hours, is_active, image_url")
-      .eq("user_id", uid).eq("is_deleted", false)
+      .eq("user_id", uid).eq("is_deleted", false).not("business_name", "is", null)
       .order("created_at", { ascending: false });
     const storeList = stores || [];
     setMyStores(storeList);

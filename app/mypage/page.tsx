@@ -74,15 +74,15 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* 신뢰도 게이지 바 */}
-      <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 16, padding: "12px 14px", border: "1px solid rgba(255,255,255,0.03)" }}>
+      <div style={{ background: "var(--surface2)", borderRadius: 16, padding: "12px 14px", border: "1px solid var(--card-inner-border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-sub)", display: "flex", alignItems: "center", gap: 4 }}>
             🎯 종합 신뢰도
           </span>
           <span style={{ fontSize: 15, fontWeight: 900, color: scoreColor }}>{scorePercent}점</span>
         </div>
-        <div style={{ width: "100%", height: 10, background: "rgba(0,0,0,0.4)", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.05)" }}>
-          <div style={{ width: `${scorePercent}%`, height: "100%", background: `linear-gradient(90deg, #ec4899, #8b5cf6)`, borderRadius: 6, boxShadow: `0 0 10px ${scoreColor}88` }} />
+        <div style={{ width: "100%", height: 10, background: "var(--progress-track)", borderRadius: 6, overflow: "hidden", border: "1px solid var(--card-inner-border)" }}>
+          <div style={{ width: `${scorePercent}%`, height: "100%", background: `linear-gradient(90deg, #ec4899, #8b5cf6)`, borderRadius: 6 }} />
         </div>
       </div>
 
@@ -97,8 +97,8 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
           {/* 등급 */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 20 }}>{grade.emoji}</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: "#c4b5fd" }}>{grade.name}</span>
-            <span style={{ fontSize: 10, color: "#c4b5fd", background: "rgba(139,92,246,0.15)", padding: "2px 8px", borderRadius: 20, border: "1px solid rgba(139,92,246,0.2)", fontWeight: 700 }}>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "var(--purple-text)" }}>{grade.name}</span>
+            <span style={{ fontSize: 10, color: "var(--purple-text)", background: "var(--chip-purple-bg)", padding: "2px 8px", borderRadius: 20, border: "1px solid var(--chip-purple-border)", fontWeight: 700 }}>
               알바 등급
             </span>
           </div>
@@ -108,7 +108,7 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {workerBadges.map(b => (
                 <button key={b.key} type="button" onClick={() => setSelectedBadge(selectedBadge === b.key ? null : b.key)}
-                  style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "#86efac", cursor: "pointer", fontWeight: 600 }}>
+                  style={{ background: "var(--chip-green-bg)", border: "1px solid var(--chip-green-border)", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "var(--green-text)", cursor: "pointer", fontWeight: 600 }}>
                   {b.emoji} {b.name}
                 </button>
               ))}
@@ -130,8 +130,8 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
           {/* 등급 */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 20 }}>{grade.emoji}</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: "#f472b6" }}>{grade.name}</span>
-            <span style={{ fontSize: 10, color: "#f472b6", background: "rgba(244,114,182,0.15)", padding: "2px 8px", borderRadius: 20, border: "1px solid rgba(244,114,182,0.2)", fontWeight: 700 }}>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "var(--pink-text)" }}>{grade.name}</span>
+            <span style={{ fontSize: 10, color: "var(--pink-text)", background: "var(--chip-pink-bg)", padding: "2px 8px", borderRadius: 20, border: "1px solid var(--chip-pink-border)", fontWeight: 700 }}>
               사장 등급
             </span>
           </div>
@@ -141,7 +141,7 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {employerBadges.map(b => (
                 <button key={b.key} type="button" onClick={() => setSelectedBadge(selectedBadge === b.key ? null : b.key)}
-                  style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "#86efac", cursor: "pointer", fontWeight: 600 }}>
+                  style={{ background: "var(--chip-green-bg)", border: "1px solid var(--chip-green-border)", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "var(--green-text)", cursor: "pointer", fontWeight: 600 }}>
                   {b.emoji} {b.name}
                 </button>
               ))}
@@ -219,7 +219,7 @@ function WorkerProfileStatus({ userId, router, onUpdate }: { userId: string; rou
     <div style={{ textAlign: "center", padding: "10px 0" }}>
       <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 12 }}>아직 구직 공고를 등록하지 않았어요</p>
       <button onClick={() => router.push("/worker/profile?edit=true&return=mypage&section=jobs")}
-        style={{ background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.35)", color: "#f9a8d4", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+        style={{ background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.35)", color: "var(--pink-text)", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
         구직 공고 등록하기 →
       </button>
     </div>
@@ -274,7 +274,7 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
             <div style={{ display: "flex", gap: 8 }}>
               {profile.job_status !== "completed" && (
                 <button onClick={() => router.push(`/worker/profile?edit=true&profileId=${profile.id}&return=mypage&section=jobs`)}
-                  style={{ flex: 1, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
+                  style={{ flex: 1, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
                   ✏️ 수정
                 </button>
               )}
@@ -285,7 +285,7 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
             </div>
             {profile.newQuestionCount > 0 && (
               <button onClick={() => router.push(`/worker/questions?profileId=${profile.id}`)}
-                style={{ width: "100%", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontSize: 12, fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
+                style={{ width: "100%", background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", color: "var(--purple-text)", fontSize: 12, fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
                 📬 사장님 질문 {profile.newQuestionCount}개 확인하기
               </button>
             )}
@@ -357,7 +357,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
     switch (ps) {
       case "interviewing": return { label: "📅 면접 진행중", color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.3)" };
       case "hired": return { label: "✅ 채용 확정", color: "#86efac", bg: "rgba(34,197,94,0.1)", border: "rgba(34,197,94,0.3)" };
-      case "accepted": return { label: "🎉 매칭 성사", color: "#c4b5fd", bg: "rgba(139,92,246,0.1)", border: "rgba(139,92,246,0.3)" };
+      case "accepted": return { label: "🎉 매칭 성사", color: "var(--purple-text)", bg: "rgba(139,92,246,0.1)", border: "rgba(139,92,246,0.3)" };
       case "pending": return { label: "⏳ 대기중", color: "#fbbf24", bg: "rgba(251,191,36,0.05)", border: "var(--border)" };
       case "rejected": return { label: "거절됨", color: "#f87171", bg: "transparent", border: "var(--border)" };
       case "cancelled": return { label: "취소됨", color: "#6b7280", bg: "transparent", border: "var(--border)" };
@@ -413,7 +413,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                 <div style={{ background: "rgba(0,0,0,0.12)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
                   {cp.business_type && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🏷️ {cp.business_type}</span>}
                   {cp.region && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {cp.region}</span>}
-                  {cp.wage && <span style={{ fontSize: 11, color: "#c4b5fd" }}>💰 {cp.wage.toLocaleString()}원</span>}
+                  {cp.wage && <span style={{ fontSize: 11, color: "var(--purple-text)" }}>💰 {cp.wage.toLocaleString()}원</span>}
                   {cp.work_days && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📅 {cp.work_days}</span>}
                 </div>
               )}
@@ -421,7 +421,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                 <div style={{ background: "rgba(0,0,0,0.12)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
                   {cp.desired_type && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🏷️ {cp.desired_type}</span>}
                   {cp.desired_region && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {cp.desired_region}</span>}
-                  {cp.desired_wage && <span style={{ fontSize: 11, color: "#f9a8d4" }}>💰 {cp.desired_wage.toLocaleString()}원↑</span>}
+                  {cp.desired_wage && <span style={{ fontSize: 11, color: "var(--pink-text)" }}>💰 {cp.desired_wage.toLocaleString()}원↑</span>}
                 </div>
               )}
 
@@ -557,7 +557,6 @@ function MyPageContent() {
 
   const [myWorkerProfile, setMyWorkerProfile] = useState<any>(null);
   const [myEmployerProfile, setMyEmployerProfile] = useState<any>(null);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showWorkerCalls, setShowWorkerCalls] = useState(false);
   const [showEmployerCalls, setShowEmployerCalls] = useState(false);
 
@@ -606,7 +605,7 @@ function MyPageContent() {
 
       // 구직 및 매장 공고 최신본 가져오기 (미리보기용)
       const { data: wps } = await supabase.from("worker_profiles").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
-      const { data: eps } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id).eq("is_deleted", false).neq("job_type", "urgent").order("created_at", { ascending: false });
+      const { data: eps } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id).eq("is_deleted", false).neq("job_type", "urgent").not("business_name", "is", null).order("created_at", { ascending: false });
       setMyWorkerProfile(wps?.[0] || null);
       setMyEmployerProfile(eps?.[0] || null);
     } catch (err) { console.error(err); }
@@ -616,7 +615,7 @@ function MyPageContent() {
   const fetchJobs = async (uid: string) => {
     setJobLoading(true);
     try {
-      const { data } = await supabase.from("employer_profiles").select("*").eq("user_id", uid).eq("is_deleted", false).neq("job_type", "urgent");
+      const { data } = await supabase.from("employer_profiles").select("*").eq("user_id", uid).eq("is_deleted", false).neq("job_type", "urgent").not("business_name", "is", null);
       const jobsWithLogs = await Promise.all((data || []).map(async (job: any) => {
         const { count } = await supabase.from("bot_chat_logs")
           .select("*", { count: "exact", head: true })
@@ -901,16 +900,11 @@ function MyPageContent() {
               <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{authEmail}</p>
             </div>
           </div>
-          <div style={{ ...cardInnerStyle, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 16, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ ...cardInnerStyle, background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 16, padding: "14px 16px", marginBottom: 12 }}>
             {/* 등급 + 뱃지 */}
             <UserGradeBadge userId={user.id} trustScore={user.trust_score} userType={user.user_type} />
           </div>
 
-          {/* 내 프로필 카드 미리보기 버튼 */}
-          <button onClick={() => setShowPreviewModal(true)}
-            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", fontWeight: 700, padding: "10px 14px", borderRadius: 14, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            🔍 내 프로필 카드 미리보기
-          </button>
         </div>
 
         {/* 팀·소속 바로가기 */}
@@ -918,13 +912,13 @@ function MyPageContent() {
           <button onClick={() => router.push("/myteam")}
             style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 22 }}>👥</span>
-            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#c4b5fd" }}>내 팀 · 소속</p>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>내 팀 · 소속</p>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>소속 매장 및 팀원 관리</p>
           </button>
           <button onClick={() => setInviteOpen(true)}
             style={{ background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 22 }}>🎫</span>
-            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#f9a8d4" }}>팀원 초대</p>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--pink-text)" }}>팀원 초대</p>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
           </button>
         </div>
@@ -973,7 +967,7 @@ function MyPageContent() {
                     <div style={{ background: "var(--surface)", border: "1px solid rgba(236,72,153,0.12)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
                       <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 10px" }}>아직 러브콜이 없어요</p>
                       <button onClick={() => router.push("/explore?type=worker")}
-                        style={{ background: "rgba(236,72,153,0.12)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", padding: "7px 18px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                        style={{ background: "rgba(236,72,153,0.12)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", padding: "7px 18px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
                         매장 둘러보기 →
                       </button>
                     </div>
@@ -1030,7 +1024,7 @@ function MyPageContent() {
                 <div style={{ textAlign: "center", padding: "12px 0" }}>
                   <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 10 }}>등록된 공고가 없어요</p>
                   <button onClick={() => router.push("/employer/register?return=mypage")}
-                    style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.35)", color: "#c4b5fd", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+                    style={{ background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", color: "var(--purple-text)", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
                     공고 등록하기 →
                   </button>
                 </div>
@@ -1040,20 +1034,20 @@ function MyPageContent() {
                     const order: Record<string, number> = { active: 0, matched: 1, completed: 2, cancelled: 3 };
                     return (order[a.job_status || "active"] ?? 9) - (order[b.job_status || "active"] ?? 9);
                   }).map(job => (
-                    <div key={job.id} style={{ background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 12, padding: 12 }}>
+                    <div key={job.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px" }}>{job.business_name}</p>
+                          <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px", color: "var(--text)" }}>{job.business_name}</p>
                           <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{job.business_type} · {(job.region || "").split(" ").slice(0, 2).join(" ")} · {(job.wage || 0).toLocaleString()}원</p>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                           {job.job_status === "completed" ? (
-                            <span style={{ fontSize: 11, color: "#86efac", fontWeight: 600 }}>✅ 채용완료</span>
+                            <span style={{ fontSize: 11, color: "var(--success-text)", fontWeight: 600 }}>✅ 채용완료</span>
                           ) : job.job_status === "matched" ? (
-                            <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 600 }}>🤝 매칭중</span>
+                            <span style={{ fontSize: 11, color: "#d97706", fontWeight: 600 }}>🤝 매칭중</span>
                           ) : (
                             <>
-                              <span style={{ fontSize: 11, color: job.is_active ? "#86efac" : "var(--text-muted)", fontWeight: 600 }}>{job.is_active ? "모집중" : "비공개"}</span>
+                              <span style={{ fontSize: 11, color: job.is_active ? "var(--success-text)" : "var(--text-muted)", fontWeight: 700 }}>{job.is_active ? "모집중" : "비공개"}</span>
                               <div onClick={() => toggleJobActive(job.id, job.is_active)}
                                 style={{ width: 40, height: 22, borderRadius: 11, background: job.is_active ? "#ec4899" : "var(--surface)", cursor: "pointer", position: "relative", transition: "background 0.2s", border: "1px solid var(--border)" }}>
                                 <div style={{ position: "absolute", top: 2, left: job.is_active ? 19 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
@@ -1065,17 +1059,17 @@ function MyPageContent() {
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
                         {!["completed", "matched"].includes(job.job_status) && (
                           <button onClick={() => router.push(`/employer/register?edit=true&jobId=${job.id}&return=mypage`)}
-                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                             ✏️ 수정
                           </button>
                         )}
                         <button onClick={() => router.replace(`/employer/interview?profileId=${job.id}`)}
-                          style={{ background: job.bot_interview_done ? "rgba(34,197,94,0.1)" : "rgba(139,92,246,0.1)", border: `1px solid ${job.bot_interview_done ? "rgba(34,197,94,0.3)" : "rgba(139,92,246,0.3)"}`, color: job.bot_interview_done ? "#86efac" : "#c4b5fd", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                          style={{ background: job.bot_interview_done ? "var(--chip-green-bg)" : "var(--chip-purple-bg)", border: `1px solid ${job.bot_interview_done ? "var(--chip-green-border)" : "var(--chip-purple-border)"}`, color: job.bot_interview_done ? "var(--success-text)" : "var(--purple-text)", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                           {job.bot_interview_done ? "✅ 봇설정" : "🤖 봇설정"}
                         </button>
                         {job.newQuestionCount > 0 && (
                           <button onClick={() => router.push(`/employer/questions?profileId=${job.id}`)}
-                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                             📬 {job.newQuestionCount}개
                           </button>
                         )}

@@ -69,6 +69,7 @@ function ExploreContent() {
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("추천순");
   const [searchQuery, setSearchQuery] = useState("");
+  const [fabScrolled, setFabScrolled] = useState(false);
   const [showAllSection, setShowAllSection] = useState<string | null>(null);
 
   interface SheetItem {
@@ -137,6 +138,12 @@ function ExploreContent() {
   }, [bottomSheet]);
 
   useEffect(() => { init(); }, []);
+
+  useEffect(() => {
+    const handle = () => setFabScrolled(window.scrollY > 80);
+    window.addEventListener("scroll", handle, { passive: true });
+    return () => window.removeEventListener("scroll", handle);
+  }, []);
 
   const init = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -812,6 +819,57 @@ function ExploreContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 당근 스타일 글쓰기 FAB — BottomNav(80px) 바로 위, PAZ(~152px) 아래 */}
+      {isLoggedIn && (
+        <button
+          onClick={() => {
+            if (viewMode === "worker") {
+              router.push("/employer/register");
+            } else {
+              router.push("/worker/profile?edit=true&new=true&return=explore");
+            }
+          }}
+          style={{
+            position: "fixed",
+            right: 20,
+            bottom: 92,
+            zIndex: 48,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 5,
+            height: 48,
+            minWidth: 48,
+            padding: fabScrolled ? "0 14px" : "0 20px 0 14px",
+            background: viewMode === "worker"
+              ? "linear-gradient(135deg,#7c3aed,#a855f7)"
+              : "linear-gradient(135deg,#ec4899,#f43f5e)",
+            border: "none",
+            borderRadius: 28,
+            cursor: "pointer",
+            boxShadow: viewMode === "worker"
+              ? "0 4px 20px rgba(124,58,237,0.5)"
+              : "0 4px 20px rgba(236,72,153,0.5)",
+            color: "#fff",
+            overflow: "hidden",
+            transition: "padding 0.3s cubic-bezier(.34,1.56,.64,1), box-shadow 0.2s",
+          }}
+        >
+          <span style={{ fontSize: 22, fontWeight: 300, lineHeight: 1, flexShrink: 0 }}>+</span>
+          <span style={{
+            fontSize: 14,
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            maxWidth: fabScrolled ? 0 : 60,
+            opacity: fabScrolled ? 0 : 1,
+            overflow: "hidden",
+            transition: "max-width 0.3s cubic-bezier(.34,1.56,.64,1), opacity 0.2s",
+          }}>
+            {viewMode === "worker" ? "새 공고" : "새 구직"}
+          </span>
+        </button>
       )}
     </main>
   );

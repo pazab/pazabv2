@@ -1,5 +1,5 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-02 (2차) | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-02 (3차) | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
 
@@ -31,6 +31,25 @@
 - TimeWheelPicker/DateWheelPicker 신규(네이티브 input 대체)
 - 알림시스템(lib/notify.ts, NotificationBell, /notifications)
 
+**UI/색상 시인성 전면 개선 (2026-07-02 3차)**
+- globals.css에 라이트/다크 통합 CSS 변수 추가: `--success-text`, `--purple-text`, `--pink-text`, `--card-inner`, `--card-inner-border`, `--progress-track`, `--chip-*-bg/border` 등 (라이트=진한색, 다크=파스텔 유지)
+- mypage 전체: `#86efac`(연초록)·`#c4b5fd`(연보라)·`#f9a8d4`(연핑크) → var() 교체로 흰배경 시인성 확보
+- 종합 신뢰도 게이지 배경 `rgba(255,255,255,0.02)` → `var(--surface2)`, progress track → `var(--progress-track)`
+- 사장님 공고 카드 배경 `rgba(0,0,0,0.2)` → `var(--surface2)`, border → `var(--border)`
+- 봇설정·수정·공고등록 등 버튼 색상 전부 var() 통일
+- "내 프로필 카드 미리보기" 버튼 제거 (미완성 기능, state도 정리)
+
+**빈 매장/공고 노출 버그 수정 (2026-07-02 3차)**
+- 온보딩에서 사장님 선택 시 빈 employer_profiles row 자동 INSERT하던 로직 제거 (app/onboarding/page.tsx)
+- myteam loadTeam 쿼리에 `.not("business_name", "is", null)` 필터 추가 → 불완전 매장 카드 노출 방지
+- mypage fetchJobs 및 미리보기용 eps 쿼리에 동일 필터 추가 → "설정안된거 1개" 노출 방지
+
+**탐색 페이지 당근 스타일 FAB (2026-07-02 3차)**
+- 공고 탭: `[+ 새 공고]` (보라) → `/employer/register`
+- 구직자 탭: `[+ 새 구직]` (핑크) → `/worker/profile?edit=true&new=true`
+- scrollY > 80 → 원형(+) 으로 수축, scrollY ≤ 80 → 필 모양 텍스트 노출 (max-width 트랜지션)
+- 위치: `bottom: 92px` (BottomNav 위, PAZ 기본위치 아래)
+
 **내팀 다중 매장 UI (2026-07-02 2차)**
 - 로그인 후 첫 페이지 라우팅: employer→/myteam, worker→/explore
 - StoreRegisterModal (components/StoreRegisterModal.tsx): 매장 등록/수정 팝업, Kakao 상호명 검색(업종/주소 자동입력), Daum 우편번호, 미디어 업로드(사진10/영상1), 직접입력 토글
@@ -57,6 +76,12 @@
 
 | 이슈 | 원인 | 해결 |
 |---|---|---|
+| 새 계정(hellopazab) 내팀에 "업종미정" 빈 카드 노출 | onboarding에서 사장님 선택 시 business_name 없는 빈 employer_profiles row INSERT | onboarding 자동 INSERT 제거 + 쿼리에 `.not("business_name","is",null)` 필터 |
+| 마이페이지 "설정안된거 1개" 공고 노출 | 위와 동일한 빈 row가 fetchJobs에도 노출됨 | fetchJobs 쿼리 동일 필터 추가 |
+| 라이트모드 텍스트 시인성 불량 | `#86efac`·`#c4b5fd`·`#f9a8d4` 등 다크모드 전용 파스텔 색을 하드코딩 | globals.css에 `--success-text` 등 라이트/다크 분기 CSS 변수 추가 후 전체 교체 |
+
+| 이슈 | 원인 | 해결 |
+|---|---|---|
 | 모바일 로그인 무한루프 | localStorage 기반 세션+PKCE verifier, 인앱브라우저 전환시 유실 | 서버사이드 OAuth 이전, 쿠키 저장 |
 | attendance INSERT 실패 | RLS가 team_members.user_id 참조(없는 컬럼) | worker_id/employer_id 직접비교로 재작성 |
 | myteam 팀원 0명 표시 | select에 없는 컬럼(match_id) 포함 → PostgREST 전체 null 반환 | select에서 제거 |
@@ -70,10 +95,11 @@
 
 ## 다음 작업 (우선순위순)
 
-**P0**
-- [x] patch_employer_multi_biz.sql 실행 완료 (1사장 N업장 마이그레이션)
-- [x] 닉네임 unique index 실행 완료 (patch_nickname_unique.sql)
+**P0 — 내일 바로 시작**
 - [ ] tax_rates 2026 초기값 입력 (건강보험/고용보험 근로자부담률 확정 필요)
+- [ ] hellopazab 계정 Supabase에서 기존 빈 employer_profiles row 직접 삭제 (필터로 막혀도 DB에 잔재)
+- [ ] 탐색 FAB — 로그인 사용자의 user_type 체크 후 탭/역할 불일치 시 처리 (예: 알바생이 공고탭에서 FAB 눌렀을 때)
+- [ ] 탐색 헤더 배경색 라이트모드 대응 (`rgba(24,24,27,0.97)` → 라이트에서 검정으로 보임)
 
 **P1**
 - [ ] lib/taxRates.ts + calcDailyWorkerTax()/calcInsuranceEligibility() 구현, payslip 발행 로직에 patch
@@ -85,11 +111,11 @@
 - [ ] 공고등록(employer/register)에서 공고유형(정기/단기/긴급대타) 항목 제거 (매장 등록과 분리됨)
 
 **P2**
+- [ ] HEXACO 5턴 압축 CTA화 — explore 배너 진입으로 설계 확정, /interview 라우트 미구현 (/personality 페이지는 있으나 /interview 없어 404)
 - [ ] employer_profiles.geo_radius_meters (GPS 반경 200m 고정 → 사장님 설정 가능하게)
 - [ ] 웹푸시 실사용 테스트 미완료
 - [ ] 대타 SOS nearby_workers RPC 실연동 점검
 - [ ] worker_type(일용/단시간상용) 자동판정 vs 수동선택 미결정
-- [ ] HEXACO 5턴 압축 CTA화 (탐색화면 배너 진입) 미착수
 - [ ] 딥링크(/d/[code]) 카톡공유 SOS 미착수
 
 **보류/전략만 확정**

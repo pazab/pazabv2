@@ -16,6 +16,21 @@
   --primary-light: rgba(139, 92, 246, 0.08);
   --primary-border: rgba(139, 92, 246, 0.2);
   --accent: #ec4899;
+
+  /* 라이트 전용 — 다크에서 재정의 */
+  --success-text: #15803d;
+  --purple-text: #6d28d9;
+  --pink-text: #be185d;
+  --card-inner: rgba(0, 0, 0, 0.04);
+  --card-inner-border: rgba(0, 0, 0, 0.07);
+  --progress-track: rgba(0, 0, 0, 0.10);
+  --chip-purple-bg: rgba(109, 40, 217, 0.10);
+  --chip-purple-border: rgba(109, 40, 217, 0.25);
+  --chip-pink-bg: rgba(190, 24, 93, 0.10);
+  --chip-pink-border: rgba(190, 24, 93, 0.25);
+  --chip-green-bg: rgba(21, 128, 61, 0.10);
+  --chip-green-border: rgba(21, 128, 61, 0.25);
+  --green-text: #15803d;
 }
 
 @theme inline {
@@ -42,6 +57,21 @@
     --primary-light: rgba(139, 92, 246, 0.15);
     --primary-border: rgba(139, 92, 246, 0.3);
     --accent: #ec4899;
+
+    /* 다크 전용 재정의 */
+    --success-text: #86efac;
+    --purple-text: #c4b5fd;
+    --pink-text: #f472b6;
+    --card-inner: rgba(255, 255, 255, 0.04);
+    --card-inner-border: rgba(255, 255, 255, 0.08);
+    --progress-track: rgba(0, 0, 0, 0.45);
+    --chip-purple-bg: rgba(139, 92, 246, 0.15);
+    --chip-purple-border: rgba(139, 92, 246, 0.30);
+    --chip-pink-bg: rgba(236, 72, 153, 0.15);
+    --chip-pink-border: rgba(236, 72, 153, 0.30);
+    --chip-green-bg: rgba(34, 197, 94, 0.12);
+    --chip-green-border: rgba(34, 197, 94, 0.28);
+    --green-text: #86efac;
   }
 }
 

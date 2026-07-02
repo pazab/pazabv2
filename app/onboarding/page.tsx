@@ -25,19 +25,6 @@ export default function OnboardingPage() {
 
       if (err) throw err
 
-      if (role === 'employer') {
-        const { data: existing } = await supabase
-          .from('employer_profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle()
-        if (!existing) {
-          await supabase.from('employer_profiles').insert({
-            user_id: user.id,
-            is_active: false,
-          })
-        }
-      }
 
       router.push('/')
     } catch (e) {
