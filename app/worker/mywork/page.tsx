@@ -253,7 +253,7 @@ export default function MyWorkPage() {
                               color: m.contractStatus==="done" ? "#10b981" :
                                      m.contractStatus==="pending" ? "#f59e0b" : "#ef4444",
                             }}>
-                            {m.contractStatus==="done" ? "📄 계약 완료" :
+                            {m.contractStatus==="done" ? "📄 정상계약 완료" :
                              m.contractStatus==="pending" ? "⏳ 서명 대기" : "⚠️ 계약서 미작성"}
                           </button>
                         )}

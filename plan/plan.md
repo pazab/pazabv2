@@ -1,5 +1,5 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-02 (3차) | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-03 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
 
@@ -93,22 +93,77 @@
 | Supabase Storage 업로드 실패 | 코드가 "avatars" 버킷 참조, v2 프로젝트엔 "media" 버킷만 존재 | 전체 코드에서 "avatars"→"media" 교체, media 버킷 RLS 정책 추가 |
 | employer_profiles 컬럼 없음 오류 | v2_schema.sql이 최소 구성이라 코드에서 참조하는 컬럼 대부분 누락 | patch_missing_columns.sql 작성 및 실행 |
 
+**구현 완료 (2026-07-03)**
+
+**라이트모드·UX 버그 수정**
+- globals.css `--nav-bg` / `--nav-border` / `--search-bg` / `--search-border` CSS 변수 추가 (라이트=흰배경, 다크=기존 유지)
+- 탐색 헤더·검색창 배경 하드코딩 → var() 교체
+- 탐색 FAB user_type 체크: 알바생이 공고탭 FAB 누르면 구직 프로필로, 사장님이 구직탭 FAB 누르면 공고 등록으로
+
+**employer_profiles is_deleted null-safe 전체 수정**
+- myteam / mypage / invite / contract 페이지 `.eq("is_deleted", false)` → `.or("is_deleted.is.null,is_deleted.eq.false")` 전환
+- 원인: patch_missing_columns.sql로 추가된 컬럼 기존 row의 기본값이 null이라 필터에서 걸러짐
+
+**매장 삭제 안전장치 + 팀원 퇴사처리**
+- 매장 삭제 하드 DELETE → soft delete (`is_deleted:true, is_active:false`)
+- 팀원 있으면 삭제 모달에 명단 표시 + "퇴사처리 후 삭제" 원클릭
+- 팀원 카드에 개별 "퇴사" 버튼 추가 (status='left')
+
+**직원 서류 보관함 신규 (app/employer/records)**
+- 전·현직 팀원 전체 목록 (재직/퇴사 필터)
+- 개인별: 근무조건·계약서 목록(서명상태)·월별 근태기록
+- 법정 보존기간 표시 (3년/5년) + 만료일 색상 경고
+- 내팀 하단 "📂 직원 서류 보관함" 진입 버튼
+
+**계약서 위자드 개선**
+- 담당업무 다중선택 (쉼표 join 저장), 프리셋 2종 추가 (음료 제조·포장마감)
+- 근무요일 선택 시 주휴일 자동 추천 (첫 번째 쉬는 날)
+- 주휴일 라벨 → "주휴일 (유급 휴무일 · 하루치 추가 지급)"
+- 주휴일 버튼: 근무일 흐리게·쉬는날 보라색 강조
+- 보험 카드 미선택 시 `color:"#fff"` → `var(--text)` (라이트모드 대응)
+- 연장근로·야간근로·주휴수당 자동계산 패널 (임금 스텝)
+  - 주 연장 12h 초과 시 빨간 경고 (근로기준법 제53조)
+  - 최저임금 미달 시 경고 + 벌칙 안내
+- 스텝4 첨부서류 확인 체크리스트: 보건증·신분증·통장사본·친권자동의서
+
+**최저임금 동적 관리 (lib/minWage.ts)**
+- 연도별 최저시급 테이블 (2024~2026)
+- 근무 시작일 기준 적용, 계약서 전체 하드코딩 제거
+- tax_rates DB 구현 후 마이그레이션 예정
+
 ## 다음 작업 (우선순위순)
 
-**P0 — 내일 바로 시작**
+**P0**
 - [ ] tax_rates 2026 초기값 입력 (건강보험/고용보험 근로자부담률 확정 필요)
-- [ ] hellopazab 계정 Supabase에서 기존 빈 employer_profiles row 직접 삭제 (필터로 막혀도 DB에 잔재)
-- [ ] 탐색 FAB — 로그인 사용자의 user_type 체크 후 탭/역할 불일치 시 처리 (예: 알바생이 공고탭에서 FAB 눌렀을 때)
-- [ ] 탐색 헤더 배경색 라이트모드 대응 (`rgba(24,24,27,0.97)` → 라이트에서 검정으로 보임)
+- [ ] job_credentials 테이블 생성 + 보건증·식품위생사 등 시드 데이터 INSERT (현재 테이블 없음 — 코드만 존재)
+  ```sql
+  CREATE TABLE IF NOT EXISTS job_credentials (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    category_name text,
+    duty_name text,
+    name text NOT NULL,
+    is_mandatory_by_law boolean DEFAULT false,
+    description text,
+    created_at timestamptz DEFAULT now()
+  );
+  INSERT INTO job_credentials (category_name, duty_name, name, is_mandatory_by_law, description) VALUES
+    ('음식점', NULL, '보건증', true, '식품위생법 제40조 — 식품영업 종사자 필수, 유효기간 1년'),
+    ('카페', NULL, '보건증', true, '식품위생법 제40조'),
+    ('편의점', NULL, '보건증', false, '식품 취급 시 권장'),
+    (NULL, NULL, '식품위생사', false, '식품위생 전문 자격증'),
+    (NULL, NULL, '조리사 면허', false, '한식/양식/중식/일식/복어');
+  ```
+- [ ] 탐색 FAB — `userType === "both"` 케이스 처리 (현재 employer 우선)
 
 **P1**
 - [ ] lib/taxRates.ts + calcDailyWorkerTax()/calcInsuranceEligibility() 구현, payslip 발행 로직에 patch
-- [ ] app/admin/tax-rates/page.tsx (hellopazab 전용) 구현
+- [ ] app/admin/tax-rates/page.tsx (hellopazab 전용) 구현 — 최저임금도 여기서 관리
 - [ ] 계약서 진입점 재설계: matchId 없이도 team_member_id 기반으로 직접 작성 가능하게
 - [ ] 근태 전체보기 /myteam/attendance?memberId=xxx 미구현
 - [ ] 사장님 팀원상세 /employer/team/[id] 근무조건 수정 기능
 - [ ] team_members.employer_profile_id 연결: 초대/계약 시 어느 매장 소속인지 연결 (현재 미연결 상태)
 - [ ] 공고등록(employer/register)에서 공고유형(정기/단기/긴급대타) 항목 제거 (매장 등록과 분리됨)
+- [ ] 직원 서류 보관함에 payslip 섹션 추가 (급여 구현 후)
 
 **P2**
 - [ ] HEXACO 5턴 압축 CTA화 — explore 배너 진입으로 설계 확정, /interview 라우트 미구현 (/personality 페이지는 있으나 /interview 없어 404)
@@ -117,6 +172,9 @@
 - [ ] 대타 SOS nearby_workers RPC 실연동 점검
 - [ ] worker_type(일용/단시간상용) 자동판정 vs 수동선택 미결정
 - [ ] 딥링크(/d/[code]) 카톡공유 SOS 미착수
+- [ ] worker_profile에 외부 경력 입력 기능 (이전 직장)
 
 **보류/전략만 확정**
 - 대타 2-Tier(검증✅/신규🔵) 풀 로직: worker_profiles.is_verified 캐시 설계는 됐으나 코드 미구현
+- 급여 자동이체: 토스페이먼츠 API 연동 필요 (사업자 계약 선행)
+- 주민번호/통장사본 DB 저장: 암호화 설계 후 P3으로

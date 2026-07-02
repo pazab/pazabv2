@@ -240,6 +240,9 @@ export default function TeamMemberPage() {
       .eq("employer_id", empId).eq("worker_id", wrkId)
       .order("created_at", { ascending: false });
     setContracts(data || []);
+    if (!data || data.length === 0) {
+      setContractOpen(true);
+    }
   }
 
   async function loadPayslips(tmId: string) {
@@ -682,7 +685,7 @@ export default function TeamMemberPage() {
                           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
                             {isSuperseded ? "📋 대체된 계약" : isLatest ? "📄 현재 계약" : "📋 이전 계약"}
                           </span>
-                          {isSigned && !isSuperseded && <span style={{ fontSize: 10, background: "#10b98120", color: "#10b981", borderRadius: 6, padding: "1px 6px" }}>✅ 서명완료</span>}
+                          {isSigned && !isSuperseded && <span style={{ fontSize: 10, background: "#10b98120", color: "#10b981", borderRadius: 6, padding: "1px 6px" }}>🎉 정상계약 완료</span>}
                           {isPending && <span style={{ fontSize: 10, background: "#f59e0b20", color: "#f59e0b", borderRadius: 6, padding: "1px 6px" }}>⏳ 서명대기</span>}
                           {isSuperseded && <span style={{ fontSize: 10, background: "var(--surface2)", color: "var(--text-muted)", borderRadius: 6, padding: "1px 6px" }}>🔒 대체됨</span>}
                         </div>

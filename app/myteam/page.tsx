@@ -810,7 +810,7 @@ function MyTeamPageContent() {
     // 모든 매장 로드
     const { data: stores } = await supabase.from("employer_profiles")
       .select("id, business_name, business_type, region, wage, work_days, work_hours, is_active, image_url")
-      .eq("user_id", uid).eq("is_deleted", false).not("business_name", "is", null)
+      .eq("user_id", uid).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null)
       .order("created_at", { ascending: false });
     const storeList = stores || [];
     setMyStores(storeList);
@@ -1131,7 +1131,18 @@ function MyTeamPageContent() {
                                   }} style={{ background:m.member_role==="manager"?"#f59e0b20":"var(--surface2)", border:`1px solid ${m.member_role==="manager"?"#f59e0b":"var(--border)"}`, borderRadius:7, padding:"3px 7px", fontSize:10, color:m.member_role==="manager"?"#f59e0b":"var(--text-muted)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     {m.member_role === "manager" ? "해제" : "매니저"}
                                   </button>
-                                  <span style={{ color:"var(--text-muted)", fontSize:15, cursor:"pointer" }} onClick={() => router.push(`/employer/team/${m.id}`)}>›</span>
+                                  <button onClick={async e => {
+                                    e.stopPropagation();
+                                    if (!confirm(`${name}님을 퇴사 처리하시겠어요?`)) return;
+                                    await supabase.from("team_members").update({ status: "left" }).eq("id", m.id);
+                                    setMembersByStore(prev => {
+                                      const u = { ...prev };
+                                      u[activeStore.id] = (u[activeStore.id]||[]).filter((tm: any) => tm.id !== m.id);
+                                      return u;
+                                    });
+                                  }} style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:7, padding:"3px 7px", fontSize:10, color:"#f87171", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
+                                    퇴사
+                                  </button>
                                 </div>
                               </div>
                             );
@@ -1139,10 +1150,14 @@ function MyTeamPageContent() {
                         </div>
                       </div>
 
-                      {/* 매장 추가 */}
+                      {/* 매장 추가 + 서류 보관함 */}
                       <button onClick={() => { setEditingStore(null); setStoreModalOpen(true); }}
                         style={{ width:"100%", marginTop:10, background:"none", border:"1.5px dashed var(--border)", borderRadius:14, padding:"10px", color:"var(--text-muted)", fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
                         + 매장 추가하기
+                      </button>
+                      <button onClick={() => router.push("/employer/records")}
+                        style={{ width:"100%", marginTop:6, background:"rgba(139,92,246,0.08)", border:"1px solid rgba(139,92,246,0.2)", borderRadius:14, padding:"10px", color:"var(--purple-text)", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                        📂 직원 서류 보관함
                       </button>
                     </div>
                   );
@@ -1162,37 +1177,75 @@ function MyTeamPageContent() {
         }}
       />
       {/* 매장 삭제 확인 팝업 */}
-      {deleteTarget && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px" }}>
-          <div style={{ background:"var(--surface)", borderRadius:20, padding:"24px 20px", width:"100%", maxWidth:320 }}>
-            <div style={{ fontSize:36, textAlign:"center", marginBottom:12 }}>🗑️</div>
-            <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", textAlign:"center", margin:"0 0 8px" }}>매장 삭제</p>
-            <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", margin:"0 0 20px", lineHeight:1.5 }}>
-              <strong style={{ color:"var(--text)" }}>{deleteTarget.business_name}</strong>을(를) 삭제하면<br/>팀원 연결 정보도 함께 해제됩니다.
-            </p>
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={() => setDeleteTarget(null)}
-                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"11px", fontSize:14, color:"var(--text-muted)", cursor:"pointer", fontWeight:600 }}>
-                취소
-              </button>
-              <button onClick={async () => {
-                const { error } = await supabase
-                  .from("employer_profiles")
-                  .delete()
-                  .eq("id", deleteTarget.id)
-                  .eq("user_id", user!.id);
-                if (error) { alert("삭제 실패: " + error.message); return; }
-                setDeleteTarget(null);
-                if (activeStoreId === deleteTarget.id) setActiveStoreId(null);
-                if (user?.id) loadTeam(user.id);
-              }}
-                style={{ flex:1, background:"#ef4444", border:"none", borderRadius:12, padding:"11px", fontSize:14, color:"#fff", cursor:"pointer", fontWeight:700 }}>
-                삭제
-              </button>
+      {deleteTarget && (() => {
+        const storeMembers = (membersByStore[deleteTarget.id] || []);
+        const hasMembers = storeMembers.length > 0;
+        const doDelete = async () => {
+          // 팀원 전원 퇴사처리
+          if (hasMembers) {
+            const ids = storeMembers.map((m: any) => m.id);
+            await supabase.from("team_members").update({ status: "left" }).in("id", ids);
+          }
+          // soft delete
+          const { error } = await supabase.from("employer_profiles")
+            .update({ is_deleted: true, is_active: false })
+            .eq("id", deleteTarget.id).eq("user_id", user!.id);
+          if (error) { alert("삭제 실패: " + error.message); return; }
+          setDeleteTarget(null);
+          if (activeStoreId === deleteTarget.id) setActiveStoreId(null);
+          if (user?.id) loadTeam(user.id);
+        };
+        return (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px" }}>
+            <div style={{ background:"var(--surface)", borderRadius:20, padding:"24px 20px", width:"100%", maxWidth:320 }}>
+              <div style={{ fontSize:36, textAlign:"center", marginBottom:12 }}>🗑️</div>
+              <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", textAlign:"center", margin:"0 0 8px" }}>매장 삭제</p>
+              {hasMembers ? (
+                <>
+                  <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", margin:"0 0 12px", lineHeight:1.5 }}>
+                    <strong style={{ color:"#f87171" }}>{storeMembers.length}명</strong>의 팀원이 있어요.<br/>삭제하면 전원 퇴사 처리됩니다.
+                  </p>
+                  <div style={{ background:"var(--surface2)", borderRadius:10, padding:"8px 12px", marginBottom:16, maxHeight:120, overflowY:"auto" }}>
+                    {storeMembers.map((m: any) => (
+                      <div key={m.id} style={{ fontSize:12, color:"var(--text-muted)", padding:"3px 0", display:"flex", alignItems:"center", gap:6 }}>
+                        <span>👤</span>
+                        <span>{m.worker?.nickname || "팀원"}</span>
+                        {m.member_role === "manager" && <span style={{ fontSize:10, color:"#f59e0b" }}>매니저</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => setDeleteTarget(null)}
+                      style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"11px", fontSize:13, color:"var(--text-muted)", cursor:"pointer", fontWeight:600 }}>
+                      취소
+                    </button>
+                    <button onClick={doDelete}
+                      style={{ flex:2, background:"#ef4444", border:"none", borderRadius:12, padding:"11px", fontSize:13, color:"#fff", cursor:"pointer", fontWeight:700 }}>
+                      퇴사처리 후 삭제
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", margin:"0 0 20px", lineHeight:1.5 }}>
+                    <strong style={{ color:"var(--text)" }}>{deleteTarget.business_name}</strong><br/>매장을 삭제할까요?
+                  </p>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => setDeleteTarget(null)}
+                      style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"11px", fontSize:14, color:"var(--text-muted)", cursor:"pointer", fontWeight:600 }}>
+                      취소
+                    </button>
+                    <button onClick={doDelete}
+                      style={{ flex:1, background:"#ef4444", border:"none", borderRadius:12, padding:"11px", fontSize:14, color:"#fff", cursor:"pointer", fontWeight:700 }}>
+                      삭제
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {storeModalOpen && user?.id && (
         <StoreRegisterModal
           userId={user.id}

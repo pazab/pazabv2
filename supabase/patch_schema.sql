@@ -54,6 +54,8 @@ ALTER TABLE matches ADD COLUMN IF NOT EXISTS employer_left boolean DEFAULT false
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS worker_left boolean DEFAULT false;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS matched_at timestamptz DEFAULT now();
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS initiated_by uuid REFERENCES users(id);
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS hire_confirmed_by_employer boolean DEFAULT false;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS hire_confirmed_by_worker boolean DEFAULT false;
 
 -- 5. chats 테이블 생성 (메시지 보관용)
 CREATE TABLE IF NOT EXISTS chats (

@@ -31,6 +31,10 @@
   --chip-green-bg: rgba(21, 128, 61, 0.10);
   --chip-green-border: rgba(21, 128, 61, 0.25);
   --green-text: #15803d;
+  --nav-bg: rgba(255, 255, 255, 0.97);
+  --nav-border: rgba(0, 0, 0, 0.08);
+  --search-bg: rgba(0, 0, 0, 0.05);
+  --search-border: rgba(0, 0, 0, 0.08);
 }
 
 @theme inline {
@@ -72,6 +76,10 @@
     --chip-green-bg: rgba(34, 197, 94, 0.12);
     --chip-green-border: rgba(34, 197, 94, 0.28);
     --green-text: #86efac;
+    --nav-bg: rgba(24, 24, 27, 0.97);
+    --nav-border: rgba(255, 255, 255, 0.06);
+    --search-bg: rgba(255, 255, 255, 0.06);
+    --search-border: rgba(255, 255, 255, 0.08);
   }
 }
 

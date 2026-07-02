@@ -2,6 +2,7 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
+import { getMinWageForDate, isUnderMinWage } from "@/lib/minWage";
 import { supabase } from "@/lib/supabase";
 import ContractOfficialForm, { getOfficialFormHTML } from "@/components/ContractOfficialForm";
 import {
@@ -160,11 +161,75 @@ function ContractContent() {
       if (k === "bizAddr" && p.samePlace) {
         next.workPlace = v;
       }
+      // 근무요일 변경 시 주휴일 자동 추천 (첫 번째 쉬는 날)
+      if (k.startsWith("workDays")) {
+        const updatedNext = { ...next, [k]: v };
+        const workingSet = new Set(DAYKEYS.filter(dk => updatedNext[`workDays${dk}` as keyof typeof updatedNext]));
+        const firstOff = DAYKEYS.find(dk => !workingSet.has(dk));
+        if (firstOff) next.weeklyHoliday = DAYS[DAYKEYS.indexOf(firstOff)];
+      }
       return next;
     });
   };
 
   const selectedDays = DAYS.filter((_, i) => (f as any)[`workDays${DAYKEYS[i]}`]);
+
+  // 급여 자동계산
+  const payCalc = (() => {
+    const wageRaw = Number(String(f.wage || "0").replace(/,/g, ""));
+    const dailyH = parseFloat(String(f.dailyHours || "0")) || 0;
+    const weekDays = selectedDays.length;
+    if (!wageRaw || !dailyH || !weekDays) return null;
+
+    // 시급 환산
+    let hourlyRate = wageRaw;
+    if (f.wageType === "day") hourlyRate = wageRaw / dailyH;
+    else if (f.wageType === "month") hourlyRate = wageRaw / ((dailyH * weekDays) * 4.345);
+
+    // 1일 기준 시간 분류
+    const regularH = Math.min(8, dailyH);      // 법정근로
+    const overtimeH = Math.max(0, dailyH - 8); // 연장근로
+
+    // 야간근로 계산 (22:00~06:00 구간)
+    let nightH = 0;
+    if (f.workStart && f.workEnd) {
+      const [sh, sm] = f.workStart.split(":").map(Number);
+      const [eh, em] = f.workEnd.split(":").map(Number);
+      const startMin = sh * 60 + sm;
+      let endMin = eh * 60 + em;
+      if (endMin <= startMin) endMin += 24 * 60; // 자정 넘기는 경우
+      const nightStart = 22 * 60;
+      const nightEnd = 30 * 60; // 다음날 06:00
+      const overlapStart = Math.max(startMin, nightStart);
+      const overlapEnd = Math.min(endMin, nightEnd);
+      if (overlapEnd > overlapStart) nightH = (overlapEnd - overlapStart) / 60;
+    }
+
+    // 주간 합계
+    const weekRegular = regularH * weekDays;
+    const weekOvertime = overtimeH * weekDays;
+    const weekNight = nightH * weekDays;
+    const weekOvertimeWarn = weekOvertime > 12; // 주 12시간 초과 경고
+
+    // 주휴수당 (주 15시간 이상 시 발생)
+    const weekTotal = dailyH * weekDays;
+    const juhyu = weekTotal >= 15 ? Math.round((weekTotal / 40) * 8 * hourlyRate) : 0;
+
+    // 월 환산 (4.345주)
+    const monthRegular = Math.round(weekRegular * 4.345 * hourlyRate);
+    const monthOvertime = Math.round(weekOvertime * 4.345 * hourlyRate * 1.5);
+    const monthNight = Math.round(weekNight * 4.345 * hourlyRate * 0.5); // 야간 가산분만
+    const monthJuhyu = Math.round(juhyu * 4.345);
+    const monthTotal = monthRegular + monthOvertime + monthNight + monthJuhyu;
+
+    return {
+      hourlyRate: Math.round(hourlyRate),
+      regularH, overtimeH, nightH,
+      weekRegular, weekOvertime, weekTotal, weekOvertimeWarn,
+      juhyu: weekTotal >= 15,
+      monthRegular, monthOvertime, monthNight, monthJuhyu, monthTotal,
+    };
+  })();
 
   // Daum Postcode 우편번호 서비스 연동
   const openAddressSearch = (field: "bizAddr" | "workerAddr") => {
@@ -202,6 +267,8 @@ function ContractContent() {
         .from("employer_profiles")
         .select("id, business_name, business_type, address, region, user_id")
         .eq("user_id", user.id)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .not("business_name", "is", null)
         .order("created_at", { ascending: false });
       let finalEps = eps;
       // 확장 컬럼 별도 병합 시도
@@ -210,6 +277,8 @@ function ContractContent() {
           .from("employer_profiles")
           .select("id, biz_reg_number, ceo_name, biz_address, biz_tel")
           .eq("user_id", user.id)
+          .or("is_deleted.is.null,is_deleted.eq.false")
+          .not("business_name", "is", null)
           .order("created_at", { ascending: false });
         if (epsExt) {
           finalEps = eps.map((ep: any) => {
@@ -411,8 +480,9 @@ function ContractContent() {
     if (!f.startDate.trim()) return "계약 시작일을 입력해주세요.";
     if (!f.wage.trim()) return "시급을 입력해주세요.";
     const wageNum = parseInt(f.wage.replace(/,/g, ""));
-    if (isNaN(wageNum) || wageNum < 10030) {
-      return `시급이 최저임금(10,030원)보다 낮아요.\n현재 입력: ${f.wage}원`;
+    const minWage = getMinWageForDate(f.startDate);
+    if (isNaN(wageNum) || isUnderMinWage(wageNum, f.startDate)) {
+      return `시급이 최저임금(${minWage.toLocaleString()}원)보다 낮아요.\n현재 입력: ${f.wage}원`;
     }
     if (f.workDaysMode === "check" && selectedDays.length === 0) {
       return "근무 요일을 선택해주세요.";
@@ -1198,20 +1268,28 @@ function ContractContent() {
                     )}
                   </div>
 
-                  {/* 담당업무 preset 버튼 */}
+                  {/* 담당업무 preset 버튼 — 다중선택 */}
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>담당업무</label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>담당업무 <span style={{ fontWeight: 400 }}>(복수 선택 가능)</span></label>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-                      {["홀 서빙", "주방 보조", "카운터", "매장 청소", "배달", "재고 관리"].map(preset => (
-                        <button key={preset} onClick={() => updateField("jobDesc", f.jobDesc === preset ? "" : preset)}
-                          style={{
-                            background: f.jobDesc === preset ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
-                            border: "none", borderRadius: 20, padding: "8px 14px",
-                            color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                          }}>
-                          {preset}
-                        </button>
-                      ))}
+                      {["홀 서빙", "주방 보조", "카운터", "매장 청소", "배달", "재고 관리", "음료 제조", "포장·마감"].map(preset => {
+                        const parts = f.jobDesc ? f.jobDesc.split(", ").map((s: string) => s.trim()).filter(Boolean) : [];
+                        const on = parts.includes(preset);
+                        return (
+                          <button key={preset} onClick={() => {
+                            const next = on ? parts.filter((p: string) => p !== preset) : [...parts, preset];
+                            updateField("jobDesc", next.join(", "));
+                          }}
+                            style={{
+                              background: on ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                              border: `1px solid ${on ? "#7c3aed" : "var(--border)"}`,
+                              borderRadius: 20, padding: "8px 14px",
+                              color: on ? "#fff" : "var(--text)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                            }}>
+                            {preset}
+                          </button>
+                        );
+                      })}
                     </div>
                     <input style={inputStyle} value={f.jobDesc} onChange={e => updateField("jobDesc", e.target.value)} placeholder="직접 입력 또는 위에서 선택" />
                   </div>
@@ -1271,18 +1349,25 @@ function ContractContent() {
                         </div>
                       </div>
                       <div>
-                        <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>주휴일</label>
+                        <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>주휴일 <span style={{ fontWeight: 400 }}>(유급 휴무일 · 하루치 추가 지급)</span></label>
                         <div style={{ display: "flex", gap: 6 }}>
-                          {DAYS.map(d => (
-                            <button key={d} onClick={() => updateField("weeklyHoliday", d)}
-                              style={{
-                                flex: 1, background: f.weeklyHoliday === d ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
-                                border: "none", borderRadius: 10, padding: "10px 0",
-                                fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
-                              }}>
-                              {d}
-                            </button>
-                          ))}
+                          {DAYS.map(d => {
+                            const on = f.weeklyHoliday === d;
+                            const isWorkDay = selectedDays.includes(d);
+                            return (
+                              <button key={d} onClick={() => updateField("weeklyHoliday", d)}
+                                style={{
+                                  flex: 1, background: on ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                                  border: `1px solid ${on ? "#7c3aed" : isWorkDay ? "var(--border)" : "rgba(139,92,246,0.3)"}`,
+                                  borderRadius: 10, padding: "10px 0",
+                                  fontSize: 13, fontWeight: 700,
+                                  color: on ? "#fff" : isWorkDay ? "var(--text-muted)" : "var(--primary)",
+                                  cursor: "pointer", opacity: isWorkDay ? 0.4 : 1,
+                                }}>
+                                {d}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     </>
@@ -1338,15 +1423,15 @@ function ContractContent() {
                   {/* 임금액 */}
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
-                      임금액 (원) — 2026년 최저시급 10,030원
+                      임금액 (원) — {new Date().getFullYear()}년 최저시급 {getMinWageForDate(f.startDate).toLocaleString()}원
                     </label>
                     <input type="tel" inputMode="numeric" style={inputStyle} value={f.wage}
                       onChange={e => {
                         const n = e.target.value.replace(/[^0-9]/g, "");
                         updateField("wage", n ? Number(n).toLocaleString() : "");
-                      }} placeholder="10,030" />
+                      }} placeholder={getMinWageForDate(f.startDate).toLocaleString()} />
                     <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                      {["10,030", "11,000", "12,000", "13,000"].map(v => (
+                      {[getMinWageForDate(f.startDate).toLocaleString(), "11,000", "12,000", "13,000"].map(v => (
                         <button key={v} onClick={() => updateField("wage", v)}
                           style={{ flex: 1, background: f.wage === v ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)", border: "none", borderRadius: 8, padding: "8px 0", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                           {v}
@@ -1406,6 +1491,77 @@ function ContractContent() {
                       ))}
                     </div>
                   </div>
+
+                  {/* 급여 자동계산 패널 */}
+                  {payCalc && (
+                    <div style={{ background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 16, padding: "16px" }}>
+                      <p style={{ fontSize: 13, fontWeight: 800, color: "var(--purple-text)", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
+                        🧮 예상 급여 자동계산
+                        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--text-muted)" }}>시급 {payCalc.hourlyRate.toLocaleString()}원 기준</span>
+                      </p>
+                      {isUnderMinWage(payCalc.hourlyRate, f.startDate) && (
+                        <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "8px 12px", marginBottom: 10 }}>
+                          <p style={{ fontSize: 12, color: "#f87171", fontWeight: 700, margin: 0 }}>
+                            ⚠️ 최저임금 위반 — {getMinWageForDate(f.startDate).toLocaleString()}원 미만
+                          </p>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "3px 0 0" }}>근로기준법 제6조 위반 · 3년 이하 징역 또는 2천만원 이하 벌금</p>
+                        </div>
+                      )}
+
+                      {/* 1일 근무 구조 */}
+                      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 11, background: "rgba(74,222,128,0.15)", border: "1px solid rgba(74,222,128,0.3)", color: "#4ade80", borderRadius: 20, padding: "3px 10px", fontWeight: 700 }}>
+                          법정 {payCalc.regularH}h
+                        </span>
+                        {payCalc.overtimeH > 0 && (
+                          <span style={{ fontSize: 11, background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)", color: "#fb923c", borderRadius: 20, padding: "3px 10px", fontWeight: 700 }}>
+                            연장 {payCalc.overtimeH}h × 1.5배
+                          </span>
+                        )}
+                        {payCalc.nightH > 0 && (
+                          <span style={{ fontSize: 11, background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", borderRadius: 20, padding: "3px 10px", fontWeight: 700 }}>
+                            야간 {payCalc.nightH.toFixed(1)}h +0.5배
+                          </span>
+                        )}
+                        {payCalc.juhyu && (
+                          <span style={{ fontSize: 11, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fbbf24", borderRadius: 20, padding: "3px 10px", fontWeight: 700 }}>
+                            주휴수당 발생
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 주 단위 경고 */}
+                      {payCalc.weekOvertimeWarn && (
+                        <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "8px 12px", marginBottom: 10 }}>
+                          <p style={{ fontSize: 12, color: "#f87171", fontWeight: 700, margin: 0 }}>
+                            ⚠️ 주 연장근로 {payCalc.weekOvertime}h — 법정 한도(12h) 초과
+                          </p>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "3px 0 0" }}>근로기준법 제53조 위반. 근무일수 또는 근무시간 조정 필요</p>
+                        </div>
+                      )}
+
+                      {/* 월 급여 내역 */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {[
+                          { label: "기본급 (법정근로)", amount: payCalc.monthRegular, color: "var(--text)" },
+                          payCalc.monthOvertime > 0 && { label: "연장근로수당 (×1.5)", amount: payCalc.monthOvertime, color: "#fb923c" },
+                          payCalc.monthNight > 0 && { label: "야간근로 가산 (+0.5)", amount: payCalc.monthNight, color: "#a78bfa" },
+                          payCalc.monthJuhyu > 0 && { label: "주휴수당", amount: payCalc.monthJuhyu, color: "#fbbf24" },
+                        ].filter(Boolean).map((row: any) => (
+                          <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{row.label}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: row.color }}>{row.amount.toLocaleString()}원</span>
+                          </div>
+                        ))}
+                        <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 13, fontWeight: 800 }}>월 예상 합계</span>
+                          <span style={{ fontSize: 16, fontWeight: 900, color: "var(--purple-text)" }}>{payCalc.monthTotal.toLocaleString()}원</span>
+                        </div>
+                        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0" }}>* 4대보험 공제 전 금액 · 월 4.345주 기준</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1428,7 +1584,7 @@ function ContractContent() {
                               background: on ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
                               border: "2px solid " + (on ? "#7c3aed" : "var(--border)"),
                               borderRadius: 14, padding: "16px 8px",
-                              color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                              color: on ? "#fff" : "var(--text)", fontSize: 13, fontWeight: 700, cursor: "pointer",
                               display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                             }}>
                             <span style={{ fontSize: 22 }}>{ins.icon}</span>
@@ -1438,6 +1594,45 @@ function ContractContent() {
                         );
                       })}
                     </div>
+                  </div>
+
+                  {/* 첨부 서류 수령 확인 */}
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>
+                      첨부 서류 수령 확인 <span style={{ fontWeight: 400 }}>(오프라인 수령 후 체크)</span>
+                    </label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {[
+                        { key: "docHealthCert", label: "🏥 보건증", desc: "식품위생법 대상 업종 필수 · 유효기간 1년", required: true },
+                        { key: "docIdCard", label: "🪪 신분증 사본", desc: "주민등록증 또는 운전면허증", required: true },
+                        { key: "docBankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의", required: true },
+                        { key: "docParentConsent", label: "📝 친권자 동의서", desc: "만 18세 미만 근로자 필수", required: ct === "minor" },
+                      ].map(doc => {
+                        const on = (f as any)[doc.key];
+                        return (
+                          <button key={doc.key} onClick={() => updateField(doc.key, !on)}
+                            style={{
+                              background: on ? "rgba(74,222,128,0.08)" : "var(--surface2)",
+                              border: `1px solid ${on ? "rgba(74,222,128,0.4)" : doc.required ? "rgba(251,146,60,0.3)" : "var(--border)"}`,
+                              borderRadius: 12, padding: "10px 14px", cursor: "pointer",
+                              display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                            }}>
+                            <span style={{ fontSize: 18, flexShrink: 0 }}>{on ? "✅" : "⬜"}</span>
+                            <div style={{ flex: 1 }}>
+                              <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: on ? "#4ade80" : "var(--text)" }}>
+                                {doc.label}
+                                {doc.required && !on && <span style={{ fontSize: 10, color: "#fb923c", marginLeft: 6, fontWeight: 400 }}>필수</span>}
+                              </p>
+                              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>{doc.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "8px 0 0", lineHeight: 1.5 }}>
+                      * 개인정보 보호를 위해 서류 원본은 사업장에서 안전하게 보관하세요.<br/>
+                      * 보건증은 만료 전 재발급 필요 (유효기간 1년)
+                    </p>
                   </div>
 
                   <div>

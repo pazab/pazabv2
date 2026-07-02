@@ -38,8 +38,8 @@ function InviteContent() {
   const [sent, setSent] = useState<{ nick: string } | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      const u = data.user;
+    supabase.auth.getUser().then(async (res: any) => {
+      const u = res.data?.user;
       if (!u) { router.push("/login"); return; }
       setUser(u);
 
@@ -49,7 +49,8 @@ function InviteContent() {
       // 매장 목록 로드
       const { data: ps } = await supabase.from("employer_profiles")
         .select("id, business_name, address, sigungu, eupmyeondong, wage, work_days, work_hours")
-        .eq("user_id", u.id).order("created_at", { ascending: false });
+        .eq("user_id", u.id).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null)
+        .order("created_at", { ascending: false });
 
       if (ps && ps.length > 0) {
         setProfiles(ps);

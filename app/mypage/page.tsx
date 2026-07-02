@@ -605,7 +605,7 @@ function MyPageContent() {
 
       // 구직 및 매장 공고 최신본 가져오기 (미리보기용)
       const { data: wps } = await supabase.from("worker_profiles").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
-      const { data: eps } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id).eq("is_deleted", false).neq("job_type", "urgent").not("business_name", "is", null).order("created_at", { ascending: false });
+      const { data: eps } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id).or("is_deleted.is.null,is_deleted.eq.false").neq("job_type", "urgent").not("business_name", "is", null).order("created_at", { ascending: false });
       setMyWorkerProfile(wps?.[0] || null);
       setMyEmployerProfile(eps?.[0] || null);
     } catch (err) { console.error(err); }
@@ -615,7 +615,7 @@ function MyPageContent() {
   const fetchJobs = async (uid: string) => {
     setJobLoading(true);
     try {
-      const { data } = await supabase.from("employer_profiles").select("*").eq("user_id", uid).eq("is_deleted", false).neq("job_type", "urgent").not("business_name", "is", null);
+      const { data } = await supabase.from("employer_profiles").select("*").eq("user_id", uid).or("is_deleted.is.null,is_deleted.eq.false").neq("job_type", "urgent").not("business_name", "is", null);
       const jobsWithLogs = await Promise.all((data || []).map(async (job: any) => {
         const { count } = await supabase.from("bot_chat_logs")
           .select("*", { count: "exact", head: true })

@@ -70,6 +70,7 @@ function ExploreContent() {
   const [sortBy, setSortBy] = useState<SortKey>("추천순");
   const [searchQuery, setSearchQuery] = useState("");
   const [fabScrolled, setFabScrolled] = useState(false);
+  const [userType, setUserType] = useState<string | null>(null);
   const [showAllSection, setShowAllSection] = useState<string | null>(null);
 
   interface SheetItem {
@@ -154,6 +155,7 @@ function ExploreContent() {
       setUserId(uid);
       const { data: userData } = await supabase.from("users").select("user_type").eq("id", uid).single();
       const dbType = userData?.user_type;
+      setUserType(dbType || null);
       setShowBothTabs(dbType === "both" ||
         (!!(localStorage.getItem("interview_result_basic_worker")) && !!(localStorage.getItem("interview_result_basic_employer"))));
       const mode = typeParam || (dbType === "employer" ? "employer" : "worker");
@@ -380,7 +382,7 @@ function ExploreContent() {
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 90 }}>
 
       {/* 헤더 */}
-      <div style={{ position: "sticky", top: 0, zIndex: 30, background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 30, background: "var(--nav-bg)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--nav-border)" }}>
         <div style={{ maxWidth: 480, margin: "0 auto" }}>
           {showBothTabs && (
             <div style={{ display: "flex", gap: 0, padding: "10px 16px 0" }}>
@@ -397,7 +399,7 @@ function ExploreContent() {
               <div style={{ flex: 1, position: "relative" }}>
                 <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--text-muted)", pointerEvents: "none" }}>🔍</span>
                 <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder={viewMode === "worker" ? "아산 카페, 편의점 공고..." : "아산 알바생, 바리스타..."}
-                  style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "9px 12px 9px 30px", color: "var(--text)", fontSize: 13, outline: "none" }} />
+                  style={{ width: "100%", boxSizing: "border-box", background: "var(--search-bg)", border: "1px solid var(--search-border)", borderRadius: 12, padding: "9px 12px 9px 30px", color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
               <button onClick={() => setFilterModalOpen(true)}
                 style={{
@@ -826,9 +828,19 @@ function ExploreContent() {
         <button
           onClick={() => {
             if (viewMode === "worker") {
-              router.push("/employer/register");
+              // 공고탭: 사장님만 공고 등록, 알바생은 본인 구직 프로필로
+              if (userType === "worker") {
+                router.push("/worker/profile?edit=true&new=true&return=explore");
+              } else {
+                router.push("/employer/register");
+              }
             } else {
-              router.push("/worker/profile?edit=true&new=true&return=explore");
+              // 구직자탭: 알바생만 구직 프로필, 사장님은 공고 등록으로
+              if (userType === "employer") {
+                router.push("/employer/register");
+              } else {
+                router.push("/worker/profile?edit=true&new=true&return=explore");
+              }
             }
           }}
           style={{
@@ -843,13 +855,13 @@ function ExploreContent() {
             height: 48,
             minWidth: 48,
             padding: fabScrolled ? "0 14px" : "0 20px 0 14px",
-            background: viewMode === "worker"
+            background: (viewMode === "worker" && userType !== "worker") || (viewMode === "employer" && userType === "employer")
               ? "linear-gradient(135deg,#7c3aed,#a855f7)"
               : "linear-gradient(135deg,#ec4899,#f43f5e)",
             border: "none",
             borderRadius: 28,
             cursor: "pointer",
-            boxShadow: viewMode === "worker"
+            boxShadow: (viewMode === "worker" && userType !== "worker") || (viewMode === "employer" && userType === "employer")
               ? "0 4px 20px rgba(124,58,237,0.5)"
               : "0 4px 20px rgba(236,72,153,0.5)",
             color: "#fff",
@@ -867,7 +879,7 @@ function ExploreContent() {
             overflow: "hidden",
             transition: "max-width 0.3s cubic-bezier(.34,1.56,.64,1), opacity 0.2s",
           }}>
-            {viewMode === "worker" ? "새 공고" : "새 구직"}
+            {(viewMode === "worker" && userType !== "worker") || (viewMode === "employer" && userType === "employer") ? "새 공고" : "새 구직"}
           </span>
         </button>
       )}

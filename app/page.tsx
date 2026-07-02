@@ -19,12 +19,12 @@ export default function Home() {
           // 온보딩 여부 확인
           const { data: userData } = await supabase
             .from("users")
-            .select("onboarded")
+            .select("onboarded, user_type")
             .eq("id", session.user.id)
             .single();
 
           if (userData && userData.onboarded) {
-            router.replace("/explore");
+            router.replace(userData.user_type === "employer" ? "/myteam" : "/explore");
           } else {
             router.replace("/onboarding");
           }
