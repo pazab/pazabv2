@@ -166,6 +166,10 @@ export default function TeamMemberPage() {
     if (memberId) loadMember();
   }, [memberId]);
 
+  useEffect(() => {
+    if (member?.id) loadAttendance(member.id, viewYear, viewMonth);
+  }, [viewYear, viewMonth]);
+
   // Realtime 출퇴근 구독
   useEffect(() => {
     if (!memberId) return;
@@ -222,23 +226,33 @@ export default function TeamMemberPage() {
 
       setMember({ ...data, worker: (data as any).users, wage, work_days, work_hours });
       loadAttendance(data.id);
-      loadContracts(data.employer_id, data.worker_id);
+      loadContracts(data.employer_id, data.worker_id, data.id);
       loadPayslips(data.id);
     }
   }
 
-  async function loadAttendance(tmId: string) {
+  async function loadAttendance(tmId: string, year?: number, month?: number) {
+    const y = year ?? viewYear;
+    const m = month ?? viewMonth;
+    const from = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const to = `${y}-${String(m + 1).padStart(2, "0")}-${new Date(y, m + 1, 0).getDate()}`;
     const { data } = await supabase.from("attendance")
       .select("*").eq("team_member_id", tmId)
-      .order("work_date", { ascending: false }).limit(60);
+      .gte("work_date", from).lte("work_date", to)
+      .order("work_date", { ascending: false });
     setAttendance(data || []);
   }
 
-  async function loadContracts(empId: string, wrkId: string) {
-    const { data } = await supabase.from("contracts")
-      .select("id, match_id, start_date, end_date, created_at, contract_data, worker_signed, employer_signed, status")
-      .eq("employer_id", empId).eq("worker_id", wrkId)
+  async function loadContracts(empId: string, wrkId: string, tmId?: string) {
+    let q = supabase.from("contracts")
+      .select("id, team_member_id, start_date, end_date, created_at, contract_data, worker_signed, employer_signed, status")
       .order("created_at", { ascending: false });
+    if (tmId) {
+      q = q.eq("team_member_id", tmId);
+    } else {
+      q = q.eq("employer_id", empId).eq("worker_id", wrkId);
+    }
+    const { data } = await q;
     setContracts(data || []);
     if (!data || data.length === 0) {
       setContractOpen(true);

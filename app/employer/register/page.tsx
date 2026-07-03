@@ -112,6 +112,7 @@ function EmployerRegisterContent() {
   const searchParams = useSearchParams();
   const isEdit = searchParams.get("edit") === "true";
   const editId = searchParams.get("jobId");
+  const storeId = searchParams.get("storeId"); // 내팀에서 "공고올리기" 진입 시
   const returnTo = searchParams.get("return") || "explore";
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -230,7 +231,11 @@ function EmployerRegisterContent() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.push("/login"); return; }
     setUserId(session.user.id);
-    if (isEdit && editId) {
+    if (storeId) {
+      // 내팀 "공고올리기" 진입 — 매장 정보 자동채움 후 is_active만 true로 업데이트
+      const { data } = await supabase.from("employer_profiles").select("*").eq("id", storeId).single();
+      if (data) loadFormFromProfile(data);
+    } else if (isEdit && editId) {
       const { data } = await supabase.from("employer_profiles").select("*").eq("id", editId).single();
       if (data) loadFormFromProfile(data);
     } else if (isEdit && !editId) {
@@ -430,9 +435,11 @@ function EmployerRegisterContent() {
 
     let saveError;
     let newProfId = "";
-    if (form.id) {
-      const { error } = await supabase.from("employer_profiles").update(profileData).eq("id", form.id);
+    const targetId = form.id || storeId;
+    if (targetId) {
+      const { error } = await supabase.from("employer_profiles").update(profileData).eq("id", targetId);
       saveError = error;
+      newProfId = targetId;
     } else {
       const { data: inserted, error } = await supabase.from("employer_profiles").insert(profileData).select("id").single();
       saveError = error;

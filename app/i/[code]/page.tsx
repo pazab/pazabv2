@@ -12,6 +12,7 @@ import { promoteProfile } from '@/lib/onboarding'
 interface InviteInfo {
   id: string
   employer_id: string
+  employer_profile_id?: string | null
   team_member_id: string | null
   role: string
   expires_at: string | null
@@ -127,6 +128,7 @@ export default function InviteAcceptPage() {
         if (!existing || existing.length === 0) {
           await supabase.from('team_members').insert({
             employer_id: invite.employer_id,
+            employer_profile_id: invite.employer_profile_id ?? null,
             worker_id: user.id,
             invite_status: 'joined',
             status: 'active',
@@ -136,8 +138,9 @@ export default function InviteAcceptPage() {
             work_hours: invite.work_hours ?? null,
           })
         } else {
-          // 이미 있으면 근무조건 업데이트
+          // 이미 있으면 근무조건 + 매장 연결 업데이트
           await supabase.from('team_members').update({
+            employer_profile_id: invite.employer_profile_id ?? null,
             invite_status: 'joined',
             status: 'active',
             wage: invite.wage ?? null,

@@ -134,35 +134,22 @@
 ## 다음 작업 (우선순위순)
 
 **P0**
-- [ ] tax_rates 2026 초기값 입력 (건강보험/고용보험 근로자부담률 확정 필요)
-- [ ] job_credentials 테이블 생성 + 보건증·식품위생사 등 시드 데이터 INSERT (현재 테이블 없음 — 코드만 존재)
-  ```sql
-  CREATE TABLE IF NOT EXISTS job_credentials (
-    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    category_name text,
-    duty_name text,
-    name text NOT NULL,
-    is_mandatory_by_law boolean DEFAULT false,
-    description text,
-    created_at timestamptz DEFAULT now()
-  );
-  INSERT INTO job_credentials (category_name, duty_name, name, is_mandatory_by_law, description) VALUES
-    ('음식점', NULL, '보건증', true, '식품위생법 제40조 — 식품영업 종사자 필수, 유효기간 1년'),
-    ('카페', NULL, '보건증', true, '식품위생법 제40조'),
-    ('편의점', NULL, '보건증', false, '식품 취급 시 권장'),
-    (NULL, NULL, '식품위생사', false, '식품위생 전문 자격증'),
-    (NULL, NULL, '조리사 면허', false, '한식/양식/중식/일식/복어');
-  ```
-- [ ] 탐색 FAB — `userType === "both"` 케이스 처리 (현재 employer 우선)
+- [x] tax_rates 2026 초기값 입력 (건강보험 3.545%, 고용보험 0.9%, 국민연금 4.5%)
+- [x] job_credentials 테이블 생성 + 시드 데이터 INSERT
+- [x] min_wages 테이블 생성 + 2024~2026 초기값
+- [x] 탐색 FAB `userType === "both"` 케이스 — 코드 확인 결과 이미 탭 기준 올바르게 처리됨
 
 **P1**
-- [ ] lib/taxRates.ts + calcDailyWorkerTax()/calcInsuranceEligibility() 구현, payslip 발행 로직에 patch
-- [ ] app/admin/tax-rates/page.tsx (hellopazab 전용) 구현 — 최저임금도 여기서 관리
-- [ ] 계약서 진입점 재설계: matchId 없이도 team_member_id 기반으로 직접 작성 가능하게
-- [ ] 근태 전체보기 /myteam/attendance?memberId=xxx 미구현
+- [x] lib/taxRates.ts — calcDailyWorkerTax(), calcInsuranceEligibility(), calcInsuranceDeduction()
+- [x] lib/minWage.ts — DB 연동(fetchMinWage) + 동기 폴백 유지
+- [x] app/admin/tax-rates/page.tsx — hellopazab 전용, 세율+최저임금 CRUD
+- [x] 계약서 진입점 재설계 — memberId 파라미터, contracts 전체 team_member_id 기반 전환
+- [x] team_members.employer_profile_id 연결 — 초대 수락(/i/[code]) 시 invite_codes.employer_profile_id 반영
+- [x] 근태 전체보기 — /employer/team/[id] 월별 필터 + DB 재조회 (viewYear/viewMonth 기반)
+- [x] 매장 등록 ↔ 공고 등록 분리: StoreRegisterModal is_active:false, 내팀 "📢 공고올리기" 버튼, employer/register storeId 파라미터
+- [x] 매장 삭제 안전장치 — openDeleteModal DB 직접 조회(employer_id 기반), 팀원 있으면 삭제 버튼 숨김
+- [x] mypage 공고 마감 — is_deleted 제거, is_active:false만
 - [ ] 사장님 팀원상세 /employer/team/[id] 근무조건 수정 기능
-- [ ] team_members.employer_profile_id 연결: 초대/계약 시 어느 매장 소속인지 연결 (현재 미연결 상태)
-- [ ] 공고등록(employer/register)에서 공고유형(정기/단기/긴급대타) 항목 제거 (매장 등록과 분리됨)
 - [ ] 직원 서류 보관함에 payslip 섹션 추가 (급여 구현 후)
 
 **P2**

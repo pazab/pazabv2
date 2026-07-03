@@ -10,6 +10,7 @@ function ContractViewContent() {
   const sp = useSearchParams();
   const contractId = sp.get("contractId") || "";
   const matchId = sp.get("matchId") || "";
+  const memberId = sp.get("memberId") || "";
   const fromTab = sp.get("tab") || "";
 
     const { showToast, ToastUI } = useToast();
@@ -38,23 +39,22 @@ function ContractViewContent() {
 
     if (contractId) {
       query = query.eq("id", contractId);
+    } else if (memberId) {
+      query = query.eq("team_member_id", memberId).neq("status", "superseded");
     } else if (matchId) {
-      query = query.eq("match_id", matchId);
+      query = query.eq("team_member_id", matchId).neq("status", "superseded");
     }
 
     const { data } = await query.limit(1).maybeSingle();
     if (data) {
       setContract(data);
       setUserRole(data.employer_id === user.id ? "employer" : "worker");
-    } else if (userRole === null) {
-      // 계약서 없음 - worker면 요청 모달로, employer면 작성 페이지로
-      const { data: matchData } = await supabase.from("matches")
-        .select("employer_id, worker_id").eq("id", matchId).maybeSingle();
-      if (matchData) {
-        if (matchData.employer_id === user.id) {
-          router.replace(`/contract?matchId=${matchId}`);
-        }
-        // worker면 그냥 "계약서 없음" 표시
+    } else if (memberId) {
+      // 계약서 없음 — team_members에서 역할 확인 후 작성 페이지로
+      const { data: tm } = await supabase.from("team_members")
+        .select("employer_id").eq("id", memberId).maybeSingle();
+      if (tm?.employer_id === user.id) {
+        router.replace(`/contract?memberId=${memberId}`);
       }
     }
     setLoading(false);
@@ -501,7 +501,7 @@ function ContractViewContent() {
               style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
               📄 화면인쇄
             </button>
-            <button onClick={() => router.push(`/contract?matchId=${contract.match_id}${fromTab ? `&tab=${fromTab}` : ""}`)}
+            <button onClick={() => router.push(`/contract?memberId=${contract.team_member_id || memberId}${fromTab ? `&tab=${fromTab}` : ""}`)}
               style={{ flex:1.2, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
               ✏️ 계약서수정
             </button>

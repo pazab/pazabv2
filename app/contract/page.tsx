@@ -99,6 +99,7 @@ function ContractContent() {
   const router = useRouter();
   const sp = useSearchParams();
   const matchId = sp.get("matchId") || "";
+  const memberId = sp.get("memberId") || "";
   const mode = sp.get("mode") || "";
   const fromParam = sp.get("from") || "";
 
@@ -256,7 +257,7 @@ function ContractContent() {
 
   useEffect(() => {
     loadInit();
-  }, [matchId]);
+  }, [matchId, memberId]);
 
   const loadInit = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -293,7 +294,8 @@ function ContractContent() {
         applyEpToForm(finalEps[0], user.id, null);
       }
     }
-    if (matchId) await load();
+    if (memberId) await loadByMember();
+    else if (matchId) await load();
     else setLoading(false);
   };
 
@@ -341,6 +343,68 @@ function ContractContent() {
     if (mode === "update" && matchId) {
       const { data: existing } = await supabase.from("contracts")
         .select("*").eq("match_id", matchId)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (existing?.contract_data) {
+        setF(existing.contract_data);
+        setCt(existing.contract_data.contractType || "parttime");
+        setExistingContract(existing);
+        setStep("edit");
+      }
+    }
+
+    setLoading(false);
+  };
+
+  const loadByMember = async () => {
+    const { data: tm } = await supabase
+      .from("team_members")
+      .select("id, employer_id, worker_id, employer_profile_id, wage, work_days, work_hours, member_role, status")
+      .eq("id", memberId)
+      .single();
+    if (!tm) { setLoading(false); return; }
+
+    const [eu, wu] = await Promise.all([
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address").eq("id", tm.employer_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address").eq("id", tm.worker_id).single(),
+    ]);
+
+    let ep = null;
+    if (tm.employer_profile_id) {
+      const { data } = await supabase
+        .from("employer_profiles")
+        .select("id, business_name, business_type, region, address, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
+        .eq("id", tm.employer_profile_id).maybeSingle();
+      ep = data;
+    }
+    if (!ep) {
+      const { data } = await supabase
+        .from("employer_profiles")
+        .select("id, business_name, business_type, region, address, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
+        .eq("user_id", tm.employer_id)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .not("business_name", "is", null)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      ep = data;
+    }
+
+    const memberAsMatch = {
+      id: tm.id,
+      employer_id: tm.employer_id,
+      worker_id: tm.worker_id,
+      employer_profile_id: tm.employer_profile_id,
+      ep,
+      matched_at: null,
+      created_at: new Date().toISOString(),
+      _isMember: true,
+    };
+
+    setMatches([memberAsMatch]);
+    initF(memberAsMatch, eu.data, wu.data);
+
+    if (mode === "update") {
+      const { data: existing } = await supabase.from("contracts")
+        .select("*").eq("team_member_id", memberId)
+        .neq("status", "superseded")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (existing?.contract_data) {
         setF(existing.contract_data);
@@ -528,11 +592,11 @@ function ContractContent() {
     } else {
       await supabase.from("contracts")
         .update({ status: "superseded" })
-        .eq("match_id", selMatch.id)
+        .eq("team_member_id", selMatch.id)
         .neq("status", "superseded");
 
       const r = await supabase.from("contracts")
-        .insert({ ...payload, match_id: selMatch.id });
+        .insert({ ...payload, team_member_id: selMatch.id });
       error = r.error;
     }
 
@@ -562,7 +626,7 @@ function ContractContent() {
           wage: payload.wage,
           work_days: payload.work_days,
           work_hours: payload.work_hours,
-        }).eq("match_id", selMatch.id);
+        }).eq("id", selMatch.id);
       }
 
       // 3. 채팅방 알림 메시지 전송
@@ -616,7 +680,7 @@ function ContractContent() {
     if (!selMatch) return;
     const { data: existing } = await supabase.from("contracts")
       .select("id, created_at, contract_data, worker_signed, status")
-      .eq("match_id", selMatch.id)
+      .eq("team_member_id", selMatch.id)
       .neq("status", "superseded")
       .order("created_at", { ascending: false })
       .limit(1).maybeSingle();

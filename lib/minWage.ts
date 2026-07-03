@@ -1,29 +1,65 @@
-// 연도별 최저시급 (고용노동부 고시 기준)
-// 매년 8월 발표 → 다음해 1월 1일 적용
-// tax_rates DB 구현 후 여기서 읽어오는 방식으로 마이그레이션 예정
-const MIN_WAGE_BY_YEAR: Record<number, number> = {
+import { createBrowserClient } from "@supabase/ssr";
+
+// 연도별 최저시급 폴백 (DB 조회 실패 시 사용)
+const FALLBACK_MIN_WAGE: Record<number, number> = {
   2024: 9860,
   2025: 10030,
   2026: 10030,
 };
 
-export function getMinWage(year?: number): number {
+let minWageCache: Record<number, number> = {};
+
+export async function fetchMinWage(year?: number): Promise<number> {
   const y = year ?? new Date().getFullYear();
-  // 등록된 연도 없으면 가장 최근 연도 값 사용
-  const keys = Object.keys(MIN_WAGE_BY_YEAR).map(Number).sort((a, b) => b - a);
-  const match = keys.find(k => k <= y);
-  return match ? MIN_WAGE_BY_YEAR[match] : MIN_WAGE_BY_YEAR[keys[keys.length - 1]];
+  if (minWageCache[y]) return minWageCache[y];
+
+  try {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { data } = await supabase
+      .from("min_wages")
+      .select("year, hourly_wage")
+      .lte("year", y)
+      .order("year", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (data?.hourly_wage) {
+      minWageCache[y] = data.hourly_wage;
+      return data.hourly_wage;
+    }
+  } catch {
+    // DB 미연결 등 — 폴백 사용
+  }
+
+  return getFallbackMinWage(y);
+}
+
+export function invalidateMinWageCache() {
+  minWageCache = {};
+}
+
+// ── 동기 폴백 (서버컴포넌트나 즉시 필요한 경우) ──
+
+function getFallbackMinWage(year: number): number {
+  const keys = Object.keys(FALLBACK_MIN_WAGE).map(Number).sort((a, b) => b - a);
+  const match = keys.find(k => k <= year);
+  return match ? FALLBACK_MIN_WAGE[match] : FALLBACK_MIN_WAGE[keys[keys.length - 1]];
+}
+
+export function getMinWage(year?: number): number {
+  return getFallbackMinWage(year ?? new Date().getFullYear());
 }
 
 export function getCurrentMinWage(): number {
   return getMinWage();
 }
 
-// 계약서 작성 시점 기준 — 근무 시작일 연도로 판단
 export function getMinWageForDate(dateStr?: string): number {
   if (!dateStr) return getCurrentMinWage();
-  const year = new Date(dateStr).getFullYear();
-  return getMinWage(year);
+  return getMinWage(new Date(dateStr).getFullYear());
 }
 
 export function isUnderMinWage(hourlyRate: number, dateStr?: string): boolean {

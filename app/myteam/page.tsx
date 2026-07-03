@@ -764,7 +764,9 @@ function MyTeamPageContent() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<any>(null);
-  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ store: any; members: any[] } | null>(null);
+  const [toastMsg, setToastMsg] = useState("");
+  const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
@@ -806,6 +808,30 @@ function MyTeamPageContent() {
     setLoading(false);
   }
 
+  async function openDeleteModal(store: any) {
+    const { data: { user: u } } = await supabase.auth.getUser();
+    if (!u) return;
+    // employer_profile_id로 우선 조회, 없으면 employer_id 전체에서 조회
+    let { data: members } = await supabase
+      .from("team_members")
+      .select(`id, worker_id, member_role, users!team_members_worker_id_fkey (nickname)`)
+      .eq("employer_profile_id", store.id)
+      .eq("status", "active");
+    if (!members || members.length === 0) {
+      // employer_profile_id 미연결 팀원도 포함 (단일 매장이거나 연결 안 된 케이스)
+      const { data: all } = await supabase
+        .from("team_members")
+        .select(`id, worker_id, employer_profile_id, member_role, users!team_members_worker_id_fkey (nickname)`)
+        .eq("employer_id", u.id)
+        .eq("status", "active");
+      // employer_profile_id가 이 매장이거나, null인 경우 포함
+      members = (all || []).filter(
+        (m: any) => m.employer_profile_id === store.id || m.employer_profile_id === null
+      );
+    }
+    setDeleteTarget({ store, members: members || [] });
+  }
+
   async function loadTeam(uid: string) {
     // 모든 매장 로드
     const { data: stores } = await supabase.from("employer_profiles")
@@ -841,13 +867,12 @@ function MyTeamPageContent() {
       ? await supabase.from("attendance").select("team_member_id, status, work_date").in("team_member_id", ids).gte("work_date", monthStart)
       : { data: [] };
 
-    const workerIds = data.map((m: any) => m.worker_id).filter(Boolean);
-    const { data: contractsData } = workerIds.length > 0
-      ? await supabase.from("contracts").select("employer_id, worker_id, worker_signed").eq("employer_id", uid).in("worker_id", workerIds)
+    const { data: contractsData } = ids.length > 0
+      ? await supabase.from("contracts").select("team_member_id, worker_signed, status").in("team_member_id", ids).neq("status", "superseded")
       : { data: [] };
 
     const enriched = data.map((m: any) => {
-      const cList = (contractsData || []).filter((c: any) => c.worker_id === m.worker_id);
+      const cList = (contractsData || []).filter((c: any) => c.team_member_id === m.id);
       const contractStatus = cList.length === 0 ? "none" : cList.some((c: any) => c.worker_signed) ? "done" : "pending";
       return {
         ...m,
@@ -923,6 +948,11 @@ function MyTeamPageContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
+      {toastMsg && (
+        <div style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", background:"#1a1a2e", color:"#fff", borderRadius:20, padding:"10px 20px", fontSize:13, zIndex:2000, whiteSpace:"nowrap", pointerEvents:"none" }}>
+          {toastMsg}
+        </div>
+      )}
       <AppHeader title="팀·소속" showBack />
       <div style={{ maxWidth:480, margin:"0 auto", padding:"12px 16px 0" }}>
         {loading ? (
@@ -1040,7 +1070,7 @@ function MyTeamPageContent() {
                                 <span style={{ fontSize:13, fontWeight:700, color:"rgba(255,255,255,0.8)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{store.business_name}</span>
                                 <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)", whiteSpace:"nowrap", flexShrink:0 }}>{store.business_type||"업종미정"} · {storeMembers.length}명</span>
                                 {stats.pending > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"#ef4444", flexShrink:0 }} />}
-                                <button onClick={e => { e.stopPropagation(); setDeleteTarget(store); }}
+                                <button onClick={e => { e.stopPropagation(); openDeleteModal(store); }}
                                   style={{ background:"rgba(0,0,0,0.25)", border:"none", borderRadius:"50%", width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.7)", fontSize:12, cursor:"pointer", flexShrink:0, lineHeight:1 }}>
                                   ✕
                                 </button>
@@ -1063,7 +1093,7 @@ function MyTeamPageContent() {
                             style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, padding:"5px 10px", color:"rgba(255,255,255,0.9)", fontSize:11, cursor:"pointer", flexShrink:0 }}>
                             ✏️ 수정
                           </button>
-                          <button onClick={() => setDeleteTarget(activeStore)}
+                          <button onClick={() => openDeleteModal(activeStore)}
                             style={{ background:"rgba(239,68,68,0.25)", border:"none", borderRadius:"50%", width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.8)", fontSize:13, cursor:"pointer", flexShrink:0 }}>
                             ✕
                           </button>
@@ -1083,10 +1113,14 @@ function MyTeamPageContent() {
                         </div>
                         {/* 초대 + 팀원 */}
                         <div style={{ background:"var(--surface)" }}>
-                          <div style={{ padding:"10px 12px", borderBottom:"1px solid var(--border)" }}>
+                          <div style={{ padding:"10px 12px", borderBottom:"1px solid var(--border)", display:"flex", gap:8 }}>
                             <button onClick={() => setInviteOpen(true)}
-                              style={{ width:"100%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:10, padding:"9px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                              style={{ flex:1, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:10, padding:"9px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
                               📨 팀원 초대
+                            </button>
+                            <button onClick={() => router.push(`/employer/register?storeId=${activeStore.id}`)}
+                              style={{ flex:1, background: activeStore.is_active ? "var(--surface2)" : "linear-gradient(135deg,#059669,#10b981)", border: activeStore.is_active ? "1px solid var(--border)" : "none", borderRadius:10, padding:"9px", color: activeStore.is_active ? "var(--text-muted)" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                              {activeStore.is_active ? "📋 공고수정" : "📢 공고올리기"}
                             </button>
                           </div>
                           {activeMembers.length === 0 ? (
@@ -1113,7 +1147,7 @@ function MyTeamPageContent() {
                                   <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 3px" }}>
                                     {m.work_days||"요일미정"} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
                                   </p>
-                                  <span onClick={e => { e.stopPropagation(); router.push(m.contractStatus==="none"?`/contract?matchId=${m.match_id}`:`/contract/view?matchId=${m.match_id}`); }}
+                                  <span onClick={e => { e.stopPropagation(); router.push(m.contractStatus==="none"?`/contract?memberId=${m.id}`:`/contract/view?memberId=${m.id}`); }}
                                     style={{ fontSize:11, borderRadius:5, padding:"2px 6px", background:badge.bg, color:badge.color, cursor:"pointer" }}>
                                     {badge.label}
                                   </span>
@@ -1133,13 +1167,13 @@ function MyTeamPageContent() {
                                   </button>
                                   <button onClick={async e => {
                                     e.stopPropagation();
-                                    if (!confirm(`${name}님을 퇴사 처리하시겠어요?`)) return;
                                     await supabase.from("team_members").update({ status: "left" }).eq("id", m.id);
                                     setMembersByStore(prev => {
                                       const u = { ...prev };
                                       u[activeStore.id] = (u[activeStore.id]||[]).filter((tm: any) => tm.id !== m.id);
                                       return u;
                                     });
+                                    showToast(`${name}님 퇴사 처리됐어요.`);
                                   }} style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:7, padding:"3px 7px", fontSize:10, color:"#f87171", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     퇴사
                                   </button>
@@ -1178,21 +1212,17 @@ function MyTeamPageContent() {
       />
       {/* 매장 삭제 확인 팝업 */}
       {deleteTarget && (() => {
-        const storeMembers = (membersByStore[deleteTarget.id] || []);
+        const { store, members: storeMembers } = deleteTarget;
         const hasMembers = storeMembers.length > 0;
         const doDelete = async () => {
-          // 팀원 전원 퇴사처리
-          if (hasMembers) {
-            const ids = storeMembers.map((m: any) => m.id);
-            await supabase.from("team_members").update({ status: "left" }).in("id", ids);
-          }
-          // soft delete
+          if (hasMembers) return; // 안전장치 — 팀원 있으면 삭제 불가
           const { error } = await supabase.from("employer_profiles")
             .update({ is_deleted: true, is_active: false })
-            .eq("id", deleteTarget.id).eq("user_id", user!.id);
-          if (error) { alert("삭제 실패: " + error.message); return; }
+            .eq("id", store.id).eq("user_id", user!.id);
+          if (error) { showToast("삭제 실패: " + error.message, "error"); return; }
           setDeleteTarget(null);
-          if (activeStoreId === deleteTarget.id) setActiveStoreId(null);
+          if (activeStoreId === store.id) setActiveStoreId(null);
+          showToast("매장이 삭제됐어요.");
           if (user?.id) loadTeam(user.id);
         };
         return (
@@ -1203,32 +1233,27 @@ function MyTeamPageContent() {
               {hasMembers ? (
                 <>
                   <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", margin:"0 0 12px", lineHeight:1.5 }}>
-                    <strong style={{ color:"#f87171" }}>{storeMembers.length}명</strong>의 팀원이 있어요.<br/>삭제하면 전원 퇴사 처리됩니다.
+                    재직 중인 팀원이 <strong style={{ color:"#f87171" }}>{storeMembers.length}명</strong> 있어요.<br/>
+                    팀원 퇴직 처리 후 매장을 삭제할 수 있어요.
                   </p>
                   <div style={{ background:"var(--surface2)", borderRadius:10, padding:"8px 12px", marginBottom:16, maxHeight:120, overflowY:"auto" }}>
                     {storeMembers.map((m: any) => (
                       <div key={m.id} style={{ fontSize:12, color:"var(--text-muted)", padding:"3px 0", display:"flex", alignItems:"center", gap:6 }}>
                         <span>👤</span>
-                        <span>{m.worker?.nickname || "팀원"}</span>
+                        <span>{(m as any).users?.nickname || "팀원"}</span>
                         {m.member_role === "manager" && <span style={{ fontSize:10, color:"#f59e0b" }}>매니저</span>}
                       </div>
                     ))}
                   </div>
-                  <div style={{ display:"flex", gap:8 }}>
-                    <button onClick={() => setDeleteTarget(null)}
-                      style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"11px", fontSize:13, color:"var(--text-muted)", cursor:"pointer", fontWeight:600 }}>
-                      취소
-                    </button>
-                    <button onClick={doDelete}
-                      style={{ flex:2, background:"#ef4444", border:"none", borderRadius:12, padding:"11px", fontSize:13, color:"#fff", cursor:"pointer", fontWeight:700 }}>
-                      퇴사처리 후 삭제
-                    </button>
-                  </div>
+                  <button onClick={() => setDeleteTarget(null)}
+                    style={{ width:"100%", background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"12px", fontSize:14, color:"var(--text-muted)", cursor:"pointer", fontWeight:600 }}>
+                    확인
+                  </button>
                 </>
               ) : (
                 <>
                   <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", margin:"0 0 20px", lineHeight:1.5 }}>
-                    <strong style={{ color:"var(--text)" }}>{deleteTarget.business_name}</strong><br/>매장을 삭제할까요?
+                    <strong style={{ color:"var(--text)" }}>{store.business_name}</strong><br/>매장을 삭제할까요?
                   </p>
                   <div style={{ display:"flex", gap:8 }}>
                     <button onClick={() => setDeleteTarget(null)}

@@ -133,13 +133,15 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
       image_url: imageUrls[0] || null,
       image_urls: imageUrls,
       video_url: videoUrl,
-      is_active: true,
+      // 신규 매장은 is_active: false — 공고는 공고등록(/employer/register)에서 별도 처리
+      // 수정 시엔 is_active 건드리지 않음 (공고 상태 유지)
     };
     let err;
     if (isEdit) {
       ({ error: err } = await supabase.from("employer_profiles").update(payload).eq("id", existingStore.id));
     } else {
       payload.user_id = userId;
+      payload.is_active = false;
       ({ error: err } = await supabase.from("employer_profiles").insert(payload));
     }
     setSaving(false);

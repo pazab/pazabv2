@@ -642,18 +642,20 @@ function MyPageContent() {
     const job = jobs.find(j => j.id === jobId);
     const isMatched = job?.job_status === "matched";
     setConfirmModal({
-      title: isMatched ? "매칭 중인 공고를 삭제할까요?" : "공고를 삭제할까요?",
-      desc: isMatched ? "진행 중인 매칭이 취소되고 공고가 삭제돼요." : "삭제된 공고는 복구할 수 없어요.",
-      confirmLabel: "삭제하기",
+      title: isMatched ? "매칭 중인 공고를 마감할까요?" : "공고를 마감할까요?",
+      desc: isMatched
+        ? "진행 중인 매칭이 취소되고 공고가 내려가요. 매장 정보는 유지돼요."
+        : "공고가 탐색에서 내려가요. 매장 정보는 유지되고 나중에 다시 올릴 수 있어요.",
+      confirmLabel: "마감하기",
       confirmColor: "rgba(239,68,68,0.8)",
       onConfirm: async () => {
-        // 매칭중이면 관련 matches 취소 처리
         if (isMatched) {
           await supabase.from("matches")
             .update({ status: "cancelled", progress_status: "cancelled" })
             .eq("employer_profile_id", jobId);
         }
-        await supabase.from("employer_profiles").update({ is_deleted: true, is_active: false }).eq("id", jobId);
+        // is_active만 false — is_deleted는 건드리지 않음 (매장 삭제는 내팀에서만)
+        await supabase.from("employer_profiles").update({ is_active: false }).eq("id", jobId);
         setJobs(prev => {
           const next = prev.filter(j => j.id !== jobId);
           setMyEmployerProfile(next[0] || null);
