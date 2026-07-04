@@ -619,6 +619,7 @@ function MyPageContent() {
         .select("*, employer_profiles!inner(id, business_name, business_type, region, image_url, image_urls, is_deleted)")
         .eq("user_id", uid)
         .neq("job_type", "urgent")
+        .neq("job_status", "closed")
         .order("created_at", { ascending: false });
       // 삭제된 매장의 공고 제외 + 매장 정보 flatten
       const flatJobs = (rawJobs || [])
@@ -657,7 +658,7 @@ function MyPageContent() {
             .update({ status: "cancelled", progress_status: "cancelled" })
             .or(`job_id.eq.${jobId},employer_profile_id.eq.${job?.employer_profile_id}`);
         }
-        await supabase.from("jobs").update({ is_active: false }).eq("id", jobId);
+        await supabase.from("jobs").update({ is_active: false, job_status: "closed" }).eq("id", jobId);
         setJobs(prev => prev.filter(j => j.id !== jobId));
         setConfirmModal(null);
       },
