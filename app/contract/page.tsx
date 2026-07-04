@@ -1742,14 +1742,17 @@ function ContractContent() {
 
                   {/* 첨부 서류 수령 확인 */}
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>
-                      첨부 서류 수령 확인 <span style={{ fontWeight: 400 }}>(오프라인 수령 후 체크)</span>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                      📂 서류 제출 현황
                     </label>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
+                      서류 미제출이어도 계약서 작성은 가능합니다. 수령 시 체크하세요.
+                    </p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {[
                         { key: "docHealthCert", label: "🏥 보건증", desc: "식품위생법 대상 업종 필수 · 유효기간 1년", required: true },
                         { key: "docIdCard", label: "🪪 신분증 사본", desc: "주민등록증 또는 운전면허증", required: true },
-                        { key: "docBankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의", required: true },
+                        { key: "docBankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의", required: false },
                         { key: "docParentConsent", label: "📝 친권자 동의서", desc: "만 18세 미만 근로자 필수", required: ct === "minor" },
                       ].map(doc => {
                         const on = (f as any)[doc.key];
@@ -1757,7 +1760,7 @@ function ContractContent() {
                           <button key={doc.key} onClick={() => updateField(doc.key, !on)}
                             style={{
                               background: on ? "rgba(74,222,128,0.08)" : "var(--surface2)",
-                              border: `1px solid ${on ? "rgba(74,222,128,0.4)" : doc.required ? "rgba(251,146,60,0.3)" : "var(--border)"}`,
+                              border: `1px solid ${on ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
                               borderRadius: 12, padding: "10px 14px", cursor: "pointer",
                               display: "flex", alignItems: "center", gap: 10, textAlign: "left",
                             }}>
@@ -1765,7 +1768,8 @@ function ContractContent() {
                             <div style={{ flex: 1 }}>
                               <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: on ? "#4ade80" : "var(--text)" }}>
                                 {doc.label}
-                                {doc.required && !on && <span style={{ fontSize: 10, color: "#fb923c", marginLeft: 6, fontWeight: 400 }}>필수</span>}
+                                {!on && <span style={{ fontSize: 10, color: doc.required ? "#fb923c" : "var(--text-muted)", marginLeft: 6, fontWeight: 400, background: doc.required ? "rgba(251,146,60,0.1)" : "var(--surface)", borderRadius: 4, padding: "1px 5px" }}>{doc.required ? "미제출" : "미제출"}</span>}
+                                {on && <span style={{ fontSize: 10, color: "#4ade80", marginLeft: 6, fontWeight: 400 }}>수령 완료</span>}
                               </p>
                               <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>{doc.desc}</p>
                             </div>
