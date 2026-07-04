@@ -140,8 +140,13 @@ export default function TeamMemberPage() {
   // 아코디언 열림 상태
   const [payslipOpen, setPayslipOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(true);
   const [showResignModal, setShowResignModal] = useState(false);
+
+  // 서류 현황
+  const [docsSubmitted, setDocsSubmitted] = useState<Record<string, boolean>>({});
+  const [docsSaving, setDocsSaving] = useState(false);
 
   // 근태 입력 모달
   const [showAttModal, setShowAttModal] = useState(false);
@@ -232,6 +237,7 @@ export default function TeamMemberPage() {
       }
 
       setMember({ ...data, worker: (data as any).users, wage, work_days, work_hours });
+      setDocsSubmitted((data as any).docs_submitted || {});
       loadAttendance(data.id);
       loadContracts(data.employer_id, data.worker_id, data.id);
       loadPayslips(data.id);
@@ -291,6 +297,16 @@ export default function TeamMemberPage() {
     setShowWorkModal(false);
     setWorkSaving(false);
     showToast("근무조건이 수정됐어요");
+  }
+
+  async function toggleDoc(key: string) {
+    if (!member) return;
+    setDocsSaving(true);
+    const newDocs = { ...docsSubmitted, [key]: !docsSubmitted[key] };
+    await supabase.from("team_members").update({ docs_submitted: newDocs }).eq("id", member.id);
+    setDocsSubmitted(newDocs);
+    setDocsSaving(false);
+    showToast(newDocs[key] ? "서류 수령 완료로 변경됐어요" : "미제출로 변경됐어요");
   }
 
   async function saveAttendance() {
@@ -742,6 +758,57 @@ export default function TeamMemberPage() {
             </div>
           )}
         </div>
+
+        {/* ── 서류 현황 아코디언 ── */}
+        {(() => {
+          const DOCS = [
+            { key: "healthCert", label: "🏥 보건증", desc: "식품위생법 대상 업종 필수 · 유효기간 1년" },
+            { key: "idCard", label: "🪪 신분증 사본", desc: "주민등록증 또는 운전면허증" },
+            { key: "bankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의" },
+            { key: "parentConsent", label: "📝 친권자 동의서", desc: "만 18세 미만 근로자" },
+          ];
+          const submittedCount = DOCS.filter(d => docsSubmitted[d.key]).length;
+          return (
+            <div style={{ borderBottom: "1px solid var(--border)" }}>
+              <SectionHeader
+                title="📂 서류 현황"
+                open={docsOpen}
+                onToggle={() => setDocsOpen(v => !v)}
+                badge={submittedCount > 0 ? `${submittedCount}/${DOCS.length}` : undefined}
+              />
+              {docsOpen && (
+                <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {DOCS.map(doc => {
+                    const on = !!docsSubmitted[doc.key];
+                    return (
+                      <button key={doc.key} onClick={() => toggleDoc(doc.key)} disabled={docsSaving}
+                        style={{
+                          background: on ? "rgba(74,222,128,0.08)" : "var(--surface2)",
+                          border: `1px solid ${on ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
+                          borderRadius: 12, padding: "12px 14px", cursor: "pointer",
+                          display: "flex", alignItems: "center", gap: 12, textAlign: "left", width: "100%",
+                        }}>
+                        <span style={{ fontSize: 22, flexShrink: 0 }}>{on ? "✅" : "⬜"}</span>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 14, fontWeight: 700, margin: 0, color: on ? "#4ade80" : "var(--text)" }}>
+                            {doc.label}
+                            <span style={{ fontSize: 11, marginLeft: 8, fontWeight: 400, color: on ? "#4ade80" : "var(--text-muted)", background: on ? "rgba(74,222,128,0.1)" : "var(--surface)", borderRadius: 4, padding: "1px 6px" }}>
+                              {on ? "수령 완료" : "미제출"}
+                            </span>
+                          </p>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "3px 0 0" }}>{doc.desc}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.5 }}>
+                    * 탭 하면 수령/미제출 상태가 즉시 저장됩니다
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── 계약서 아코디언 ── */}
         <div style={{ borderBottom: "1px solid var(--border)" }}>
