@@ -211,6 +211,15 @@ function WorkerProfileContent() {
 
     const decodedReturn = currReturnTo ? decodeURIComponent(currReturnTo) : "";
     if (currIsNew || (decodedReturn.startsWith("/") && !decodedReturn.includes("mypage"))) {
+      // 신규 등록 시 users.region으로 희망지역 자동채움
+      const { data: userData } = await supabase.from("users")
+        .select("region").eq("id", session.user.id).maybeSingle();
+      if (userData?.region) {
+        const parts = userData.region.split(" ");
+        setSido(parts[0] || "");
+        setGugun(parts[1] || "");
+        setRegionSearch(userData.region);
+      }
       setLoading(false);
       return;
     }
