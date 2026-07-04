@@ -667,10 +667,19 @@ export default function TeamMemberPage() {
           />
           {payslipOpen && (
             <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-              <button onClick={() => router.push(`/payslip?tmId=${member.id}`)}
-                style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 13, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                📋 이번달 급여 명세서 발행
+              <button
+                onClick={contracts.length === 0 ? undefined : () => router.push(`/payslip?tmId=${member.id}`)}
+                style={{ width: "100%", background: contracts.length === 0 ? "var(--surface2)" : "linear-gradient(135deg,#7c3aed,#ec4899)", border: contracts.length === 0 ? "1px solid var(--border)" : "none", borderRadius: 12, padding: 13, color: contracts.length === 0 ? "var(--text-muted)" : "#fff", fontSize: 14, fontWeight: 700, cursor: contracts.length === 0 ? "default" : "pointer" }}>
+                {contracts.length === 0 ? "🔒 급여 명세서 발행 (계약서 작성 후 가능)" : "📋 이번달 급여 명세서 발행"}
               </button>
+              {contracts.length === 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f59e0b10", border: "1px solid #f59e0b30", borderRadius: 10, padding: "10px 12px" }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                  <p style={{ fontSize: 12, color: "#f59e0b", margin: 0, lineHeight: 1.5 }}>
+                    계약서를 먼저 작성해야 정확한 급여 계산과 명세서 발행이 가능해요. 아래 <b>계약서</b> 탭에서 바로 작성할 수 있어요.
+                  </p>
+                </div>
+              )}
               {payslipsLoading ? (
                 <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>로딩 중...</p>
               ) : payslips.length === 0 ? (
@@ -712,9 +721,22 @@ export default function TeamMemberPage() {
           {contractOpen && (
             <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
               {contracts.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)" }}>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>📄</div>
-                  <p style={{ fontSize: 13 }}>계약서가 없어요</p>
+                <div style={{ background: "var(--surface2)", borderRadius: 14, padding: "18px 16px", border: "1px solid var(--border)", marginBottom: 4 }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 8px" }}>아직 계약서가 없어요</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {[
+                      { emoji: "⚖️", text: "근로기준법상 근로계약서 미교부 시 500만원 이하 벌금" },
+                      { emoji: "💰", text: "계약서 기반으로 급여 명세서 자동 발행 가능" },
+                      { emoji: "📅", text: "근무요일·시간이 확정돼야 출근 캘린더 자동 표시" },
+                      { emoji: "🔒", text: "분쟁 발생 시 계약서가 유일한 법적 근거" },
+                    ].map(({ emoji, text }) => (
+                      <div key={text} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                        <span style={{ fontSize: 13, flexShrink: 0 }}>{emoji}</span>
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>{text}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 contracts.map((c, i) => {
