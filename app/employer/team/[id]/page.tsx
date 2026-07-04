@@ -555,12 +555,8 @@ export default function TeamMemberPage() {
 
         {/* ── 근태 관리 (항상 펼쳐짐) ── */}
         <div style={{ borderBottom: "1px solid var(--border)", paddingBottom: 20 }}>
-          <div style={{ padding: "14px 0 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ padding: "14px 0 12px" }}>
             <p style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", margin: 0 }}>근태 관리</p>
-            <button onClick={() => { setAttDate(new Date().toISOString().split("T")[0]); setAttStatus("normal"); setAttNote(""); setAttStart(""); setAttEnd(""); setShowAttModal(true); }}
-              style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 10, padding: "6px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-              + 근태 입력
-            </button>
           </div>
 
           {/* 월 선택 */}
