@@ -129,7 +129,7 @@ function ContractContent() {
     workDaysMon: false, workDaysTue: false, workDaysWed: false,
     workDaysThu: false, workDaysFri: false, workDaysSat: false, workDaysSun: false,
     workDaysMode: "check", workDaysText: "",
-    workStart: "", workEnd: "", breakTime: "30",
+    workStart: "", workEnd: "", breakTime: "30", noBreak: false,
     workStartMon: "09:00", workEndMon: "18:00", breakTimeMon: "30",
     workStartTue: "09:00", workEndTue: "18:00", breakTimeTue: "30",
     workStartWed: "09:00", workEndWed: "18:00", breakTimeWed: "30",
@@ -138,7 +138,7 @@ function ContractContent() {
     workStartSat: "09:00", workEndSat: "18:00", breakTimeSat: "30",
     workStartSun: "09:00", workEndSun: "18:00", breakTimeSun: "30",
     weeklyHours: "", dailyHours: "",
-    wage: "", payDay: "말일", payMethod: "계좌이체",
+    wage: "", payDay: "말일", payMethod: "계좌이체", bankAccount: "",
     insEmp: false, insAcc: false, insPension: false, insHealth: false,
     contractDate: "",
     school: "", grade: "",
@@ -1403,25 +1403,81 @@ function ContractContent() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>출근 시각</label>
-                          <input type="time" style={inputStyle} value={f.workStart} onChange={e => updateField("workStart", e.target.value)} />
+                          <input type="time" style={inputStyle} value={f.workStart} onChange={e => {
+                            const start = e.target.value;
+                            const end = f.workEnd;
+                            const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
+                            if (start && end) {
+                              const [sh, sm] = start.split(":").map(Number);
+                              const [eh, em] = end.split(":").map(Number);
+                              const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                              if (totalMin > 0) {
+                                const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
+                                const workDayCount = selectedDays.length || 5;
+                                setF(p => ({ ...p, workStart: start, dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
+                                return;
+                              }
+                            }
+                            updateField("workStart", start);
+                          }} />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>퇴근 시각</label>
-                          <input type="time" style={inputStyle} value={f.workEnd} onChange={e => updateField("workEnd", e.target.value)} />
+                          <input type="time" style={inputStyle} value={f.workEnd} onChange={e => {
+                            const end = e.target.value;
+                            const start = f.workStart;
+                            const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
+                            if (start && end) {
+                              const [sh, sm] = start.split(":").map(Number);
+                              const [eh, em] = end.split(":").map(Number);
+                              const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                              if (totalMin > 0) {
+                                const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
+                                const workDayCount = selectedDays.length || 5;
+                                setF(p => ({ ...p, workEnd: end, dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
+                                return;
+                              }
+                            }
+                            updateField("workEnd", end);
+                          }} />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 시작</label>
-                          <input type="time" style={inputStyle} value={f.breakStart} onChange={e => updateField("breakStart", e.target.value)} />
+                          <input type="time" style={{ ...inputStyle, opacity: f.noBreak ? 0.4 : 1 }} value={f.noBreak ? "" : f.breakStart} disabled={f.noBreak} onChange={e => updateField("breakStart", e.target.value)} />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 종료</label>
-                          <input type="time" style={inputStyle} value={f.breakEnd} onChange={e => updateField("breakEnd", e.target.value)} />
+                          <input type="time" style={{ ...inputStyle, opacity: f.noBreak ? 0.4 : 1 }} value={f.noBreak ? "" : f.breakEnd} disabled={f.noBreak} onChange={e => updateField("breakEnd", e.target.value)} />
                         </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -4 }}>
+                        <input type="checkbox" id="noBreak" checked={!!f.noBreak} onChange={e => {
+                          const noBreak = e.target.checked;
+                          const breakMin = noBreak ? 0 : 30;
+                          const start = f.workStart; const end = f.workEnd;
+                          if (start && end) {
+                            const [sh, sm] = start.split(":").map(Number);
+                            const [eh, em] = end.split(":").map(Number);
+                            const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                            if (totalMin > 0) {
+                              const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
+                              const workDayCount = selectedDays.length || 5;
+                              setF(p => ({ ...p, noBreak, breakTime: String(breakMin), dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
+                              return;
+                            }
+                          }
+                          setF(p => ({ ...p, noBreak, breakTime: String(breakMin) }));
+                        }} style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
+                        <label htmlFor="noBreak" style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>휴게시간 없음</label>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>1일 소정시간(h)</label>
-                          <input type="number" inputMode="decimal" style={inputStyle} value={f.dailyHours} onChange={e => updateField("dailyHours", e.target.value)} placeholder="8" />
+                          <input type="number" inputMode="decimal" style={inputStyle} value={f.dailyHours} onChange={e => {
+                            const daily = parseFloat(e.target.value) || 0;
+                            const workDayCount = selectedDays.length || 5;
+                            setF(p => ({ ...p, dailyHours: e.target.value, weeklyHours: daily ? String(Math.round(daily * workDayCount * 10) / 10) : p.weeklyHours }));
+                          }} placeholder="8" />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>1주 소정시간(h)</label>
@@ -1571,6 +1627,14 @@ function ContractContent() {
                       ))}
                     </div>
                   </div>
+
+                  {/* 계좌번호 (계좌이체 선택 시) */}
+                  {f.payMethod === "계좌이체" && (
+                    <div>
+                      <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계좌번호 <span style={{ fontWeight: 400, fontSize: 10 }}>(선택)</span></label>
+                      <input style={inputStyle} value={f.bankAccount} onChange={e => updateField("bankAccount", e.target.value)} placeholder="은행명 + 계좌번호 (예: 국민 123-456-789)" />
+                    </div>
+                  )}
 
                   {/* 급여 자동계산 패널 */}
                   {payCalc && (
