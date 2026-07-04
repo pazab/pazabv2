@@ -394,6 +394,28 @@ export default function TeamMemberPage() {
     absent: monthAtt.filter(a => a.status === "absent").length,
   };
 
+  // 근무 요일 파싱 → 해당 월 예정 근무일 수 계산
+  const WORK_DAY_MAP: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
+  const scheduledDayNums = new Set<number>();
+  if (member?.work_days) {
+    for (const [label, num] of Object.entries(WORK_DAY_MAP)) {
+      if (member.work_days.includes(label)) scheduledDayNums.add(num);
+    }
+  }
+  const isScheduledDay = (day: number) => {
+    if (scheduledDayNums.size === 0) return false;
+    return scheduledDayNums.has(new Date(viewYear, viewMonth, day).getDay());
+  };
+  const scheduledDaysInMonth = (() => {
+    if (scheduledDayNums.size === 0) return 0;
+    const days = new Date(viewYear, viewMonth + 1, 0).getDate();
+    let count = 0;
+    for (let d = 1; d <= days; d++) {
+      if (scheduledDayNums.has(new Date(viewYear, viewMonth, d).getDay())) count++;
+    }
+    return count;
+  })();
+
   const contractHours = member?.work_hours ? parseFloat(member.work_hours) : 8;
   const totalActualHours = monthAtt
     .filter(a => a.status !== "absent" && a.status !== "off")
@@ -583,7 +605,15 @@ export default function TeamMemberPage() {
               </div>
             ))}
           </div>
-
+          {scheduledDaysInMonth > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "var(--surface)", borderRadius: 10, padding: "8px 12px", marginTop: 6, border: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>이번달 예정 출근</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: "#7c3aed" }}>
+                {scheduledDaysInMonth}일 중 {thisMonthStats.normal + thisMonthStats.late}일 출근
+              </span>
+              {thisMonthStats.absent > 0 && <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 700 }}>({thisMonthStats.absent}일 결근)</span>}
+            </div>
+          )}
           {/* 급여 요약 카드 */}
           <div style={{ background: "linear-gradient(135deg,#7c3aed15,#ec489915)", borderRadius: 12, padding: "12px 14px", marginBottom: 12, border: "1px solid #7c3aed30" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: overtimeHours > 0 ? 6 : 0 }}>
@@ -621,6 +651,7 @@ export default function TeamMemberPage() {
                 const dayOfWeek = new Date(viewYear, viewMonth, day).getDay();
                 const isSunday = dayOfWeek === 0;
                 const isSaturday = dayOfWeek === 6;
+                const isScheduled = isScheduledDay(day);
                 return (
                   <div key={day}
                     onClick={() => {
@@ -634,9 +665,9 @@ export default function TeamMemberPage() {
                     }}
                     style={{
                       borderRadius: 7, cursor: isFuture ? "default" : "pointer", overflow: "hidden",
-                      background: isFuture ? "none" : status ? status.bg : isToday ? "#7c3aed20" : "var(--surface2)",
-                      border: isFuture ? "none" : isToday ? "1.5px solid #7c3aed" : att ? `1px solid ${status?.color}40` : "1px solid transparent",
-                      opacity: isFuture ? 0.3 : 1,
+                      background: status ? status.bg : isToday ? "#7c3aed20" : isScheduled ? "#7c3aed10" : "none",
+                      border: isToday ? "1.5px solid #7c3aed" : att ? `1px solid ${status?.color}40` : isScheduled && !isFuture ? "1px dashed #7c3aed40" : "1px solid transparent",
+                      opacity: isFuture && !isScheduled ? 0.2 : isFuture && isScheduled ? 0.5 : 1,
                       padding: "3px 2px 2px",
                     }}>
                     <div style={{ textAlign: "center", fontSize: 10, fontWeight: isToday ? 700 : 500, color: isToday ? "#7c3aed" : isSunday ? "#ef4444" : isSaturday ? "#3b82f6" : "var(--text)" }}>{day}</div>
