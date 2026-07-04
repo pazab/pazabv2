@@ -124,10 +124,20 @@ ALTER TABLE matches ADD COLUMN IF NOT EXISTS job_id UUID REFERENCES jobs(id);
 -- 4. RLS
 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "jobs_select_public" ON jobs FOR SELECT USING (true);
-CREATE POLICY "jobs_insert_own"    ON jobs FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "jobs_update_own"    ON jobs FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "jobs_delete_own"    ON jobs FOR DELETE USING (auth.uid() = user_id);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='jobs' AND policyname='jobs_select_public') THEN
+    CREATE POLICY "jobs_select_public" ON jobs FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='jobs' AND policyname='jobs_insert_own') THEN
+    CREATE POLICY "jobs_insert_own" ON jobs FOR INSERT WITH CHECK (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='jobs' AND policyname='jobs_update_own') THEN
+    CREATE POLICY "jobs_update_own" ON jobs FOR UPDATE USING (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='jobs' AND policyname='jobs_delete_own') THEN
+    CREATE POLICY "jobs_delete_own" ON jobs FOR DELETE USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- 5. Realtime
 ALTER TABLE jobs REPLICA IDENTITY FULL;
