@@ -677,6 +677,8 @@ export default function TeamMemberPage() {
                         {att.actual_hours && att.status !== "absent" && att.status !== "off" && <><br /><span style={{ fontSize: 7 }}>{att.actual_hours}h</span></>}
                         {att.memo && <><br /><span style={{ fontSize: 7, color: "#a78bfa" }}>📝</span></>}
                       </div>
+                    ) : isScheduled ? (
+                      <div style={{ textAlign: "center", fontSize: 7, color: "#7c3aed80", lineHeight: 1.3 }}>예정</div>
                     ) : <div style={{ height: 22 }} />}
                   </div>
                 );
