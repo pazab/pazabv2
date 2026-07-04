@@ -115,6 +115,7 @@ function ContractContent() {
   const [myEps, setMyEps] = useState<any[]>([]);
   const [selEp, setSelEp] = useState<any>(null);
   const [myUserId, setMyUserId] = useState<string>("");
+  const [jobDuties, setJobDuties] = useState<string[]>([]);
 
   // 스텝 위자드 상태 (0=사업체, 1=근로자, 2=근무, 3=임금, 4=보험/서명)
   const [wizardStep, setWizardStep] = useState(0);
@@ -257,6 +258,8 @@ function ContractContent() {
 
   useEffect(() => {
     loadInit();
+    supabase.from("job_categories").select("name, parent_id").not("parent_id", "is", null).order("sort_order")
+      .then((result) => { if (result.data) setJobDuties(result.data.map((c: { name: string }) => c.name)); });
   }, [matchId, memberId]);
 
   const loadInit = async () => {
@@ -1348,11 +1351,11 @@ function ContractContent() {
                     )}
                   </div>
 
-                  {/* 담당업무 preset 버튼 — 다중선택 */}
+                  {/* 담당업무 — job_categories 소분류 기반 */}
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>담당업무 <span style={{ fontWeight: 400 }}>(복수 선택 가능)</span></label>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-                      {["홀 서빙", "주방 보조", "카운터", "매장 청소", "배달", "재고 관리", "음료 제조", "포장·마감"].map(preset => {
+                      {(jobDuties.length > 0 ? jobDuties : ["홀서빙", "주방보조", "카운터", "매장청소", "배달", "재고관리", "바리스타", "포장/배달"]).map(preset => {
                         const parts = f.jobDesc ? f.jobDesc.split(", ").map((s: string) => s.trim()).filter(Boolean) : [];
                         const on = parts.includes(preset);
                         return (
