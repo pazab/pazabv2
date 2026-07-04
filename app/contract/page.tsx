@@ -259,7 +259,7 @@ function ContractContent() {
   useEffect(() => {
     loadInit();
     supabase.from("job_categories").select("name, parent_id").not("parent_id", "is", null).order("sort_order")
-      .then((result) => { if (result.data) setJobDuties(result.data.map((c: { name: string }) => c.name)); });
+      .then((res: { data: { name: string }[] | null }) => { if (res.data) setJobDuties(res.data.map(c => c.name)); });
   }, [matchId, memberId]);
 
   const loadInit = async () => {
