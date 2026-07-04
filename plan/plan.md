@@ -1,5 +1,5 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-04 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-04 (2차) | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
 
@@ -165,7 +165,15 @@
   - 담당업무 preset → job_categories DB 소분류 동적 로드
   - 서류 섹션 "미제출이어도 계약서 작성 가능" 안내 추가
 - [ ] 직원 서류 보관함에 payslip 섹션 추가 (급여 구현 후)
-- [ ] team_members.docs_submitted 컬럼 추가 SQL 실행 필요: `ALTER TABLE team_members ADD COLUMN IF NOT EXISTS docs_submitted JSONB DEFAULT '{}';`
+- [x] team_members.docs_submitted 컬럼 추가 SQL 실행 완료
+- [x] job_categories RLS SELECT 정책 추가 (미설정으로 구직 희망직종 안 뜨던 버그 수정)
+- [x] 마감된 공고 재표시 버그 수정 — 마감하기 → job_status:'closed', fetchJobs에서 closed 제외
+- [x] users 허브화 (공통 데이터 단일 입력):
+  - DB: users 테이블에 region/address/birth_date 컬럼 추가
+  - settings 페이지: 이름/연락처/생년월일/거주지역 한 곳에서 수정
+  - worker/profile 신규 등록 시 users.region → 희망지역 자동채움
+  - employer/register 신규 매장 등록 시 users.region → 지역 자동채움
+  - lib/regions.ts 신규: REGIONS 상수 공용화 (employer/register, worker/profile 중복 제거)
 
 **P2**
 - [ ] HEXACO 5턴 압축 CTA화 — explore 배너 진입으로 설계 확정, /interview 라우트 미구현 (/personality 페이지는 있으나 /interview 없어 404)
