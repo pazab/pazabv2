@@ -138,49 +138,23 @@ export async function POST(req: NextRequest) {
       const sido = regionParts[0] || "";
       const gugun = regionParts[1] || "";
 
-      let localJobs: any[] = [];
-      if (gugun) {
-        const { data } = await supabaseAdmin
-          .from("employer_profiles")
-          .select(`*, users!employer_profiles_user_id_fkey(trust_score, avatar_url, name, nickname)`)
-          .eq("is_active", true)
-          .eq("is_deleted", false)
-          .neq("job_type", "urgent")
-          .neq("user_id", userId)
-          .gte("expires_at", new Date().toISOString())
-          .ilike("region", `%${gugun}%`)
-          .limit(300);
-        localJobs = data || [];
-      } else if (sido) {
-        const { data } = await supabaseAdmin
-          .from("employer_profiles")
-          .select(`*, users!employer_profiles_user_id_fkey(trust_score, avatar_url, name, nickname)`)
-          .eq("is_active", true)
-          .eq("is_deleted", false)
-          .neq("job_type", "urgent")
-          .neq("user_id", userId)
-          .gte("expires_at", new Date().toISOString())
-          .ilike("region", `%${sido}%`)
-          .limit(300);
-        localJobs = data || [];
-      }
-
-      let otherQuery = supabaseAdmin
-        .from("employer_profiles")
-        .select(`*, users!employer_profiles_user_id_fkey(trust_score, avatar_url, name, nickname)`)
+      // jobs 테이블 + employer_profiles 조인으로 공고 조회
+      const { data: allJobsRaw } = await supabaseAdmin
+        .from("jobs")
+        .select(`*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, is_deleted, lat, lng), users!jobs_user_id_fkey(trust_score, avatar_url, name, nickname)`)
         .eq("is_active", true)
-        .eq("is_deleted", false)
         .neq("job_type", "urgent")
         .neq("user_id", userId)
-        .gte("expires_at", new Date().toISOString());
+        .gte("expires_at", new Date().toISOString())
+        .limit(500);
 
-      if (gugun) {
-        otherQuery = otherQuery.not("region", "ilike", `%${gugun}%`);
-      } else if (sido) {
-        otherQuery = otherQuery.not("region", "ilike", `%${sido}%`);
-      }
-      const { data: oJobs } = await otherQuery.limit(200);
-      const otherJobs = oJobs || [];
+      // employer_profiles 정보 flatten + 삭제 매장 제외 + 지역 분류
+      const allJobs = (allJobsRaw || [])
+        .filter((j: any) => !j.employer_profiles?.is_deleted)
+        .map((j: any) => ({ ...j.employer_profiles, ...j, id: j.id, employer_profile_id: j.employer_profile_id, users: j.users }));
+
+      const localJobs = allJobs.filter((j: any) => gugun ? (j.region || "").includes(gugun) : sido ? (j.region || "").includes(sido) : true);
+      const otherJobs = allJobs.filter((j: any) => gugun ? !(j.region || "").includes(gugun) : sido ? !(j.region || "").includes(sido) : false);
 
       const jobs = [...localJobs, ...otherJobs];
 
@@ -231,14 +205,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, results });
 
     } else {
-      const { data: eps } = await supabaseAdmin.from("employer_profiles").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
-      const ep = eps?.[0] || null;
+      const { data: latestJobs } = await supabaseAdmin.from("jobs")
+        .select("*, employer_profiles!inner(region)")
+        .eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
+      const latestJob = latestJobs?.[0] || null;
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("desired_region").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
-      if (ep?.hexaco_data) myHexaco = parseHexaco(ep.hexaco_data);
+      if (latestJob?.hexaco_data) myHexaco = parseHexaco(latestJob.hexaco_data);
       else if (myUser?.employer_result) myHexaco = parseHexaco(myUser.employer_result);
-      myRegion = String(ep?.region || wp?.desired_region || "");
-      myProfile = ep || {};
+      myRegion = String(latestJob?.employer_profiles?.region || wp?.desired_region || "");
+      myProfile = latestJob ? { ...latestJob.employer_profiles, ...latestJob } : {};
 
       const regionParts = myRegion.split(/\s+/);
       const sido = regionParts[0] || "";

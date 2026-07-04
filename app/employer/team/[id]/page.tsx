@@ -153,6 +153,13 @@ export default function TeamMemberPage() {
   const [saving, setSaving] = useState(false);
   const [attLogRefreshKey, setAttLogRefreshKey] = useState(0);
 
+  // 근무조건 수정 모달
+  const [showWorkModal, setShowWorkModal] = useState(false);
+  const [editWage, setEditWage] = useState("");
+  const [editWorkDays, setEditWorkDays] = useState("");
+  const [editWorkHours, setEditWorkHours] = useState("");
+  const [workSaving, setWorkSaving] = useState(false);
+
   // 급여 명세서 상태
   const [payslips, setPayslips] = useState<any[]>([]);
   const [payslipsLoading, setPayslipsLoading] = useState(false);
@@ -268,6 +275,22 @@ export default function TeamMemberPage() {
       .order("month", { ascending: false });
     setPayslips(data || []);
     setPayslipsLoading(false);
+  }
+
+  async function saveWorkCondition() {
+    if (!member) return;
+    setWorkSaving(true);
+    const wage = editWage ? parseInt(editWage.replace(/,/g, "")) : null;
+    const { error } = await supabase.from("team_members").update({
+      wage: wage || null,
+      work_days: editWorkDays || null,
+      work_hours: editWorkHours || null,
+    }).eq("id", member.id);
+    if (error) { showToast("저장 오류: " + error.message, "error"); setWorkSaving(false); return; }
+    setMember((prev: any) => ({ ...prev, wage: wage || prev.wage, work_days: editWorkDays || prev.work_days, work_hours: editWorkHours || prev.work_hours }));
+    setShowWorkModal(false);
+    setWorkSaving(false);
+    showToast("근무조건이 수정됐어요");
   }
 
   async function saveAttendance() {
@@ -437,17 +460,28 @@ export default function TeamMemberPage() {
           </div>
 
           {/* 근무 조건 3열 */}
-          <div style={{ padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            {[
-              { label: "시급", value: member.wage ? `${member.wage.toLocaleString()}원` : "미정" },
-              { label: "근무요일", value: member.work_days || "미정" },
-              { label: "근무시간", value: member.work_hours ? `${member.work_hours}시간` : "미정" },
-            ].map(r => (
-              <div key={r.label} style={{ textAlign: "center", background: "var(--surface2)", borderRadius: 10, padding: "8px 4px" }}>
-                <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>{r.label}</p>
-                <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", margin: 0 }}>{r.value}</p>
-              </div>
-            ))}
+          <div style={{ padding: "10px 16px 12px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+              {[
+                { label: "시급", value: member.wage ? `${member.wage.toLocaleString()}원` : "미정" },
+                { label: "근무요일", value: member.work_days || "미정" },
+                { label: "근무시간", value: member.work_hours ? `${member.work_hours}시간` : "미정" },
+              ].map(r => (
+                <div key={r.label} style={{ textAlign: "center", background: "var(--surface2)", borderRadius: 10, padding: "8px 4px" }}>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>{r.label}</p>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", margin: 0 }}>{r.value}</p>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => {
+              setEditWage(member.wage ? String(member.wage) : "");
+              setEditWorkDays(member.work_days || "");
+              setEditWorkHours(member.work_hours ? String(member.work_hours) : "");
+              setShowWorkModal(true);
+            }}
+              style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+              ✏️ 근무조건 수정
+            </button>
           </div>
 
           {/* 하단 액션 버튼 */}
@@ -891,6 +925,84 @@ export default function TeamMemberPage() {
               <button onClick={saveAttendance} disabled={saving}
                 style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 14, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                 {saving ? "저장 중..." : "저장"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 근무조건 수정 모달 ── */}
+      {showWorkModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 480 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 20px", color: "var(--text)" }}>근무조건 수정</h3>
+
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>시급 (원)</p>
+              <input
+                type="number"
+                value={editWage}
+                onChange={e => setEditWage(e.target.value)}
+                placeholder="예) 10030"
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>근무요일</p>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                {["월", "화", "수", "목", "금", "토", "일"].map(d => {
+                  const selected = editWorkDays.includes(d);
+                  return (
+                    <button key={d} onClick={() => {
+                      if (selected) {
+                        setEditWorkDays(prev => prev.split("·").filter(x => x !== d).join("·"));
+                      } else {
+                        const order = ["월", "화", "수", "목", "금", "토", "일"];
+                        const current = editWorkDays ? editWorkDays.split("·") : [];
+                        const next = [...current, d].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+                        setEditWorkDays(next.join("·"));
+                      }
+                    }}
+                      style={{ flex: 1, padding: "8px 2px", borderRadius: 8, border: `1.5px solid ${selected ? "#7c3aed" : "var(--border)"}`, background: selected ? "#7c3aed20" : "none", color: selected ? "#7c3aed" : "var(--text-muted)", fontSize: 13, fontWeight: selected ? 700 : 400, cursor: "pointer" }}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+              <input
+                value={editWorkDays}
+                onChange={e => setEditWorkDays(e.target.value)}
+                placeholder="직접 입력 (예: 월·화·수·목·금)"
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", color: "var(--text)", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>하루 근무시간 (시간)</p>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                {["4", "5", "6", "7", "8"].map(h => (
+                  <button key={h} onClick={() => setEditWorkHours(h)}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: `1.5px solid ${editWorkHours === h ? "#7c3aed" : "var(--border)"}`, background: editWorkHours === h ? "#7c3aed20" : "none", color: editWorkHours === h ? "#7c3aed" : "var(--text-muted)", fontSize: 13, fontWeight: editWorkHours === h ? 700 : 400, cursor: "pointer" }}>
+                    {h}시간
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                value={editWorkHours}
+                onChange={e => setEditWorkHours(e.target.value)}
+                placeholder="직접 입력"
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowWorkModal(false)}
+                style={{ flex: 1, background: "var(--surface2)", border: "none", borderRadius: 12, padding: 14, color: "var(--text-muted)", fontSize: 14, cursor: "pointer" }}>취소</button>
+              <button onClick={saveWorkCondition} disabled={workSaving}
+                style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 14, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                {workSaving ? "저장 중..." : "저장"}
               </button>
             </div>
           </div>

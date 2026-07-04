@@ -44,8 +44,51 @@ export async function POST(req: NextRequest) {
         bot_knowledge: userData?.employer_bot_knowledge || null,
       };
 
-      const { error } = await supabase.from("employer_profiles").insert(profileData);
-      if (error) throw error;
+      // 매장 찾거나 생성
+      const { data: existingStore } = await supabase.from("employer_profiles")
+        .select("id").eq("user_id", userId).eq("is_deleted", false)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+      let storeId: string;
+      if (existingStore?.id) {
+        storeId = existingStore.id;
+        await supabase.from("employer_profiles").update({
+          business_name: profileData.business_name,
+          business_type: profileData.business_type,
+          region: profileData.region,
+        }).eq("id", storeId);
+      } else {
+        const { data: newStore, error: storeError } = await supabase.from("employer_profiles").insert({
+          user_id: userId,
+          business_name: profileData.business_name,
+          business_type: profileData.business_type,
+          region: profileData.region,
+        }).select("id").single();
+        if (storeError || !newStore) throw storeError || new Error("store insert failed");
+        storeId = newStore.id;
+      }
+
+      // 공고 데이터 jobs 테이블에 insert
+      const jobData = {
+        employer_profile_id: storeId,
+        user_id: userId,
+        wage: profileData.wage,
+        wage_negotiable: false,
+        work_days: profileData.work_days,
+        days_negotiable: false,
+        work_hours: profileData.work_hours,
+        is_active: true,
+        tags: [],
+        staff_count: 1,
+        meal_provided: false,
+        parking: false,
+        employer_type: profileData.employer_type,
+        hexaco_data: profileData.hexaco_data,
+        bot_knowledge: profileData.bot_knowledge,
+        job_status: "active",
+      };
+      const { error: jobError } = await supabase.from("jobs").insert(jobData);
+      if (jobError) throw jobError;
 
       return NextResponse.json({ success: true, message: "공고가 등록됐어요! 🎉" });
     }

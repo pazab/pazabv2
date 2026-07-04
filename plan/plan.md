@@ -149,7 +149,8 @@
 - [x] 매장 등록 ↔ 공고 등록 분리: StoreRegisterModal is_active:false, 내팀 "📢 공고올리기" 버튼, employer/register storeId 파라미터
 - [x] 매장 삭제 안전장치 — openDeleteModal DB 직접 조회(employer_id 기반), 팀원 있으면 삭제 버튼 숨김
 - [x] mypage 공고 마감 — is_deleted 제거, is_active:false만
-- [ ] 사장님 팀원상세 /employer/team/[id] 근무조건 수정 기능
+- [x] 사장님 팀원상세 /employer/team/[id] 근무조건 수정 기능
+- [x] employer_profiles(매장) ↔ jobs(공고) 완전 분리 아키텍처 — jobs 테이블 신규, match/lovecall/mypage/myteam/contract/job/[id]/paz-register 전체 반영, DB: db/patch_jobs_table.sql
 - [ ] 직원 서류 보관함에 payslip 섹션 추가 (급여 구현 후)
 
 **P2**

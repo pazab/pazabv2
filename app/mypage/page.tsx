@@ -615,11 +615,19 @@ function MyPageContent() {
   const fetchJobs = async (uid: string) => {
     setJobLoading(true);
     try {
-      const { data } = await supabase.from("employer_profiles").select("*").eq("user_id", uid).or("is_deleted.is.null,is_deleted.eq.false").neq("job_type", "urgent").not("business_name", "is", null);
-      const jobsWithLogs = await Promise.all((data || []).map(async (job: any) => {
+      const { data: rawJobs } = await supabase.from("jobs")
+        .select("*, employer_profiles!inner(id, business_name, business_type, region, image_url, image_urls, is_deleted)")
+        .eq("user_id", uid)
+        .neq("job_type", "urgent")
+        .order("created_at", { ascending: false });
+      // 삭제된 매장의 공고 제외 + 매장 정보 flatten
+      const flatJobs = (rawJobs || [])
+        .filter((j: any) => !j.employer_profiles?.is_deleted)
+        .map((j: any) => ({ ...j, ...j.employer_profiles, id: j.id, employer_profile_id: j.employer_profile_id }));
+      const jobsWithLogs = await Promise.all(flatJobs.map(async (job: any) => {
         const { count } = await supabase.from("bot_chat_logs")
           .select("*", { count: "exact", head: true })
-          .eq("employer_profile_id", job.id)
+          .eq("employer_profile_id", job.employer_profile_id)
           .eq("bot_uncertain", true);
         return { ...job, newQuestionCount: count || 0 };
       }));
@@ -629,13 +637,8 @@ function MyPageContent() {
   };
 
   const toggleJobActive = async (jobId: string, current: boolean) => {
-    await supabase.from("employer_profiles").update({ is_active: !current }).eq("id", jobId);
-    setJobs(prev => {
-      const next = prev.map(j => j.id === jobId ? { ...j, is_active: !current } : j);
-      const updated = next.find(j => j.id === jobId);
-      if (updated) setMyEmployerProfile(updated);
-      return next;
-    });
+    await supabase.from("jobs").update({ is_active: !current }).eq("id", jobId);
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, is_active: !current } : j));
   };
 
   const deleteJob = async (jobId: string) => {
@@ -652,15 +655,10 @@ function MyPageContent() {
         if (isMatched) {
           await supabase.from("matches")
             .update({ status: "cancelled", progress_status: "cancelled" })
-            .eq("employer_profile_id", jobId);
+            .or(`job_id.eq.${jobId},employer_profile_id.eq.${job?.employer_profile_id}`);
         }
-        // is_active만 false — is_deleted는 건드리지 않음 (매장 삭제는 내팀에서만)
-        await supabase.from("employer_profiles").update({ is_active: false }).eq("id", jobId);
-        setJobs(prev => {
-          const next = prev.filter(j => j.id !== jobId);
-          setMyEmployerProfile(next[0] || null);
-          return next;
-        });
+        await supabase.from("jobs").update({ is_active: false }).eq("id", jobId);
+        setJobs(prev => prev.filter(j => j.id !== jobId));
         setConfirmModal(null);
       },
     });
@@ -1065,12 +1063,12 @@ function MyPageContent() {
                             ✏️ 수정
                           </button>
                         )}
-                        <button onClick={() => router.replace(`/employer/interview?profileId=${job.id}`)}
+                        <button onClick={() => router.replace(`/employer/interview?profileId=${job.employer_profile_id}`)}
                           style={{ background: job.bot_interview_done ? "var(--chip-green-bg)" : "var(--chip-purple-bg)", border: `1px solid ${job.bot_interview_done ? "var(--chip-green-border)" : "var(--chip-purple-border)"}`, color: job.bot_interview_done ? "var(--success-text)" : "var(--purple-text)", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                           {job.bot_interview_done ? "✅ 봇설정" : "🤖 봇설정"}
                         </button>
                         {job.newQuestionCount > 0 && (
-                          <button onClick={() => router.push(`/employer/questions?profileId=${job.id}`)}
+                          <button onClick={() => router.push(`/employer/questions?profileId=${job.employer_profile_id}`)}
                             style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                             📬 {job.newQuestionCount}개
                           </button>

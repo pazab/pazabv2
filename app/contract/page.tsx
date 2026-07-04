@@ -316,17 +316,24 @@ function ContractContent() {
       let ep = null;
       if (m.employer_profile_id) {
         const { data } = await supabase.from("employer_profiles")
-          .select("business_name, business_type, region, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
+          .select("business_name, business_type, region, biz_reg_number, ceo_name, biz_address, biz_tel")
           .eq("id", m.employer_profile_id).maybeSingle();
         ep = data;
+        const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
+          .eq("employer_profile_id", m.employer_profile_id)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (job) ep = { ...ep, ...job };
       }
       if (!ep) {
-        const { data } = await supabase.from("employer_profiles")
-          .select("business_name, business_type, region, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
-          .eq("user_id", m.employer_id)
-          .order("created_at", { ascending: false })
-          .limit(1).maybeSingle();
-        ep = data;
+        const { data: epData } = await supabase.from("employer_profiles")
+          .select("id, business_name, business_type, region, biz_reg_number, ceo_name, biz_address, biz_tel")
+          .eq("user_id", m.employer_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        ep = epData;
+        if (epData?.id) {
+          const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
+            .eq("employer_profile_id", epData.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (job) ep = { ...ep, ...job };
+        }
       }
       return { ...m, ep, idx: (all?.length || 0) - i };
     }));
@@ -372,19 +379,28 @@ function ContractContent() {
     if (tm.employer_profile_id) {
       const { data } = await supabase
         .from("employer_profiles")
-        .select("id, business_name, business_type, region, address, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
+        .select("id, business_name, business_type, region, address, biz_reg_number, ceo_name, biz_address, biz_tel")
         .eq("id", tm.employer_profile_id).maybeSingle();
       ep = data;
+      const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
+        .eq("employer_profile_id", tm.employer_profile_id)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (job) ep = { ...ep, ...job };
     }
     if (!ep) {
-      const { data } = await supabase
+      const { data: epData } = await supabase
         .from("employer_profiles")
-        .select("id, business_name, business_type, region, address, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
+        .select("id, business_name, business_type, region, address, biz_reg_number, ceo_name, biz_address, biz_tel")
         .eq("user_id", tm.employer_id)
         .or("is_deleted.is.null,is_deleted.eq.false")
         .not("business_name", "is", null)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      ep = data;
+      ep = epData;
+      if (epData?.id) {
+        const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
+          .eq("employer_profile_id", epData.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (job) ep = { ...ep, ...job };
+      }
     }
 
     const memberAsMatch = {

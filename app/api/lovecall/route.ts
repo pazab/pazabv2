@@ -9,7 +9,7 @@ const supabase = createClient(
 // 러브콜 보내기 (POST)
 export async function POST(req: NextRequest) {
   try {
-    const { employerId, workerId, matchScore, message, senderType, employerProfileId, daetaPostingId } = await req.json();
+    const { employerId, workerId, matchScore, message, senderType, employerProfileId, jobId, daetaPostingId } = await req.json();
 
     if (!employerId || !workerId) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
         worker_interest: senderType === "worker",
         initiated_by: senderType === "employer" ? employerId : workerId,
         employer_profile_id: employerProfileId || null,
+        job_id: jobId || null,
         daeta_posting_id: daetaPostingId || null,
         message: message || "",
         expired_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -106,12 +107,28 @@ export async function GET(req: NextRequest) {
       }
 
       if (myRole === "worker") {
-        const { data: emp } = await supabase
-          .from("employer_profiles")
-          .select("id, business_name, business_type, region, wage, work_days, user_id")
-          .eq("user_id", match.employer_id)
-          .maybeSingle();
-        return { ...match, counterpart: emp, isSent, myRole };
+        // job_id 있으면 jobs 조회, 없으면 employer_profile_id로 폴백
+        let counterpart: any = null;
+        if (match.job_id) {
+          const { data: j } = await supabase.from("jobs")
+            .select("id, wage, work_days, employer_profiles!inner(id, business_name, business_type, region, user_id)")
+            .eq("id", match.job_id).maybeSingle();
+          if (j) counterpart = { ...j.employer_profiles, wage: j.wage, work_days: j.work_days, job_id: j.id };
+        }
+        if (!counterpart && match.employer_profile_id) {
+          const { data: j } = await supabase.from("jobs")
+            .select("id, wage, work_days, employer_profiles!inner(id, business_name, business_type, region, user_id)")
+            .eq("employer_profile_id", match.employer_profile_id)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (j) counterpart = { ...j.employer_profiles, wage: j.wage, work_days: j.work_days, job_id: j.id };
+        }
+        if (!counterpart) {
+          const { data: ep } = await supabase.from("employer_profiles")
+            .select("id, business_name, business_type, region, user_id")
+            .eq("user_id", match.employer_id).maybeSingle();
+          counterpart = ep;
+        }
+        return { ...match, counterpart, isSent, myRole };
       } else {
         const { data: worker } = await supabase
           .from("worker_profiles")
@@ -151,7 +168,7 @@ export async function PATCH(req: NextRequest) {
         updateData.matched_at = new Date().toISOString();
         // 수락 시 건당 공고 매칭중으로 변경
         const { data: acceptMatchData } = await supabase.from("matches")
-          .select("worker_id, employer_id, employer_profile_id, daeta_posting_id").eq("id", matchId).single();
+          .select("worker_id, employer_id, employer_profile_id, job_id, daeta_posting_id").eq("id", matchId).single();
         if (acceptMatchData) {
           // 대타 자동 근로계약서 백그라운드 체결
           if (acceptMatchData.daeta_posting_id) {
@@ -247,10 +264,14 @@ export async function PATCH(req: NextRequest) {
           if (workerProfiles?.length) {
             await supabase.from("worker_profiles").update({ job_status: "matched" }).eq("id", workerProfiles[0].id);
           }
-          // 사장님: employer_profile_id 건당 처리
-          if (acceptMatchData.employer_profile_id) {
-            await supabase.from("employer_profiles")
-              .update({ job_status: "matched" }).eq("id", acceptMatchData.employer_profile_id);
+          // 사장님: job_id 또는 employer_profile_id 기준으로 jobs 업데이트
+          if (acceptMatchData.job_id) {
+            await supabase.from("jobs").update({ job_status: "matched" }).eq("id", acceptMatchData.job_id);
+          } else if (acceptMatchData.employer_profile_id) {
+            const { data: latestJob } = await supabase.from("jobs").select("id")
+              .eq("employer_profile_id", acceptMatchData.employer_profile_id)
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (latestJob?.id) await supabase.from("jobs").update({ job_status: "matched" }).eq("id", latestJob.id);
           }
         }
         break;
@@ -263,20 +284,19 @@ export async function PATCH(req: NextRequest) {
         updateData.progress_status = "cancelled";
         const { data: cancelMatchData } = await supabase
           .from("matches")
-          .select("worker_id, employer_id, employer_profile_id")
+          .select("worker_id, employer_id, employer_profile_id, job_id")
           .eq("id", matchId).single();
         if (cancelMatchData) {
           await supabase.from("worker_profiles")
             .update({ job_status: "active", is_active: true })
             .eq("user_id", cancelMatchData.worker_id);
-          if (cancelMatchData.employer_profile_id) {
-            await supabase.from("employer_profiles")
-              .update({ job_status: "active", is_active: true })
-              .eq("id", cancelMatchData.employer_profile_id);
-          } else {
-            await supabase.from("employer_profiles")
-              .update({ job_status: "active", is_active: true })
-              .eq("user_id", cancelMatchData.employer_id);
+          if (cancelMatchData.job_id) {
+            await supabase.from("jobs").update({ job_status: "active", is_active: true }).eq("id", cancelMatchData.job_id);
+          } else if (cancelMatchData.employer_profile_id) {
+            const { data: latestJob } = await supabase.from("jobs").select("id")
+              .eq("employer_profile_id", cancelMatchData.employer_profile_id)
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (latestJob?.id) await supabase.from("jobs").update({ job_status: "active", is_active: true }).eq("id", latestJob.id);
           }
         }
         break;
@@ -305,7 +325,7 @@ export async function PATCH(req: NextRequest) {
         updateData.status = "hired";
         const { data: hireMatchData } = await supabase
           .from("matches")
-          .select("worker_id, employer_id, employer_profile_id")
+          .select("worker_id, employer_id, employer_profile_id, job_id")
           .eq("id", matchId).single();
 
         // trust_score + 뱃지 연동
@@ -371,18 +391,26 @@ export async function PATCH(req: NextRequest) {
             .update({ job_status: "completed", is_active: false })
             .eq("user_id", hireMatchData.worker_id);
           // 사장님 공고 완료
-          if (hireMatchData.employer_profile_id) {
-            await supabase.from("employer_profiles")
-              .update({ job_status: "completed", is_active: false })
-              .eq("id", hireMatchData.employer_profile_id);
+          if (hireMatchData.job_id) {
+            await supabase.from("jobs").update({ job_status: "completed", is_active: false }).eq("id", hireMatchData.job_id);
+          } else if (hireMatchData.employer_profile_id) {
+            const { data: latestJob } = await supabase.from("jobs").select("id")
+              .eq("employer_profile_id", hireMatchData.employer_profile_id)
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (latestJob?.id) await supabase.from("jobs").update({ job_status: "completed", is_active: false }).eq("id", latestJob.id);
           }
 
-          // 같은 공고의 나머지 매칭들 failed 처리 + 채팅 시스템 메시지
-          if (hireMatchData.employer_profile_id) {
+          // 같은 공고의 나머지 매칭들 failed 처리
+          const matchFilter = hireMatchData.job_id
+            ? `job_id.eq.${hireMatchData.job_id}`
+            : hireMatchData.employer_profile_id
+              ? `employer_profile_id.eq.${hireMatchData.employer_profile_id}`
+              : null;
+          if (matchFilter) {
             const { data: otherMatches } = await supabase
               .from("matches")
               .select("id, worker_id")
-              .eq("employer_profile_id", hireMatchData.employer_profile_id)
+              .or(matchFilter)
               .neq("id", matchId)
               .in("progress_status", ["accepted", "interviewing"]);
 

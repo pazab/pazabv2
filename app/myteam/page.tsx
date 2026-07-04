@@ -833,13 +833,31 @@ function MyTeamPageContent() {
   }
 
   async function loadTeam(uid: string) {
-    // 모든 매장 로드
+    // 모든 매장 로드 (순수 매장 정보만)
     const { data: stores } = await supabase.from("employer_profiles")
-      .select("id, business_name, business_type, region, wage, work_days, work_hours, is_active, image_url")
+      .select("id, business_name, business_type, region, image_url")
       .eq("user_id", uid).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null)
       .order("created_at", { ascending: false });
     const storeList = stores || [];
-    setMyStores(storeList);
+
+    // 각 매장의 최신 공고 로드
+    const storeIds = storeList.map((s: any) => s.id);
+    const { data: jobsData } = storeIds.length > 0
+      ? await supabase.from("jobs")
+          .select("id, employer_profile_id, wage, work_days, work_hours, is_active, job_status")
+          .in("employer_profile_id", storeIds)
+          .order("created_at", { ascending: false })
+      : { data: [] };
+
+    // employer_profile_id 기준 최신 공고 1개씩 매핑
+    const jobByStore: Record<string, any> = {};
+    for (const j of (jobsData || [])) {
+      if (!jobByStore[j.employer_profile_id]) jobByStore[j.employer_profile_id] = j;
+    }
+
+    // 매장에 activeJob 병합
+    const storesWithJobs = storeList.map((s: any) => ({ ...s, activeJob: jobByStore[s.id] || null }));
+    setMyStores(storesWithJobs);
 
     // 첫 진입 시 첫 번째 매장 활성화
     if (storeList.length > 0) {
@@ -1119,8 +1137,8 @@ function MyTeamPageContent() {
                               📨 팀원 초대
                             </button>
                             <button onClick={() => router.push(`/employer/register?storeId=${activeStore.id}`)}
-                              style={{ flex:1, background: activeStore.is_active ? "var(--surface2)" : "linear-gradient(135deg,#059669,#10b981)", border: activeStore.is_active ? "1px solid var(--border)" : "none", borderRadius:10, padding:"9px", color: activeStore.is_active ? "var(--text-muted)" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                              {activeStore.is_active ? "📋 공고수정" : "📢 공고올리기"}
+                              style={{ flex:1, background: activeStore.activeJob?.is_active ? "var(--surface2)" : "linear-gradient(135deg,#059669,#10b981)", border: activeStore.activeJob?.is_active ? "1px solid var(--border)" : "none", borderRadius:10, padding:"9px", color: activeStore.activeJob?.is_active ? "var(--text-muted)" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                              {activeStore.activeJob?.is_active ? "📋 공고수정" : "📢 공고올리기"}
                             </button>
                           </div>
                           {activeMembers.length === 0 ? (
@@ -1216,8 +1234,10 @@ function MyTeamPageContent() {
         const hasMembers = storeMembers.length > 0;
         const doDelete = async () => {
           if (hasMembers) return; // 안전장치 — 팀원 있으면 삭제 불가
+          // 해당 매장의 모든 공고 비활성화
+          await supabase.from("jobs").update({ is_active: false }).eq("employer_profile_id", store.id);
           const { error } = await supabase.from("employer_profiles")
-            .update({ is_deleted: true, is_active: false })
+            .update({ is_deleted: true })
             .eq("id", store.id).eq("user_id", user!.id);
           if (error) { showToast("삭제 실패: " + error.message, "error"); return; }
           setDeleteTarget(null);

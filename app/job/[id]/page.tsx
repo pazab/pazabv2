@@ -187,11 +187,26 @@ export default function JobDetailPage() {
 
   const fetchJob = async (uid?: string, role?: string | null) => {
     let data: Record<string, unknown> | null = null;
-    const { data: byId } = await supabase.from("employer_profiles").select("*").eq("id", id).maybeSingle();
-    if (byId) data = byId as Record<string, unknown>;
-    else {
-      const { data: byUserId } = await supabase.from("employer_profiles").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      data = byUserId as Record<string, unknown>;
+    // jobs 테이블 먼저 시도 (새 구조)
+    const { data: jobRow } = await supabase.from("jobs")
+      .select("*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, biz_reg_number, ceo_name, biz_address, biz_tel, lat, lng)")
+      .eq("id", id).maybeSingle();
+    if (jobRow) {
+      const ep = jobRow.employer_profiles as Record<string, unknown>;
+      data = { ...ep, ...jobRow, id: jobRow.id, employer_profile_id: ep?.id } as Record<string, unknown>;
+    } else {
+      // 구 employer_profiles.id 로 직접 진입한 경우 fallback
+      const { data: byId } = await supabase.from("employer_profiles").select("*").eq("id", id).maybeSingle();
+      if (byId) {
+        data = byId as Record<string, unknown>;
+        const { data: latestJob } = await supabase.from("jobs").select("id, wage, work_days, work_hours, is_active, job_status, hexaco_data, tagline, employer_type, best_matches, worst_matches, caution")
+          .eq("employer_profile_id", (byId as Record<string,unknown>).id as string)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (latestJob) data = { ...data, ...latestJob, employer_profile_id: (byId as Record<string,unknown>).id, id: latestJob.id ?? (byId as Record<string,unknown>).id };
+      } else {
+        const { data: byUserId } = await supabase.from("employer_profiles").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        data = byUserId as Record<string, unknown>;
+      }
     }
     if (data) {
       const { data: userData } = await supabase.from("users").select("trust_score, nickname, avatar_url").eq("id", data.user_id).maybeSingle();
@@ -214,7 +229,9 @@ export default function JobDetailPage() {
             if (tcData.success) setTeamCompat(tcData);
           } catch {}
         }
-        const { data: match } = await supabase.from("matches").select("id, status, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score").eq("employer_profile_id", data.id).eq("worker_id", uid).maybeSingle();
+        const { data: match } = await supabase.from("matches").select("id, status, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score")
+          .or(`job_id.eq.${data.id},employer_profile_id.eq.${data.employer_profile_id ?? data.id}`)
+          .eq("worker_id", uid).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (match) setExistingMatch({ ...match, isReceived: match.employer_interest === true });
         if (match?.match_score) {
           setMatchScore(Number(match.match_score));
@@ -250,7 +267,7 @@ export default function JobDetailPage() {
   const sendLoveCall = async () => {
     setSending(true);
     try {
-      const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: job?.user_id, workerId: userId, matchScore: matchScore || 0, senderType: "worker", employerProfileId: job?.id }) });
+      const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: job?.user_id, workerId: userId, matchScore: matchScore || 0, senderType: "worker", employerProfileId: job?.employer_profile_id ?? job?.id, jobId: job?.id }) });
       const data = await res.json();
       if (data.success) { setSent(true); setShowConfirm(false); }
       else showToast(data.error || "오류가 발생했어요", "error");

@@ -116,11 +116,12 @@ function EmployerRegisterContent() {
   const returnTo = searchParams.get("return") || "explore";
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [storeProfileId, setStoreProfileId] = useState<string | null>(null); // employer_profiles.id
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [newProfileId, setNewProfileId] = useState("");
+  const [newProfileId, setNewProfileId] = useState(""); // employer_profiles.id (봇 설정 진입용)
   const [step, setStep] = useState(1);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -231,61 +232,93 @@ function EmployerRegisterContent() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.push("/login"); return; }
     setUserId(session.user.id);
+
     if (storeId) {
-      // 내팀 "공고올리기" 진입 — 매장 정보 자동채움 후 is_active만 true로 업데이트
-      const { data } = await supabase.from("employer_profiles").select("*").eq("id", storeId).single();
-      if (data) loadFormFromProfile(data);
+      // 내팀 "공고올리기/수정" 진입 — 매장 정보 + 최신 공고 자동채움
+      const { data: store } = await supabase.from("employer_profiles").select("*").eq("id", storeId).single();
+      if (store) {
+        setStoreProfileId(storeId);
+        loadFormFromStore(store);
+        // 해당 매장의 최신 공고 로드
+        const { data: job } = await supabase.from("jobs")
+          .select("*").eq("employer_profile_id", storeId)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (job) loadFormFromJob(job);
+      }
     } else if (isEdit && editId) {
-      const { data } = await supabase.from("employer_profiles").select("*").eq("id", editId).single();
-      if (data) loadFormFromProfile(data);
+      // jobId로 직접 수정 진입 (mypage에서)
+      const { data: job } = await supabase.from("jobs").select("*").eq("id", editId).single();
+      if (job) {
+        setStoreProfileId(job.employer_profile_id);
+        loadFormFromJob(job);
+        const { data: store } = await supabase.from("employer_profiles").select("*").eq("id", job.employer_profile_id).single();
+        if (store) loadFormFromStore(store);
+      }
     } else if (isEdit && !editId) {
-      const { data } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id)
+      // 가장 최근 공고 수정
+      const { data: job } = await supabase.from("jobs")
+        .select("*").eq("user_id", session.user.id)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (data) loadFormFromProfile(data);
+      if (job) {
+        setStoreProfileId(job.employer_profile_id);
+        loadFormFromJob(job);
+        const { data: store } = await supabase.from("employer_profiles").select("*").eq("id", job.employer_profile_id).single();
+        if (store) loadFormFromStore(store);
+      }
     }
     setLoading(false);
   };
 
-  const loadFormFromProfile = (profile: any) => {
-    const parts = (profile.region || "").split(" ");
-    setImageUrls(profile.image_urls || (profile.image_url ? [profile.image_url] : []));
-    setVideoUrl(profile.video_url || null);
-    const parsed = parseWorkHours(profile.work_hours || "");
-    setForm({
-      id: profile.id,
-      businessName: profile.business_name || "",
-      categoryId: profile.category_id || "",
-      categoryIds: profile.category_ids || (profile.category_id ? [profile.category_id] : []),
-      customCategory: profile.custom_category || "",
-      businessType: profile.business_type || "",
+  // 매장 정보 (employer_profiles) → form 채움
+  const loadFormFromStore = (store: any) => {
+    const parts = (store.region || "").split(" ");
+    setImageUrls(store.image_urls || (store.image_url ? [store.image_url] : []));
+    setVideoUrl(store.video_url || null);
+    setForm(prev => ({
+      ...prev,
+      businessName: store.business_name || "",
+      businessType: store.business_type || "",
       sido: parts[0] || "",
       gugun: parts[1] || "",
-      addressDetail: parts.slice(2).join(" "),
-      fullAddress: profile.address || profile.region || "",
-      lat: profile.lat || null,
-      lng: profile.lng || null,
-      wage: String(profile.wage || MIN_WAGE),
-      wageNegotiable: profile.wage_negotiable || false,
-      workDays: profile.work_days || "",
-      daysNegotiable: profile.days_negotiable || false,
+      addressDetail: store.address_detail || parts.slice(2).join(" "),
+      fullAddress: store.address || store.region || "",
+      lat: store.lat || null,
+      lng: store.lng || null,
+    }));
+  };
+
+  // 공고 정보 (jobs) → form 채움
+  const loadFormFromJob = (job: any) => {
+    const parsed = parseWorkHours(job.work_hours || "");
+    setSelectedCreds(Array.isArray(job.required_credentials) ? job.required_credentials : []);
+    setForm(prev => ({
+      ...prev,
+      id: job.id, // jobs.id
+      categoryId: job.category_id || "",
+      categoryIds: job.category_ids || (job.category_id ? [job.category_id] : []),
+      customCategory: job.custom_category || "",
+      wage: String(job.wage || MIN_WAGE),
+      wageNegotiable: job.wage_negotiable || false,
+      workDays: job.work_days || "",
+      daysNegotiable: job.days_negotiable || false,
       workHours: parsed.clean || "",
-      workStartHour: profile.work_start_hour ?? null,
-      workEndHour: profile.work_end_hour ?? null,
-      selectedTags: Array.isArray(profile.tags) ? profile.tags : [],
-      staffCount: String(profile.staff_count || 1),
-      mealProvided: profile.meal_provided || false,
-      parking: profile.parking || false,
+      workStartHour: job.work_start_hour ?? null,
+      workEndHour: job.work_end_hour ?? null,
+      selectedTags: Array.isArray(job.tags) ? job.tags : [],
+      staffCount: String(job.staff_count || 1),
+      mealProvided: job.meal_provided || false,
+      parking: job.parking || false,
       breakHours: parsed.breakHours,
       weeklyHoliday: parsed.weeklyHoliday,
-      isUrgent: profile.is_urgent || false,
-      expiresAt: profile.expires_at ? profile.expires_at.split("T")[0] : "",
-      jobType: profile.job_type || "regular",
-      workStartDate: profile.work_start_date || "",
-      workEndDate: profile.work_end_date || "",
-    });
-    setSelectedCreds(profile.required_credentials || []);
-    if (profile.category_id) {
-      supabase.from("job_categories").select("*").eq("id", profile.category_id).single()
+      isUrgent: job.is_urgent || false,
+      expiresAt: job.expires_at ? job.expires_at.split("T")[0] : "",
+      jobType: job.job_type || "regular",
+      workStartDate: job.work_start_date || "",
+      workEndDate: job.work_end_date || "",
+    }));
+    const catId = job.category_id;
+    if (catId) {
+      supabase.from("job_categories").select("*").eq("id", catId).single()
         .then(({ data: cat }) => {
           if (cat?.parent_id) {
             supabase.from("job_categories").select("*").eq("id", cat.parent_id).single()
@@ -385,13 +418,23 @@ function EmployerRegisterContent() {
     // 긴급대타는 is_urgent 자동 true
     const isUrgent = form.isUrgent || form.jobType === "urgent";
 
-    const profileData: any = {
+    // ── 매장 정보 (employer_profiles) ──
+    const storeData: any = {
       business_name: form.businessName.trim(),
       business_type: businessType,
-      category_id: form.categoryIds[0] || form.categoryId || null,
-      category_ids: form.categoryIds.length ? form.categoryIds : (form.categoryId ? [form.categoryId] : []),
-      custom_category: form.customCategory || null,
       region: fullRegion,
+      address: form.fullAddress || fullRegion,
+      address_detail: form.addressDetail,
+      lat: form.lat,
+      lng: form.lng,
+      image_url: imageUrls[0] || null,
+      image_urls: imageUrls,
+      video_url: videoUrl || null,
+    };
+
+    // ── 공고 정보 (jobs) ──
+    const jobData: any = {
+      user_id: userId,
       wage: parseInt(form.wage),
       wage_negotiable: form.wageNegotiable,
       work_days: form.workDays || "협의",
@@ -399,11 +442,20 @@ function EmployerRegisterContent() {
       work_hours: workHoursFormatted,
       work_start_hour: form.workStartHour,
       work_end_hour: form.workEndHour,
+      category_id: form.categoryIds[0] || form.categoryId || null,
+      category_ids: form.categoryIds.length ? form.categoryIds : (form.categoryId ? [form.categoryId] : []),
+      custom_category: form.customCategory || null,
       tags: form.selectedTags,
       staff_count: parseInt(form.staffCount) || 1,
       meal_provided: form.mealProvided,
       parking: form.parking,
       is_active: true,
+      is_urgent: isUrgent,
+      expires_at: calcExpiresAt(),
+      job_type: form.jobType,
+      work_start_date: form.workStartDate || null,
+      work_end_date: form.workEndDate || null,
+      required_credentials: selectedCreds,
       employer_type: interviewResult?.personalityType || null,
       bio5_data: interviewResult?.big5 || null,
       hexaco_data: interviewResult?.hexaco || null,
@@ -412,42 +464,40 @@ function EmployerRegisterContent() {
       worst_matches: interviewResult?.worstMatches || null,
       caution: interviewResult?.caution || null,
       analyzed_mbti: interviewResult?.analyzedMbti || null,
-      address: form.fullAddress || [form.sido, form.gugun, form.addressDetail].filter(Boolean).join(" "),
-      address_detail: form.addressDetail,
-      lat: form.lat,
-      lng: form.lng,
       bot_knowledge: existingBotKnowledge,
       bot_interview_done: !!existingBotKnowledge,
-      image_url: imageUrls[0] || null,
-      image_urls: imageUrls,
-      video_url: videoUrl || null,
-      is_urgent: isUrgent,
-      expires_at: calcExpiresAt(),
-      job_type: form.jobType,
-      work_start_date: form.workStartDate || null,
-      work_end_date: form.workEndDate || null,
-      required_credentials: selectedCreds,
     };
 
-    if (!form.id) {
-      profileData.user_id = userId;
-    }
-
-    let saveError;
-    let newProfId = "";
-    const targetId = form.id || storeId;
-    if (targetId) {
-      const { error } = await supabase.from("employer_profiles").update(profileData).eq("id", targetId);
-      saveError = error;
-      newProfId = targetId;
+    // 1) 매장 저장
+    let epId = storeProfileId;
+    if (epId) {
+      const { error: epErr } = await supabase.from("employer_profiles").update(storeData).eq("id", epId);
+      if (epErr) { setError("매장 저장 오류: " + epErr.message); setSaving(false); return; }
     } else {
-      const { data: inserted, error } = await supabase.from("employer_profiles").insert(profileData).select("id").single();
-      saveError = error;
-      if (inserted) newProfId = inserted.id;
+      // 새 매장 생성
+      const { data: newStore, error: epErr } = await supabase.from("employer_profiles")
+        .insert({ ...storeData, user_id: userId, is_active: false }).select("id").single();
+      if (epErr || !newStore) { setError("매장 생성 오류: " + epErr?.message); setSaving(false); return; }
+      epId = newStore.id;
+      setStoreProfileId(epId);
     }
 
-    if (saveError) { setError("저장 중 오류: " + saveError.message); setSaving(false); return; }
-    if (newProfId) setNewProfileId(newProfId);
+    // 2) 공고 저장
+    jobData.employer_profile_id = epId;
+    let saveError;
+    if (form.id) {
+      // 기존 공고 수정
+      const { error } = await supabase.from("jobs").update(jobData).eq("id", form.id);
+      saveError = error;
+    } else {
+      // 신규 공고 등록
+      const { data: newJob, error } = await supabase.from("jobs").insert(jobData).select("id").single();
+      saveError = error;
+      if (newJob) setForm(prev => ({ ...prev, id: newJob.id }));
+    }
+
+    if (saveError) { setError("공고 저장 오류: " + saveError.message); setSaving(false); return; }
+    if (epId) setNewProfileId(epId); // 봇 설정 진입용 (employer_profiles.id)
     setSuccess(true);
 
     if (isEdit) {
