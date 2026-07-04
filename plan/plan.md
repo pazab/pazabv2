@@ -1,5 +1,5 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-03 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-04 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
 
@@ -151,7 +151,21 @@
 - [x] mypage 공고 마감 — is_deleted 제거, is_active:false만
 - [x] 사장님 팀원상세 /employer/team/[id] 근무조건 수정 기능
 - [x] employer_profiles(매장) ↔ jobs(공고) 완전 분리 아키텍처 — jobs 테이블 신규, match/lovecall/mypage/myteam/contract/job/[id]/paz-register 전체 반영, DB: db/patch_jobs_table.sql
+- [x] job_categories 테이블 생성 — 10개 대분류·46개 소분류 (음식점/카페/편의점/패스트푸드/마트/물류창고/생산제조/건설노무/의료복지/기타), 알바몬·알바천국 대비 3개 추가
+- [x] job_credentials 직업별 필수서류 DB 내재화 — category_name+duty_name+name+is_mandatory_by_law 구조
+- [x] 팀원 상세(/employer/team/[id]) 기능 다수 추가:
+  - 근무 예정일 달력 시각화 (work_days 파싱 → 배경색+예정 뱃지)
+  - "N일 중 M일 출근" 통계 표시
+  - 계약서 없을 때 필요성 안내 카드 + 급여명세 발행 잠금
+  - 📂 서류 현황 아코디언 — job_credentials 기반 동적 서류목록, 제출여부 DB 즉시저장 (team_members.docs_submitted JSONB)
+  - 보건증 필요여부 business_type → job_credentials DB 조회, 미성년자 친권자동의서 자동 노출
+- [x] 계약서 위자드 추가 개선:
+  - 출퇴근 시간 → 1일/1주 소정시간 자동계산 + 휴게없음 체크박스
+  - 계좌이체 선택 시 계좌번호 입력 (선택)
+  - 담당업무 preset → job_categories DB 소분류 동적 로드
+  - 서류 섹션 "미제출이어도 계약서 작성 가능" 안내 추가
 - [ ] 직원 서류 보관함에 payslip 섹션 추가 (급여 구현 후)
+- [ ] team_members.docs_submitted 컬럼 추가 SQL 실행 필요: `ALTER TABLE team_members ADD COLUMN IF NOT EXISTS docs_submitted JSONB DEFAULT '{}';`
 
 **P2**
 - [ ] HEXACO 5턴 압축 CTA화 — explore 배너 진입으로 설계 확정, /interview 라우트 미구현 (/personality 페이지는 있으나 /interview 없어 404)
