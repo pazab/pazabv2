@@ -147,6 +147,8 @@ export default function TeamMemberPage() {
   // 서류 현황
   const [docsSubmitted, setDocsSubmitted] = useState<Record<string, boolean>>({});
   const [docsSaving, setDocsSaving] = useState(false);
+  const [needsHealthCert, setNeedsHealthCert] = useState(false);
+  const [isMinor, setIsMinor] = useState(false);
 
   // 근태 입력 모달
   const [showAttModal, setShowAttModal] = useState(false);
@@ -238,6 +240,26 @@ export default function TeamMemberPage() {
 
       setMember({ ...data, worker: (data as any).users, wage, work_days, work_hours });
       setDocsSubmitted((data as any).docs_submitted || {});
+
+      // 미성년자 여부 (계약서 타입 or 생년월일)
+      const contractData = data.match_id ? null : null; // 아래 contracts에서 확인
+      const workerBirth = (data as any).users?.birth_date;
+      if (workerBirth) {
+        const age = new Date().getFullYear() - new Date(workerBirth).getFullYear();
+        setIsMinor(age < 19);
+      }
+
+      // 업종 기반 보건증 필수 여부
+      if (data.employer_profile_id) {
+        const { data: ep } = await supabase.from("employer_profiles")
+          .select("business_type").eq("id", data.employer_profile_id).maybeSingle();
+        if (ep?.business_type) {
+          const { data: creds } = await supabase.from("job_credentials")
+            .select("id").eq("category_name", ep.business_type).eq("name", "보건증").eq("is_mandatory_by_law", true).limit(1);
+          setNeedsHealthCert((creds?.length ?? 0) > 0);
+        }
+      }
+
       loadAttendance(data.id);
       loadContracts(data.employer_id, data.worker_id, data.id);
       loadPayslips(data.id);
@@ -762,10 +784,10 @@ export default function TeamMemberPage() {
         {/* ── 서류 현황 아코디언 ── */}
         {(() => {
           const DOCS = [
-            { key: "healthCert", label: "🏥 보건증", desc: "식품위생법 대상 업종 필수 · 유효기간 1년" },
-            { key: "idCard", label: "🪪 신분증 사본", desc: "주민등록증 또는 운전면허증" },
-            { key: "bankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의" },
-            { key: "parentConsent", label: "📝 친권자 동의서", desc: "만 18세 미만 근로자" },
+            ...(needsHealthCert ? [{ key: "healthCert", label: "🏥 보건증", desc: "식품위생법 대상 업종 필수 · 유효기간 1년", required: true }] : []),
+            { key: "idCard", label: "🪪 신분증 사본", desc: "주민등록증 또는 운전면허증", required: true },
+            { key: "bankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의", required: false },
+            ...(isMinor ? [{ key: "parentConsent", label: "📝 친권자 동의서", desc: "만 18세 미만 근로자 필수", required: true }] : []),
           ];
           const submittedCount = DOCS.filter(d => docsSubmitted[d.key]).length;
           return (
@@ -792,8 +814,8 @@ export default function TeamMemberPage() {
                         <div style={{ flex: 1 }}>
                           <p style={{ fontSize: 14, fontWeight: 700, margin: 0, color: on ? "#4ade80" : "var(--text)" }}>
                             {doc.label}
-                            <span style={{ fontSize: 11, marginLeft: 8, fontWeight: 400, color: on ? "#4ade80" : "var(--text-muted)", background: on ? "rgba(74,222,128,0.1)" : "var(--surface)", borderRadius: 4, padding: "1px 6px" }}>
-                              {on ? "수령 완료" : "미제출"}
+                            <span style={{ fontSize: 11, marginLeft: 8, fontWeight: 400, color: on ? "#4ade80" : (doc as any).required ? "#fb923c" : "var(--text-muted)", background: on ? "rgba(74,222,128,0.1)" : (doc as any).required ? "rgba(251,146,60,0.1)" : "var(--surface)", borderRadius: 4, padding: "1px 6px" }}>
+                              {on ? "수령 완료" : (doc as any).required ? "미제출 (필수)" : "미제출"}
                             </span>
                           </p>
                           <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "3px 0 0" }}>{doc.desc}</p>
