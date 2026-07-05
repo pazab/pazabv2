@@ -4,9 +4,11 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
+import { useToast } from "@/lib/useToast";
 
 export default function MyWorkPage() {
   const router = useRouter();
+  const { showToast, ToastUI } = useToast();
   const [userId, setUserId] = useState<string>("");
   const [current, setCurrent] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
@@ -57,16 +59,18 @@ export default function MyWorkPage() {
       : { data: [] };
 
 
-    // 계약서 상태 조회 (없음/서명대기/완료)
-    const activeMatchIds = (activeData || []).map(d => d.match_id).filter(Boolean);
-    const { data: contractsData } = activeMatchIds.length > 0
+    // 계약서 상태 조회 — match_id 또는 team_member_id 기반
+    const activeMemberIds = (activeData || []).map(d => d.id).filter(Boolean);
+    const { data: contractsData } = activeMemberIds.length > 0
       ? await supabase.from("contracts")
-          .select("match_id, worker_signed, employer_signed")
-          .in("match_id", activeMatchIds)
+          .select("id, match_id, team_member_id, worker_signed, employer_signed")
+          .in("team_member_id", activeMemberIds)
+          .neq("status", "superseded")
+          .order("created_at", { ascending: false })
       : { data: [] };
 
     setCurrent((activeData || []).map(d => {
-      const contract = (contractsData || []).find((c: any) => c.match_id === d.match_id);
+      const contract = (contractsData || []).find((c: any) => c.team_member_id === d.id);
       const contractStatus = !contract ? "none" : contract.worker_signed ? "done" : "pending";
       return {
         ...d,
@@ -74,6 +78,7 @@ export default function MyWorkPage() {
         profile: (profileData || []).find((p: any) => p.user_id === d.employer_id),
         contractStatus,
         contractSigned: contract?.worker_signed || false,
+        contractId: contract?.id || null,
       };
     }));
     setHistory((historyData || []).map(d => ({
@@ -102,7 +107,11 @@ export default function MyWorkPage() {
       setShowContractRequestModal(true);
     } else {
       // 계약서 있으면 (서명대기/완료) → 뷰어로
-      router.push(`/contract/view?matchId=${m.match_id}`);
+      if (m.contractId) {
+        router.push(`/contract/view?contractId=${m.contractId}`);
+      } else if (m.match_id) {
+        router.push(`/contract/view?matchId=${m.match_id}`);
+      }
     }
   }
 
@@ -123,9 +132,9 @@ export default function MyWorkPage() {
         }),
       });
       setShowContractRequestModal(false);
-      alert("✅ 사장님께 계약서 작성 요청을 보냈어요!");
+      showToast("✅ 사장님께 계약서 작성 요청을 보냈어요!");
     } catch (e) {
-      alert("요청 전송에 실패했어요. 채팅으로 직접 요청해주세요.");
+      showToast("요청 전송에 실패했어요. 채팅으로 직접 요청해주세요.", "error");
     }
     setRequesting(false);
   }
@@ -138,6 +147,7 @@ export default function MyWorkPage() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", maxWidth:480, margin:"0 auto", paddingBottom:40 }}>
+      {ToastUI}
       <AppHeader title="내 근무" showBack />
 
       {/* 계약서 미작성 모달 */}

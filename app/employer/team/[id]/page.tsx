@@ -280,7 +280,7 @@ export default function TeamMemberPage() {
   const [saving, setSaving] = useState(false);
   const [attLogRefreshKey, setAttLogRefreshKey] = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [batchContract, setBatchContract] = useState<{ id: string; startDate: string; endDate: string | null } | null>(null);
 
   // 근무조건 수정 모달
   const [showWorkModal, setShowWorkModal] = useState(false);
@@ -758,12 +758,6 @@ export default function TeamMemberPage() {
                 disabled={`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7)}
                 style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--text-muted)", padding: "0 8px", opacity: `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7) ? 0.3 : 1 }}>›</button>
             </div>
-            {contracts.length > 0 && (
-              <button onClick={() => setShowBatchModal(true)}
-                style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 8, padding: "5px 10px", color: "var(--purple-text)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                ⚡ 일괄 등록
-              </button>
-            )}
           </div>
 
           {/* 통계 4열 */}
@@ -1038,7 +1032,7 @@ export default function TeamMemberPage() {
                         )}
                       </p>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <button onClick={() => router.push(`/contract/view?id=${c.id}`)}
+                        <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
                           style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
                           📄 보기
                         </button>
@@ -1046,6 +1040,12 @@ export default function TeamMemberPage() {
                           <button onClick={() => router.push(`/contract?memberId=${c.team_member_id}&mode=update`)}
                             style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
                             ✏️ 수정
+                          </button>
+                        )}
+                        {isSigned && !isSuperseded && (
+                          <button onClick={() => setBatchContract({ id: c.id, startDate: c.start_date, endDate: c.end_date })}
+                            style={{ flex: 1, background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "var(--purple-text)", cursor: "pointer" }}>
+                            ⚡ 소급 등록
                           </button>
                         )}
                         {(!isLatest || isSuperseded) && (
@@ -1436,28 +1436,24 @@ export default function TeamMemberPage() {
         </div>
       )}
 
-      {/* ── 근태 일괄 등록 모달 ── */}
-      {showBatchModal && member && (() => {
-        const scheduledDays = member.work_days || "지정되지 않음";
-        return (
-          <AttendanceBatchModal
-            member={member}
-            contracts={contracts}
-            viewYear={viewYear}
-            viewMonth={viewMonth}
-            todayStr={todayStr}
-            scheduledDays={scheduledDays}
-            showToast={showToast}
-            onClose={() => setShowBatchModal(false)}
-            onComplete={async (msg) => {
-              await loadAttendance(member.id);
-              setAttLogRefreshKey(k => k + 1);
-              setShowBatchModal(false);
-              showToast(msg, "success");
-            }}
-          />
-        );
-      })()}
+      {/* ── 근태 소급 등록 모달 ── */}
+      {batchContract && member && (
+        <AttendanceBatchModal
+          member={member}
+          contracts={contracts}
+          contractStartDate={batchContract.startDate}
+          contractEndDate={batchContract.endDate}
+          todayStr={todayStr}
+          showToast={showToast}
+          onClose={() => setBatchContract(null)}
+          onComplete={async (msg) => {
+            await loadAttendance(member.id);
+            setAttLogRefreshKey(k => k + 1);
+            setBatchContract(null);
+            showToast(msg, "success");
+          }}
+        />
+      )}
     </main>
   );
 }
@@ -1633,20 +1629,18 @@ function AutoIssueModalInner({
 function AttendanceBatchModal({
   member,
   contracts,
-  viewYear,
-  viewMonth,
+  contractStartDate,
+  contractEndDate,
   todayStr,
-  scheduledDays,
   showToast,
   onClose,
   onComplete,
 }: {
   member: any;
   contracts: any[];
-  viewYear: number;
-  viewMonth: number;
+  contractStartDate: string;
+  contractEndDate: string | null;
   todayStr: string;
-  scheduledDays: string;
   showToast: (msg: string, type?: "success" | "error") => void;
   onClose: () => void;
   onComplete: (msg: string) => void;
@@ -1654,27 +1648,27 @@ function AttendanceBatchModal({
   const [overwrite, setOverwrite] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // 계약서 또는 소속회원 데이터 기반 기본값 설정
-  const activeContract = contracts.find(c => c.worker_signed && c.employer_signed) || contracts[0];
-  const cd = activeContract?.contract_data || {};
-  
-  // 약정 시간 및 출퇴근 기본 설정
+  // 해당 계약서 기준 데이터
+  const targetContract = contracts.find(c =>
+    c.start_date === contractStartDate && (c.end_date === contractEndDate || (!c.end_date && !contractEndDate))
+  ) || contracts.find(c => c.worker_signed && c.employer_signed) || contracts[0];
+  const cd = targetContract?.contract_data || {};
+
   const defaultHours = cd.dailyHours || cd.work_hours || member.work_hours || 8;
   const startTime = cd.startTime || "09:00";
   const endTime = cd.endTime || "18:00";
+  const scheduledDays = member.work_days || cd.workDays || "지정되지 않음";
+
+  // 기간 표시용
+  const periodLabel = `${contractStartDate} ~ ${contractEndDate || "기간 미정"}`;
 
   const handleBatchRegister = async () => {
     setSaving(true);
 
-    // 1. 해당 월의 총 일수 계산 및 약정 근무 요일 파싱
-    const lastDay = new Date(viewYear, viewMonth + 1, 0).getDate();
     const WORK_DAY_MAP: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
     const targetDays = new Set<number>();
-    
     for (const [label, num] of Object.entries(WORK_DAY_MAP)) {
-      if (member.work_days?.includes(label)) {
-        targetDays.add(num);
-      }
+      if (member.work_days?.includes(label)) targetDays.add(num);
     }
 
     if (targetDays.size === 0) {
@@ -1683,52 +1677,45 @@ function AttendanceBatchModal({
       return;
     }
 
-    // 2. 해당 월 중 오늘 포함 이전 날짜 중 약정 요일에 해당하는 날짜들 추출
-    const datesToUpsert: string[] = [];
-    for (let day = 1; day <= lastDay; day++) {
-      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      if (dateStr > todayStr) continue; // 미래 날짜 배제
+    // 계약 기간 내 오늘 이전 약정 요일 날짜 전부 추출
+    const start = new Date(contractStartDate);
+    const endRaw = contractEndDate ? new Date(contractEndDate) : new Date(todayStr);
+    const end = endRaw > new Date(todayStr) ? new Date(todayStr) : endRaw;
 
-      const dayOfWeek = new Date(viewYear, viewMonth, day).getDay();
-      if (targetDays.has(dayOfWeek)) {
-        datesToUpsert.push(dateStr);
-      }
+    const datesToUpsert: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dateStr = cur.toISOString().slice(0, 10);
+      if (targetDays.has(cur.getDay())) datesToUpsert.push(dateStr);
+      cur.setDate(cur.getDate() + 1);
     }
 
     if (datesToUpsert.length === 0) {
-      showToast("일괄 등록할 수 있는 근무일이 존재하지 않습니다. (미래 날짜 제외)", "error");
+      showToast("소급 등록할 수 있는 근무일이 없습니다. (미래 날짜 제외)", "error");
       setSaving(false);
       return;
     }
 
     try {
-      // 3. 기존 근태 내역 조회
       const { data: existingAtt } = await supabase.from("attendance")
-        .select("id, work_date, status, memo, actual_hours, check_in, check_out")
+        .select("id, work_date")
         .eq("team_member_id", member.id)
         .in("work_date", datesToUpsert);
 
-      const existingMap = new Map<string, any>(existingAtt?.map((a: any) => [a.work_date, a]) || []);
+      const existingSet = new Set<string>(existingAtt?.map((a: any) => a.work_date) || []);
       const upsertPayload: any[] = [];
 
-      // 4. 페이로드 조립
       for (const dateStr of datesToUpsert) {
-        const exist = existingMap.get(dateStr);
-        if (exist && !overwrite) continue; // 건너뛰기
-
-        const ci = `${dateStr}T${startTime}:00+09:00`;
-        const co = `${dateStr}T${endTime}:00+09:00`;
-
-        // ⚠️ id를 전달하지 않고 team_member_id, work_date 고유 제약 조건을 기반으로 upsert 하도록 설계
+        if (existingSet.has(dateStr) && !overwrite) continue;
         upsertPayload.push({
           team_member_id: member.id,
           employer_id: member.employer_id,
           worker_id: member.worker_id,
           work_date: dateStr,
           status: "normal",
-          memo: "계약 약정일 일괄 등록",
-          check_in: ci,
-          check_out: co,
+          memo: "계약서 기간 소급 등록",
+          check_in: `${dateStr}T${startTime}:00+09:00`,
+          check_out: `${dateStr}T${endTime}:00+09:00`,
           actual_hours: defaultHours,
         });
       }
@@ -1738,33 +1725,29 @@ function AttendanceBatchModal({
         return;
       }
 
-      // 5. DB 일괄 업서트 실행
       const { error: upsertErr } = await supabase
         .from("attendance")
         .upsert(upsertPayload, { onConflict: "team_member_id,work_date" });
       if (upsertErr) throw upsertErr;
 
-      // 6. DB 일괄 로깅 실행 (과거 내역을 한 번에 추적할 수 있도록 단일 일괄등록 감사로그 삽입)
-      const batchLog = {
+      const { error: logErr } = await supabase.from("attendance_logs").insert({
         team_member_id: member.id,
         action: "batch_register",
         actor_id: member.employer_id,
         actor_role: "employer",
         before_data: null,
         after_data: {
-          year: viewYear,
-          month: viewMonth + 1,
+          contract_start: contractStartDate,
+          contract_end: contractEndDate,
           count: upsertPayload.length,
           dates: upsertPayload.map(p => p.work_date),
         },
-      };
-
-      const { error: logErr } = await supabase.from("attendance_logs").insert(batchLog);
+      });
       if (logErr) throw logErr;
 
-      onComplete(`🎉 ${viewYear}년 ${viewMonth + 1}월 약정 근무일 ${upsertPayload.length}건이 일괄 등록되었습니다!`);
+      onComplete(`🎉 ${periodLabel} 계약 기간 내 약정 근무일 ${upsertPayload.length}건이 소급 등록되었습니다!`);
     } catch (err: any) {
-      showToast("일괄 등록 실패: " + err.message, "error");
+      showToast("소급 등록 실패: " + err.message, "error");
     } finally {
       setSaving(false);
     }
@@ -1783,47 +1766,40 @@ function AttendanceBatchModal({
         boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
         display: "flex", flexDirection: "column", gap: 16
       }}>
-        {/* 헤더 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>⚡ 근태 일괄 등록</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>⚡ 근태 소급 등록</span>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: "var(--text-muted)", cursor: "pointer", padding: 4 }}>✕</button>
         </div>
 
-        {/* 설명 구역 */}
         <div style={{ background: "rgba(124,58,237,0.08)", border: "1.5px dashed #7c3aed", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", letterSpacing: 0.5 }}>일괄 등록 대상 월</span>
-          <span style={{ fontSize: 18, fontWeight: 900, color: "var(--purple-text)" }}>📅 {viewYear}년 {viewMonth + 1}월</span>
-          
-          <div style={{ width: "100%", height: "1px", background: "rgba(124,58,237,0.25)", margin: "6px 0" }} />
-          
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", letterSpacing: 0.5 }}>계약 근로 조건 정보</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", letterSpacing: 0.5 }}>소급 등록 대상 계약 기간</span>
+          <span style={{ fontSize: 14, fontWeight: 900, color: "var(--purple-text)" }}>📅 {periodLabel}</span>
+          <div style={{ width: "100%", height: "1px", background: "rgba(124,58,237,0.25)", margin: "4px 0" }} />
           <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>📅 약정 요일: <span style={{ color: "#7c3aed" }}>{scheduledDays}</span></span>
           <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>⏰ 근무 시간: <span style={{ color: "#7c3aed" }}>{startTime} ~ {endTime}</span> (일 {defaultHours}시간)</span>
         </div>
 
-        {/* 주의 사항 경고 박스 */}
         <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: 12 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: "#f87171", margin: "0 0 4px" }}>⚠️ 필수 확인 및 주의사항</p>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "#f87171", margin: "0 0 4px" }}>⚠️ 주의사항</p>
           <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, lineHeight: 1.6, fontWeight: 600 }}>
-            • 지정된 월의 전체 일자 중 <span style={{ color: "var(--text)", fontWeight: 800 }}>약정 근무 요일</span>만 자동 등록됩니다.<br />
-            • 부정 방지를 위해 <span style={{ color: "#ef4444", fontWeight: 800 }}>오늘 날짜 이후(미래 날짜)는 자동 등록에서 제외</span>됩니다.
+            • 이 계약서 기간 내 약정 근무 요일 전체를 정상 출근으로 등록합니다.<br />
+            • 미래 날짜는 제외됩니다.<br />
+            • 이 기간 이전 데이터가 필요하면 해당 기간 계약서를 별도 작성 후 소급 등록하세요.
           </p>
         </div>
 
-        {/* 덮어쓰기 옵션 토글 */}
         <div onClick={() => setOverwrite(!overwrite)}
           style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", background: "var(--surface2)", borderRadius: 12, padding: "10px 12px", border: "1px solid var(--border)" }}>
           <span style={{ fontSize: 20, color: overwrite ? "#7c3aed" : "var(--text-muted)" }}>{overwrite ? "☑️" : "⬜"}</span>
           <div style={{ flex: 1 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>기존 입력된 근태 기록 덮어쓰기</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>기존 근태 기록 덮어쓰기</span>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0", lineHeight: 1.4 }}>
-              체크 해제 시: 기존에 입력된 일정을 보호하고 빈 일자만 채웁니다.<br />
-              체크 선택 시: 해당 월의 기존 근태를 모두 지우고 계약조건으로 덮어씁니다.
+              해제 시: 비어있는 날짜만 채웁니다.<br />
+              선택 시: 기존 기록을 계약 조건으로 모두 덮어씁니다.
             </p>
           </div>
         </div>
 
-        {/* 버튼들 */}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <button onClick={onClose}
             style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "var(--text)", cursor: "pointer" }}>
@@ -1831,7 +1807,7 @@ function AttendanceBatchModal({
           </button>
           <button onClick={handleBatchRegister} disabled={saving}
             style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
-            {saving ? "등록 중..." : "일괄 등록하기"}
+            {saving ? "등록 중..." : "소급 등록하기"}
           </button>
         </div>
       </div>

@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     const { data: empProfile } = await supabase
       .from("employer_profiles")
-      .select("business_name, business_type, region, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_address, biz_tel")
+      .select("business_name, business_type, region, address, address_detail, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_tel")
       .eq("id", match.employer_profile_id)
       .maybeSingle();
 
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       biz_reg_number: f.bizRegNo || empProfile?.biz_reg_number || "",
       employer_name: f.ceo || employer?.real_name || employer?.nickname || employer?.name || "",
       employer_phone: f.ceoPhone || empProfile?.biz_tel || employer?.phone || "",
-      business_address: f.bizAddr || empProfile?.biz_address || empProfile?.region || "",
+      business_address: f.bizAddr || [empProfile?.address, empProfile?.address_detail].filter(Boolean).join(" ") || empProfile?.region || "",
       work_place: f.workPlace || empProfile?.region || "",
       job_description: f.jobDesc || (empProfile?.business_type ? `${empProfile.business_type} 관련 업무` : ""),
       worker_name: f.worker || worker?.real_name || worker?.nickname || worker?.name || "",

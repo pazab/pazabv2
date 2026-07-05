@@ -268,13 +268,13 @@ function StandardForm({ d, isFixed }: { d: FormData; isFixed: boolean }) {
       {/* 서명 — 사업주 */}
       <div className="of-sign">
         <p>(사업주) <span className="of-sign-label2">사업체명</span>: <B w="160px">{d.biz}{d.bizRegNo ? ` (${d.bizRegNo})` : ""}</B> &nbsp;(전화 : <B w="100px">{d.ceoPhone}</B>)</p>
-        <p><span className="of-sign-label">주 소</span>: <B w="300px">{d.bizAddr}</B></p>
+        <p><span className="of-sign-label">주 소</span>: <B w="300px">{[d.bizAddr, d.bizAddrDetail].filter(Boolean).join(" ")}</B></p>
         <p><span className="of-sign-label">대 표 자</span>: <B w="100px">{d.ceo}</B> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(서명)</p>
       </div>
 
       {/* 서명 — 근로자 */}
       <div className="of-sign">
-        <p>(근로자) <span className="of-sign-label">주 소</span>: <B w="300px">{d.workerAddr}</B></p>
+        <p>(근로자) <span className="of-sign-label">주 소</span>: <B w="300px">{[d.workerAddr, d.workerAddrDetail].filter(Boolean).join(" ")}</B></p>
         <p><span className="of-sign-label">연 락 처</span>: <B w="120px">{d.workerPhone}</B></p>
         <p><span className="of-sign-label">성 명</span>: <B w="100px">{d.worker}</B> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(서명)</p>
       </div>
@@ -465,13 +465,13 @@ function ParttimeForm({ d }: { d: FormData }) {
       {/* 서명 — 사업주 */}
       <div className="of-sign">
         <p>(사업주) <span className="of-sign-label2">사업체명</span>: <B w="160px">{d.biz}{d.bizRegNo ? ` (${d.bizRegNo})` : ""}</B> &nbsp;(전화 : <B w="100px">{d.ceoPhone}</B>)</p>
-        <p><span className="of-sign-label">주 소</span>: <B w="300px">{d.bizAddr}</B></p>
+        <p><span className="of-sign-label">주 소</span>: <B w="300px">{[d.bizAddr, d.bizAddrDetail].filter(Boolean).join(" ")}</B></p>
         <p><span className="of-sign-label">대 표 자</span>: <B w="100px">{d.ceo}</B> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(서명)</p>
       </div>
 
       {/* 서명 — 근로자 */}
       <div className="of-sign">
-        <p>(근로자) <span className="of-sign-label">주 소</span>: <B w="300px">{d.workerAddr}</B></p>
+        <p>(근로자) <span className="of-sign-label">주 소</span>: <B w="300px">{[d.workerAddr, d.workerAddrDetail].filter(Boolean).join(" ")}</B></p>
         <p><span className="of-sign-label">연 락 처</span>: <B w="120px">{d.workerPhone}</B></p>
         <p><span className="of-sign-label">성 명</span>: <B w="100px">{d.worker}</B> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(서명)</p>
       </div>
@@ -567,11 +567,11 @@ function MinorForm({ d }: { d: FormData }) {
 
         <div className="of-sign">
           <p>(사업주) <span className="of-sign-label2">사업체명</span>: <B w="160px">{d.biz}</B> &nbsp;(전화 : <B w="100px">{d.ceoPhone}</B>)</p>
-          <p><span className="of-sign-label">주 소</span>: <B w="300px">{d.bizAddr}</B></p>
+          <p><span className="of-sign-label">주 소</span>: <B w="300px">{[d.bizAddr, d.bizAddrDetail].filter(Boolean).join(" ")}</B></p>
           <p><span className="of-sign-label">대 표 자</span>: <B w="100px">{d.ceo}</B> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(서명)</p>
         </div>
         <div className="of-sign">
-          <p>(근로자) <span className="of-sign-label">주 소</span>: <B w="300px">{d.workerAddr}</B></p>
+          <p>(근로자) <span className="of-sign-label">주 소</span>: <B w="300px">{[d.workerAddr, d.workerAddrDetail].filter(Boolean).join(" ")}</B></p>
           <p><span className="of-sign-label">연 락 처</span>: <B w="120px">{d.workerPhone}</B></p>
           <p><span className="of-sign-label">성 명</span>: <B w="100px">{d.worker}</B> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(서명)</p>
         </div>
@@ -591,12 +591,12 @@ function MinorForm({ d }: { d: FormData }) {
         <p className="of-h" style={{ marginTop: 16 }}>○ 연소근로자 인적사항</p>
         <p className="of-sub"><span className="of-sign-label">성 명</span>: <B w="100px">{d.worker}</B></p>
         <p className="of-sub"><span className="of-sign-label">생년월일</span>: <B w="120px">{d.workerBirth}</B></p>
-        <p className="of-sub"><span className="of-sign-label">주 소</span>: <B w="280px">{d.workerAddr}</B></p>
+        <p className="of-sub"><span className="of-sign-label">주 소</span>: <B w="280px">{[d.workerAddr, d.workerAddrDetail].filter(Boolean).join(" ")}</B></p>
         <p className="of-sub"><span className="of-sign-label">연 락 처</span>: <B w="120px">{d.workerPhone}</B></p>
 
         <p className="of-h" style={{ marginTop: 16 }}>○ 사업장 개요</p>
         <p className="of-sub"><span className="of-sign-label">회 사 명</span>: <B w="200px">{d.biz}</B></p>
-        <p className="of-sub"><span className="of-sign-label">회사주소</span>: <B w="280px">{d.bizAddr}</B></p>
+        <p className="of-sub"><span className="of-sign-label">회사주소</span>: <B w="280px">{[d.bizAddr, d.bizAddrDetail].filter(Boolean).join(" ")}</B></p>
         <p className="of-sub"><span className="of-sign-label">대 표 자</span>: <B w="100px">{d.ceo}</B></p>
         <p className="of-sub"><span className="of-sign-label">회사전화</span>: <B w="120px">{d.ceoPhone}</B></p>
 

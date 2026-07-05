@@ -8,7 +8,7 @@ import ContractOfficialForm, { getOfficialFormHTML } from "@/components/Contract
 function ContractViewContent() {
   const router = useRouter();
   const sp = useSearchParams();
-  const contractId = sp.get("contractId") || "";
+  const contractId = sp.get("id") || sp.get("contractId") || "";
   const matchId = sp.get("matchId") || "";
   const memberId = sp.get("memberId") || "";
   const fromTab = sp.get("tab") || "";
@@ -64,12 +64,12 @@ function ContractViewContent() {
     if (!contract) return;
     setAgreeing(true);
     const { error } = await supabase.from("contracts")
-      .update({ worker_signed: true, status: "active", signed_at: new Date().toISOString() })
+      .update({ worker_signed: true, status: "active", worker_signed_at: new Date().toISOString() })
       .eq("id", contract.id);
     if (!error) {
-      setContract((p: any) => ({ ...p, worker_signed: true, status: "active" }));
       showToast("✅ 계약서에 동의했어요!");
       setShowAgreeModal(false);
+      setTimeout(() => router.replace("/myteam"), 800);
     }
     setAgreeing(false);
   }
@@ -427,7 +427,7 @@ function ContractViewContent() {
                         {contract.employer_signed ? "(서명 완료)" : "(미서명)"}
                       </span>
                     </div>
-                    <div>주    소 : {f.bizAddr || "-"}</div>
+                    <div>주    소 : {[f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" ") || "-"}</div>
                     <div>연 락 처 : {f.ceoPhone || "-"}</div>
                   </div>
                 </div>
@@ -501,7 +501,7 @@ function ContractViewContent() {
               style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
               📄 화면인쇄
             </button>
-            <button onClick={() => router.push(`/contract?memberId=${contract.team_member_id || memberId}${fromTab ? `&tab=${fromTab}` : ""}`)}
+            <button onClick={() => router.push(`/contract?memberId=${contract.team_member_id || memberId}&mode=update${fromTab ? `&tab=${fromTab}` : ""}`)}
               style={{ flex:1.2, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
               ✏️ 계약서수정
             </button>

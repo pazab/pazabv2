@@ -133,10 +133,15 @@ export default function BottomNav() {
 
   const isHiddenPath = ["/login", "/signup", "/auth", "/", "/chat/", "/paz", "/sudoku"].some(p => pathname === p || (p !== "/" && pathname?.startsWith(p)));
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [userType, setUserType] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setIsLoggedIn(!!session);
+      if (session) {
+        const { data } = await supabase.from("users").select("user_type").eq("id", session.user.id).single();
+        setUserType(data?.user_type || null);
+      }
     });
   }, [pathname]);
 
@@ -168,7 +173,7 @@ export default function BottomNav() {
   const tabs = [
     { icon: "ti-compass", label: "탐색", path: "/explore", active: pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
     { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta") },
-    { icon: "ti-calendar-event", label: "근태", path: "/myteam", active: pathname.startsWith("/myteam"), center: true },
+    { icon: "ti-calendar-event", label: "근태", path: userType === "worker" ? "/worker/mywork" : "/myteam", active: pathname.startsWith("/myteam") || pathname.startsWith("/worker/mywork"), center: true },
     { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat") && !pathname.includes("/paz"), badge: unreadCount },
     { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];

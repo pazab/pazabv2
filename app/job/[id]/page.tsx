@@ -189,7 +189,7 @@ export default function JobDetailPage() {
     let data: Record<string, unknown> | null = null;
     // jobs 테이블 먼저 시도 (새 구조)
     const { data: jobRow } = await supabase.from("jobs")
-      .select("*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, biz_reg_number, ceo_name, biz_address, biz_tel, lat, lng)")
+      .select("*, employer_profiles!inner(id, business_name, business_type, region, address, address_detail, image_url, image_urls, video_url, biz_reg_number, ceo_name, biz_tel, lat, lng)")
       .eq("id", id).maybeSingle();
     if (jobRow) {
       const ep = jobRow.employer_profiles as Record<string, unknown>;

@@ -608,6 +608,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
   const [monthStats, setMonthStats] = useState({ days: 0, hours: 0, estPay: 0 });
   const [editHireDate, setEditHireDate] = useState(false);
   const [hireDateInput, setHireDateInput] = useState(m.hire_date || "");
+  const [contracts, setContracts] = useState<any[]>([]);
 
   useEffect(() => {
     const now = new Date();
@@ -624,6 +625,12 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         const totalH = att.reduce((s:number, a:any) => s + (parseFloat(a.actual_hours) || 0), 0);
         setMonthStats({ days: workDays, hours: Math.round(totalH * 10) / 10, estPay: m.wage ? Math.round(totalH * m.wage) : 0 });
       });
+    supabase.from("contracts")
+      .select("id, start_date, end_date, worker_signed, employer_signed, status, created_at, contract_data")
+      .eq("team_member_id", m.id)
+      .in("status", ["pending", "active"])
+      .order("created_at", { ascending: false })
+      .then(({ data }: { data: any }) => setContracts(data || []));
   }, [m.id]);
 
   const storeName = m.profile?.business_name || m.employer?.nickname || "매장";
@@ -735,6 +742,52 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
           </div>
         )}
       </div>
+      {/* 계약서 */}
+      <div style={{ ...cardStyle, padding:"14px 16px" }}>
+        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>📄 근로계약서</p>
+        {contracts.length === 0 ? (
+          <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", margin:0 }}>아직 계약서가 없어요</p>
+        ) : contracts.map((c: any) => {
+          const isActive = c.status !== "superseded";
+          const isSigned = c.worker_signed && c.employer_signed;
+          const isPending = !c.worker_signed && c.employer_signed;
+          return (
+            <div key={c.id} style={{ background:"var(--surface2)", borderRadius:10, padding:"10px 12px", border:`1px solid ${isActive ? "#7c3aed40" : "var(--border)"}`, marginBottom:6, opacity: isActive ? 1 : 0.6 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                <span style={{ fontSize:12, fontWeight:700, color:"var(--text)" }}>
+                  {isActive ? "📄 현재 계약" : "📋 이전 계약"}
+                </span>
+                <span style={{ fontSize:10, borderRadius:6, padding:"2px 7px", fontWeight:700,
+                  background: isSigned ? "#10b98120" : isPending ? "#f59e0b20" : "var(--surface)",
+                  color: isSigned ? "#10b981" : isPending ? "#f59e0b" : "var(--text-muted)" }}>
+                  {isSigned ? "✅ 서명완료" : isPending ? "⏳ 서명대기" : "미서명"}
+                </span>
+              </div>
+              <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 8px" }}>
+                {c.start_date || "-"} ~ {c.end_date || "기간 미정"}
+                {c.contract_data?.contractType && (
+                  <span style={{ marginLeft:6, fontSize:10, background:"var(--surface)", borderRadius:5, padding:"1px 5px" }}>
+                    {c.contract_data.contractType === "parttime" ? "단시간" : "표준"}
+                  </span>
+                )}
+              </p>
+              <div style={{ display:"flex", gap:6 }}>
+                <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
+                  style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
+                  📄 보기
+                </button>
+                {isPending && (
+                  <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
+                    style={{ flex:2, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:8, padding:"7px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>
+                    ✍️ 서명하기
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* 급여 명세서 */}
       <div style={{ ...cardStyle, padding:"14px 16px" }}>
         <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>📋 급여 명세서</p>

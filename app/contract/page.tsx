@@ -5,6 +5,7 @@ import { useToast } from "@/lib/useToast";
 import { getMinWageForDate, isUnderMinWage } from "@/lib/minWage";
 import { supabase } from "@/lib/supabase";
 import ContractOfficialForm, { getOfficialFormHTML } from "@/components/ContractOfficialForm";
+import { sendPushNotification } from "@/lib/usePush";
 import {
   inputStyle,
   btnPrimary,
@@ -112,6 +113,7 @@ function ContractContent() {
   const [saving, setSaving] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showResignModal, setShowResignModal] = useState(false);
   const [existingContract, setExistingContract] = useState<any>(null);
   const [myEps, setMyEps] = useState<any[]>([]);
   const [selEp, setSelEp] = useState<any>(null);
@@ -334,7 +336,7 @@ function ContractContent() {
       if (eps && eps.length > 0) {
         const { data: epsExt } = await supabase
           .from("employer_profiles")
-          .select("id, biz_reg_number, ceo_name, biz_address, biz_tel")
+          .select("id, biz_reg_number, ceo_name, address, address_detail, biz_tel")
           .eq("user_id", user.id)
           .or("is_deleted.is.null,is_deleted.eq.false")
           .not("business_name", "is", null)
@@ -374,7 +376,7 @@ function ContractContent() {
       let ep = null;
       if (m.employer_profile_id) {
         const { data } = await supabase.from("employer_profiles")
-          .select("business_name, business_type, region, biz_reg_number, ceo_name, biz_address, biz_tel")
+          .select("business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
           .eq("id", m.employer_profile_id).maybeSingle();
         ep = data;
         const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
@@ -398,8 +400,8 @@ function ContractContent() {
     setMatches(enriched);
 
     const [eu, wu] = await Promise.all([
-      supabase.from("users").select("nickname, real_name, birth_date, phone, address").eq("id", cur.employer_id).single(),
-      supabase.from("users").select("nickname, real_name, birth_date, phone, address").eq("id", cur.worker_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone").eq("id", cur.employer_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone").eq("id", cur.worker_id).single(),
     ]);
 
     const cur2 = enriched.find(m => m.id === matchId) || enriched[0];
@@ -437,7 +439,7 @@ function ContractContent() {
     if (tm.employer_profile_id) {
       const { data } = await supabase
         .from("employer_profiles")
-        .select("id, business_name, business_type, region, address, biz_reg_number, ceo_name, biz_address, biz_tel")
+        .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
         .eq("id", tm.employer_profile_id).maybeSingle();
       ep = data;
       const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
@@ -448,7 +450,7 @@ function ContractContent() {
     if (!ep) {
       const { data: epData } = await supabase
         .from("employer_profiles")
-        .select("id, business_name, business_type, region, address, biz_reg_number, ceo_name, biz_address, biz_tel")
+        .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
         .eq("user_id", tm.employer_id)
         .or("is_deleted.is.null,is_deleted.eq.false")
         .not("business_name", "is", null)
@@ -531,15 +533,17 @@ function ContractContent() {
       bizRegNo: ep?.biz_reg_number || "",
       ceo: ep?.ceo_name || eu?.real_name || eu?.nickname || "",
       ceoPhone: ep?.biz_tel || eu?.phone || "",
-      bizAddr: ep?.biz_address || ep?.region || "",
-      samePlace: !ep?.biz_address || ep?.biz_address === ep?.region,
+      bizAddr: ep?.address || ep?.region || "",
+      bizAddrDetail: ep?.address_detail || "",
+      samePlace: !ep?.address || ep?.address === ep?.region,
       workPlace: ep?.region || "",
       bizType: ep?.business_type || "",
       jobDesc: ep?.business_type ? `${ep.business_type} 관련 업무` : "",
       worker: wu?.real_name || wu?.nickname || "",
       workerBirth: wu?.birth_date ? wu.birth_date.replace(/-/g, ". ") : "",
       workerPhone: wu?.phone || "",
-      workerAddr: wu?.address || "",
+      workerAddr: "",
+      workerAddrDetail: "",
       startDate: `${md.getFullYear()}. ${String(md.getMonth() + 1).padStart(2, "0")}. ${String(md.getDate()).padStart(2, "0")}.`,
       ...dayFlags,
       ...dayHours,
@@ -552,16 +556,10 @@ function ContractContent() {
   };
 
   const buildFullAddr = (ep: any) => {
-    if (ep?.biz_address) return ep.biz_address;
     if (ep?.address) return ep.address;
-    // sido/sigungu/eupmyeondong 조합
     const parts = [ep?.sido, ep?.sigungu, ep?.eupmyeondong].filter(Boolean);
     if (parts.length > 0) return parts.join(" ");
-    // region + address_detail 조합 (등록 페이지 저장 방식)
-    const region = ep?.region || "";
-    const detail = ep?.address_detail || "";
-    if (region && detail && !region.includes(detail)) return `${region} ${detail}`;
-    return region || detail;
+    return ep?.region || "";
   };
 
   const applyEpToForm = (ep: any, userId: string, wu: any) => {
@@ -581,7 +579,8 @@ function ContractContent() {
       worker: wu?.real_name || wu?.nickname || p.worker,
       workerBirth: wu?.birth_date ? wu.birth_date.replace(/-/g, ". ") : p.workerBirth,
       workerPhone: wu?.phone || p.workerPhone,
-      workerAddr: wu?.address || p.workerAddr,
+      workerAddr: p.workerAddr,
+      workerAddrDetail: p.workerAddrDetail,
       contractDate: `${today.getFullYear()}년  ${String(today.getMonth() + 1).padStart(2, "0")}월  ${String(today.getDate()).padStart(2, "0")}일`,
     }));
   };
@@ -707,16 +706,13 @@ function ContractContent() {
       if (selEp?.id) {
         await supabase.from("employer_profiles").update({
           biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
-          address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_tel: f.ceoPhone,
+          address: f.bizAddr, address_detail: f.bizAddrDetail, biz_tel: f.ceoPhone,
         }).eq("id", selEp.id);
       } else if (selMatch?.employer_id) {
         await supabase.from("employer_profiles").update({
           biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
-          address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_address: [f.bizAddr, f.bizAddrDetail].filter(Boolean).join(" "), biz_tel: f.ceoPhone,
+          address: f.bizAddr, address_detail: f.bizAddrDetail, biz_tel: f.ceoPhone,
         }).eq("user_id", selMatch.employer_id);
-      }
-      if (selMatch?.worker_id) {
-        await supabase.from("users").update({ phone: f.workerPhone, address: [f.workerAddr, f.workerAddrDetail].filter(Boolean).join(" ") }).eq("id", selMatch.worker_id);
       }
 
       // 2. 최종 계약 정보를 team_members 테이블에 실시간 덮어쓰기 (동기화)
@@ -762,6 +758,20 @@ function ContractContent() {
         }
       }
 
+      // push 알림 전송
+      if (selMatch?.worker_id) {
+        const pushMsg = saveMode === "new"
+          ? "📄 새 근로계약서가 발행됐어요. 확인 후 서명해주세요."
+          : "📄 근로계약서가 수정됐어요. 다시 확인 후 서명해주세요.";
+        sendPushNotification({
+          userId: selMatch.worker_id,
+          title: "근로계약서 서명 요청",
+          body: pushMsg,
+          url: sendMatchId ? `/contract/view?matchId=${sendMatchId}` : `/worker/mywork`,
+          tag: "contract",
+        });
+      }
+
       showToast(saveMode === "overwrite"
         ? "✅ 계약서가 수정됐어요! 알바생 재동의 필요"
         : "✅ 새 계약서가 발행됐어요! 알바생 동의 대기중");
@@ -769,10 +779,11 @@ function ContractContent() {
       setTimeout(() => {
         if (fromParam === "chat" && sendMatchId) {
           router.replace(`/chat/${sendMatchId}`);
+        } else if (memberId) {
+          router.replace(`/employer/team/${memberId}`);
         } else if (fromParam === "team") {
           router.back();
         }
-        // 그 외엔 자동 이동 없음 — 네비바 배지로 확인
       }, 800);
     } else {
       showToast("저장 오류: " + error.message, "error");
@@ -792,18 +803,9 @@ function ContractContent() {
 
     if (existing) {
       if (existing.worker_signed) {
-        const confirmed = window.confirm(
-          "📄 새 근로계약서 작성\n\n" +
-          "⚠️ 주의사항\n" +
-          "· 이미 동의가 완료된 계약서가 있어요.\n" +
-          "· 새 계약서는 기존 계약서를 대체해요.\n" +
-          "· 기존 계약서는 이력으로 보존돼요.\n" +
-          "· 알바생이 새 계약서에 다시 동의해야\n" +
-          "  법적 효력이 발생해요.\n\n" +
-          "계속 진행할까요?"
-        );
-        if (!confirmed) return;
-        doSave("new");
+        setExistingContract(existing);
+        setShowResignModal(true);
+        return;
       } else {
         setExistingContract(existing);
         setShowSaveModal(true);
@@ -1201,6 +1203,34 @@ function ContractContent() {
         </div>
       )}
 
+      {/* 재계약 확인 모달 */}
+      {showResignModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 480 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>📄 재계약서 발행</p>
+            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 12, padding: 14, marginBottom: 20 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: "#f87171", margin: "0 0 6px" }}>⚠️ 주의사항</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.7 }}>
+                · 이미 쌍방 서명 완료된 계약서가 있어요.<br />
+                · 새 계약서는 기존 계약서를 대체해요.<br />
+                · 기존 계약서는 이력으로 보존돼요.<br />
+                · 알바생이 새 계약서에 다시 동의해야 법적 효력이 발생해요.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowResignModal(false)}
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: 14, color: "var(--text)", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                취소
+              </button>
+              <button onClick={() => { setShowResignModal(false); doSave("new"); }}
+                style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 14, padding: 14, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                재계약서 발행하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 헤더 */}
       <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)", padding: "12px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: 1200, margin: "0 auto" }}>
@@ -1487,6 +1517,10 @@ function ContractContent() {
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계약 개시일</label>
                     <input type="date" style={errStyle(!f.startDate.trim())} value={toDateInput(f.startDate)} onChange={e => updateField("startDate", fromDateInput(e.target.value))} />
+                    <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "5px 0 0", lineHeight: 1.5 }}>
+                      처음 입사일이 아닌 <strong>이 계약 조건이 적용되는 시작일</strong>을 입력하세요.<br />
+                      재계약·임금 인상 시에는 갱신 날짜 기준으로 작성하세요.
+                    </p>
                   </div>
                   {ct !== "standard_unlimited" && (
                     <div>
