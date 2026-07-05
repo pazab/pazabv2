@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
@@ -11,81 +11,201 @@ import { getTrustGrade } from "@/lib/utils";
 // 근태 이력 타임라인 (아코디언, 기본 접힘)
 // ─────────────────────────────────────────────
 function AttendanceLogs({ memberId, refreshKey = 0 }: { memberId: string; refreshKey?: number }) {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
 
+  // 전체 내역 모달 및 페이징 상태
+  const [showFullLogs, setShowFullLogs] = useState(false);
+  const [fullLogs, setFullLogs] = useState<any[]>([]);
+  const [fullLoading, setFullLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const LIMIT = 10;
+
+  // 최근 3개 및 전체 개수 조회
   useEffect(() => {
-    supabase.from("attendance_logs")
+    (async () => {
+      setLoading(true);
+      // 1. 최근 3개 조회
+      const { data: recent } = await supabase.from("attendance_logs")
+        .select("*, users!attendance_logs_actor_id_fkey(nickname, avatar_url)")
+        .eq("team_member_id", memberId)
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      // 2. 전체 개수 조회
+      const { count } = await supabase.from("attendance_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("team_member_id", memberId);
+
+      setRecentLogs(recent || []);
+      setTotalCount(count || 0);
+      setLoading(false);
+    })();
+  }, [memberId, refreshKey]);
+
+  // 페이지 변경 시 페이징된 전체 내역 조회
+  useEffect(() => {
+    if (showFullLogs) {
+      loadFullLogs(page);
+    }
+  }, [page, showFullLogs, refreshKey]);
+
+  async function loadFullLogs(p: number) {
+    setFullLoading(true);
+    const from = (p - 1) * LIMIT;
+    const to = p * LIMIT - 1;
+    const { data } = await supabase.from("attendance_logs")
       .select("*, users!attendance_logs_actor_id_fkey(nickname, avatar_url)")
       .eq("team_member_id", memberId)
       .order("created_at", { ascending: false })
-      .limit(100)
-      .then(({ data }: { data: any }) => { setLogs(data || []); setLoading(false); });
-  }, [memberId, refreshKey]);
+      .range(from, to);
+
+    setFullLogs(data || []);
+    setFullLoading(false);
+  }
 
   const actionMeta: Record<string, { label: string; color: string }> = {
     checkin:  { label: "출근 기록", color: "#10b981" },
     checkout: { label: "퇴근 기록", color: "#3b82f6" },
     update:   { label: "근태 수정", color: "#f59e0b" },
     delete:   { label: "근태 삭제", color: "#ef4444" },
+    batch_register: { label: "일괄 등록", color: "#7c3aed" },
   };
   const roleLabel: Record<string, string> = { employer: "사장님", worker: "알바생", system: "시스템" };
   const statusLabel: Record<string, string> = { normal: "정상출근", late: "지각", early_leave: "조퇴", absent: "결근", off: "휴무" };
 
-  if (loading || logs.length === 0) return null;
+  if (loading) return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "10px 0" }}>이력 불러오는 중...</div>;
+
+  const totalPages = Math.ceil(totalCount / LIMIT);
+
+  const renderLogCard = (log: any, index: number, array: any[]) => {
+    const d = log.after_data || log.before_data || {};
+    const meta = actionMeta[log.action] || { label: log.action, color: "#6b7280" };
+    const name = log.users?.nickname || roleLabel[log.actor_role] || "알 수 없음";
+    const time = new Date(log.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+    if (log.action === "batch_register") {
+      return (
+        <div key={log.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, marginTop: 5 }} />
+            {index < array.length - 1 && <div style={{ width: 1, flex: 1, background: "var(--border)", minHeight: 24, marginTop: 2 }} />}
+          </div>
+          <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 10, padding: "8px 12px", marginBottom: 2 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: meta.color }}>{meta.label}</span>
+              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{time}</span>
+            </div>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0" }}>
+              <strong style={{ color: "var(--text)" }}>{name}</strong>님이 <strong>{d.year}년 {d.month}월</strong> 약정 근무일 <span style={{ color: "var(--purple-text)", fontWeight: 700 }}>{d.count}건</span>을 일괄 등록했습니다.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    const workDate = d.work_date || "";
+    const checkIn = d.check_in ? String(d.check_in).slice(11, 16) : "";
+    const checkOut = d.check_out ? String(d.check_out).slice(11, 16) : "";
+
+    return (
+      <div key={log.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, marginTop: 5 }} />
+          {index < array.length - 1 && <div style={{ width: 1, flex: 1, background: "var(--border)", minHeight: 24, marginTop: 2 }} />}
+        </div>
+        <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 10, padding: "8px 12px", marginBottom: 2 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: meta.color }}>{meta.label}</span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{time}</span>
+          </div>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 4px" }}>
+            <strong style={{ color: "var(--text)" }}>{name}</strong>
+            {log.actor_role && <span style={{ marginLeft: 4, fontSize: 10, background: "var(--surface)", borderRadius: 4, padding: "1px 5px" }}>{roleLabel[log.actor_role] || log.actor_role}</span>}
+            {workDate && <span style={{ marginLeft: 6 }}>{workDate}</span>}
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {d.status && (
+              <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "var(--text-muted)" }}>
+                {statusLabel[d.status] || d.status}
+              </span>
+            )}
+            {checkIn && <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "#10b981" }}>출근 {checkIn}</span>}
+            {checkOut && <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "#3b82f6" }}>퇴근 {checkOut}</span>}
+            {d.actual_hours ? <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "var(--text-muted)" }}>{d.actual_hours}h</span> : null}
+          </div>
+          {d.memo && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "5px 0 0", background: "var(--surface)", borderRadius: 6, padding: "4px 8px", lineHeight: 1.5 }}>📝 {d.memo}</p>}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div style={{ marginTop: 8, borderTop: "1px solid var(--border)" }}>
-      {/* 아코디언 헤더 */}
-      <button onClick={() => setOpen(v => !v)}
-        style={{ width: "100%", background: "none", border: "none", padding: "12px 0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>📋 출퇴근 · 수정 이력 <span style={{ fontSize: 11, fontWeight: 400 }}>({logs.length}건)</span></span>
-        <span style={{ fontSize: 14, color: "var(--text-muted)", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(180deg)" : "none" }}>▼</span>
-      </button>
+    <div style={{ marginTop: 16 }}>
+      {/* 타이틀 및 헤더 */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)" }}>📋 최근 근태 처리 내역</span>
+        {totalCount > 3 && (
+          <button onClick={() => { setPage(1); setShowFullLogs(true); }}
+            style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.25)", borderRadius: 8, padding: "4px 8px", color: "var(--purple-text)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+            + 전체 내역 ({totalCount}건)
+          </button>
+        )}
+      </div>
 
-      {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 16 }}>
-          {logs.map((log, i) => {
-            const d = log.after_data || log.before_data || {};
-            const meta = actionMeta[log.action] || { label: log.action, color: "#6b7280" };
-            const name = log.users?.nickname || roleLabel[log.actor_role] || "알 수 없음";
-            const workDate = d.work_date || "";
-            const time = new Date(log.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-            const checkIn = d.check_in ? String(d.check_in).slice(11, 16) : "";
-            const checkOut = d.check_out ? String(d.check_out).slice(11, 16) : "";
+      {recentLogs.length === 0 ? (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "16px 0", margin: 0 }}>등록된 근태 내역이 없습니다.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+          {recentLogs.map((log, i) => renderLogCard(log, i, recentLogs))}
+        </div>
+      )}
 
-            return (
-              <div key={log.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, marginTop: 5 }} />
-                  {i < logs.length - 1 && <div style={{ width: 1, flex: 1, background: "var(--border)", minHeight: 24, marginTop: 2 }} />}
-                </div>
-                <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 10, padding: "8px 12px", marginBottom: 2 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: meta.color }}>{meta.label}</span>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{time}</span>
-                  </div>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 4px" }}>
-                    <strong style={{ color: "var(--text)" }}>{name}</strong>
-                    {log.actor_role && <span style={{ marginLeft: 4, fontSize: 10, background: "var(--surface)", borderRadius: 4, padding: "1px 5px" }}>{roleLabel[log.actor_role] || log.actor_role}</span>}
-                    {workDate && <span style={{ marginLeft: 6 }}>{workDate}</span>}
-                  </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {d.status && (
-                      <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "var(--text-muted)" }}>
-                        {statusLabel[d.status] || d.status}
-                      </span>
-                    )}
-                    {checkIn && <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "#10b981" }}>출근 {checkIn}</span>}
-                    {checkOut && <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "#3b82f6" }}>퇴근 {checkOut}</span>}
-                    {d.actual_hours ? <span style={{ fontSize: 10, background: "var(--surface)", borderRadius: 5, padding: "2px 7px", color: "var(--text-muted)" }}>{d.actual_hours}h</span> : null}
-                  </div>
-                  {d.memo && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "5px 0 0", background: "var(--surface)", borderRadius: 6, padding: "4px 8px", lineHeight: 1.5 }}>📝 {d.memo}</p>}
-                </div>
+      {/* 전체 내역 페이징 모달 */}
+      {showFullLogs && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 400,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16
+        }}>
+          <div style={{
+            background: "var(--surface)", border: "1px solid var(--border)",
+            borderRadius: 20, width: "100%", maxWidth: 440, height: "80vh",
+            display: "flex", flexDirection: "column", boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+            overflow: "hidden"
+          }}>
+            {/* 모달 헤더 */}
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 15, fontWeight: 800 }}>📋 전체 근태 이력 ({totalCount}건)</span>
+              <button onClick={() => setShowFullLogs(false)} style={{ background: "none", border: "none", fontSize: 18, color: "var(--text-muted)", cursor: "pointer" }}>✕</button>
+            </div>
+
+            {/* 모달 스크롤 구역 */}
+            <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+              {fullLoading ? (
+                <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)", fontSize: 13 }}>이력 조회 중...</div>
+              ) : fullLogs.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)", fontSize: 13 }}>이력이 존재하지 않습니다.</div>
+              ) : (
+                fullLogs.map((log, i) => renderLogCard(log, i, fullLogs))
+              )}
+            </div>
+
+            {/* 모달 하단 페이징 버튼 구역 */}
+            {totalPages > 1 && (
+              <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "center", alignItems: "center", gap: 10, background: "var(--surface)" }}>
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", fontSize: 11, cursor: page === 1 ? "default" : "pointer", color: page === 1 ? "var(--text-muted)" : "var(--text)" }}>
+                  이전
+                </button>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>{page} / {totalPages} 페이지</span>
+                <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", fontSize: 11, cursor: page === totalPages ? "default" : "pointer", color: page === totalPages ? "var(--text-muted)" : "var(--text)" }}>
+                  다음
+                </button>
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -159,6 +279,8 @@ export default function TeamMemberPage() {
   const [attEnd, setAttEnd] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [attLogRefreshKey, setAttLogRefreshKey] = useState(0);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showBatchModal, setShowBatchModal] = useState(false);
 
   // 근무조건 수정 모달
   const [showWorkModal, setShowWorkModal] = useState(false);
@@ -170,11 +292,19 @@ export default function TeamMemberPage() {
   // 급여 명세서 상태
   const [payslips, setPayslips] = useState<any[]>([]);
   const [payslipsLoading, setPayslipsLoading] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
 
   // 달력 상태
   const now = new Date();
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [viewYear, setViewYear] = useState(now.getFullYear());
+  const viewMonthRef = useRef(viewMonth);
+  const viewYearRef = useRef(viewYear);
+
+  useEffect(() => {
+    viewMonthRef.current = viewMonth;
+    viewYearRef.current = viewYear;
+  }, [viewMonth, viewYear]);
 
   useEffect(() => {
     if (memberId) loadMember();
@@ -267,8 +397,8 @@ export default function TeamMemberPage() {
   }
 
   async function loadAttendance(tmId: string, year?: number, month?: number) {
-    const y = year ?? viewYear;
-    const m = month ?? viewMonth;
+    const y = year ?? viewYearRef.current;
+    const m = month ?? viewMonthRef.current;
     const from = `${y}-${String(m + 1).padStart(2, "0")}-01`;
     const to = `${y}-${String(m + 1).padStart(2, "0")}-${new Date(y, m + 1, 0).getDate()}`;
     const { data } = await supabase.from("attendance")
@@ -416,10 +546,8 @@ export default function TeamMemberPage() {
   // 달력 데이터
   const monthDays = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
-  const monthAtt = attendance.filter(a => {
-    const d = new Date(a.work_date);
-    return d.getMonth() === viewMonth && d.getFullYear() === viewYear;
-  });
+  const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
+  const monthAtt = attendance.filter(a => a.work_date && a.work_date.startsWith(monthPrefix));
 
   const getAttStatus = (day: number) => {
     const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -622,12 +750,20 @@ export default function TeamMemberPage() {
 
           {/* 월 선택 */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <button onClick={() => { if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); } else setViewMonth(m => m - 1); }}
-              style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--text-muted)", padding: "0 8px" }}>‹</button>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{viewYear}년 {viewMonth + 1}월</span>
-            <button onClick={() => { if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); } else setViewMonth(m => m + 1); }}
-              disabled={`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7)}
-              style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--text-muted)", padding: "0 8px", opacity: `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7) ? 0.3 : 1 }}>›</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button onClick={() => { if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); } else setViewMonth(m => m - 1); }}
+                style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--text-muted)", padding: "0 8px" }}>‹</button>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{viewYear}년 {viewMonth + 1}월</span>
+              <button onClick={() => { if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); } else setViewMonth(m => m + 1); }}
+                disabled={`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7)}
+                style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--text-muted)", padding: "0 8px", opacity: `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7) ? 0.3 : 1 }}>›</button>
+            </div>
+            {contracts.length > 0 && (
+              <button onClick={() => setShowBatchModal(true)}
+                style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 8, padding: "5px 10px", color: "var(--purple-text)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                ⚡ 일괄 등록
+              </button>
+            )}
           </div>
 
           {/* 통계 4열 */}
@@ -739,11 +875,20 @@ export default function TeamMemberPage() {
           />
           {payslipOpen && (
             <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-              <button
-                onClick={contracts.length === 0 ? undefined : () => router.push(`/payslip?tmId=${member.id}`)}
-                style={{ width: "100%", background: contracts.length === 0 ? "var(--surface2)" : "linear-gradient(135deg,#7c3aed,#ec4899)", border: contracts.length === 0 ? "1px solid var(--border)" : "none", borderRadius: 12, padding: 13, color: contracts.length === 0 ? "var(--text-muted)" : "#fff", fontSize: 14, fontWeight: 700, cursor: contracts.length === 0 ? "default" : "pointer" }}>
-                {contracts.length === 0 ? "🔒 급여 명세서 발행 (계약서 작성 후 가능)" : "📋 이번달 급여 명세서 발행"}
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={contracts.length === 0 ? undefined : () => router.push(`/payslip?tmId=${member.id}`)}
+                  style={{ flex: 1, background: contracts.length === 0 ? "var(--surface2)" : "linear-gradient(135deg,#7c3aed,#ec4899)", border: contracts.length === 0 ? "1px solid var(--border)" : "none", borderRadius: 12, padding: 13, color: contracts.length === 0 ? "var(--text-muted)" : "#fff", fontSize: 14, fontWeight: 700, cursor: contracts.length === 0 ? "default" : "pointer" }}>
+                  {contracts.length === 0 ? "🔒 급여 명세서 발행 (계약서 작성 후 가능)" : "📋 이번달 급여 명세서 발행"}
+                </button>
+                {contracts.length > 0 && (
+                  <button onClick={() => setSettingsModalOpen(true)}
+                    style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "0 14px", color: "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}
+                    title="자동 발행 설정">
+                    ⚙️
+                  </button>
+                )}
+              </div>
               {contracts.length === 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f59e0b10", border: "1px solid #f59e0b30", borderRadius: 10, padding: "10px 12px" }}>
                   <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
@@ -907,15 +1052,34 @@ export default function TeamMemberPage() {
                           <span style={{ flex: 1, textAlign: "center", fontSize: 11, color: "var(--text-muted)", padding: "8px", alignSelf: "center" }}>🔒 이력 보존</span>
                         )}
                         {isPending && (
-                          <button onClick={async () => {
-                            await supabase.from("contracts").update({ status: "cancelled" }).eq("id", c.id);
-                            await supabase.from("team_members").update({ contract_status: "none" }).eq("id", c.team_member_id);
-                            setContracts(prev => prev.filter(x => x.id !== c.id));
-                            showToast("계약서 발행이 취소됐어요.");
-                          }}
-                            style={{ flex: 1, minWidth: "100%", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "8px", fontSize: 12, color: "#ef4444", cursor: "pointer" }}>
-                            🗑️ 발행 취소
-                          </button>
+                          <div style={{ display: "flex", gap: 6, width: "100%", marginTop: 6 }}>
+                            <button onClick={async () => {
+                              const chatMsg = `⚠️ **근로계약서 서명 요청**\n아직 근로계약서에 서명하지 않으셨습니다. 아래 링크를 눌러 계약서를 확인하고 서명해 주세요!\n👉 [근로계약서 확인 및 서명하기](file:///contract/view?memberId=${c.team_member_id})`;
+                              const { error } = await supabase.from("messages").insert({
+                                match_id: member.match_id,
+                                sender_id: member.employer_id,
+                                message: chatMsg,
+                                is_system: true,
+                              });
+                              if (!error) {
+                                showToast("🔔 알바생에게 서명 독촉 알림을 보냈습니다!");
+                              } else {
+                                showToast("독촉 실패: " + error.message);
+                              }
+                            }}
+                              style={{ flex: 1, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 8, padding: "8px", fontSize: 12, color: "#f59e0b", cursor: "pointer", fontWeight: 700 }}>
+                              🔔 서명 독촉
+                            </button>
+                            <button onClick={async () => {
+                              await supabase.from("contracts").update({ status: "cancelled" }).eq("id", c.id);
+                              await supabase.from("team_members").update({ contract_status: "none" }).eq("id", c.team_member_id);
+                              setContracts(prev => prev.filter(x => x.id !== c.id));
+                              showToast("계약서 발행이 취소됐어요.");
+                            }}
+                              style={{ flex: 1, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "8px", fontSize: 12, color: "#ef4444", cursor: "pointer" }}>
+                              🗑️ 발행 취소
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -954,6 +1118,22 @@ export default function TeamMemberPage() {
           </button>
         </div>
 
+        {/* 📌 법정 보존 기간 안내 */}
+        <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 12, padding: "12px 14px", marginTop: 24 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 4px" }}>📌 법정 보존 기간 안내</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
+            근로계약서 · 임금대장 · 근태기록: 퇴직일로부터 <strong>3년</strong><br />
+            원천징수영수증: <strong>5년</strong> (소득세법 제163조)<br />
+            보존 만료일: <strong style={{ color: member?.status === "left" ? "#ef4444" : "#10b981" }}>
+              {member?.hire_date ? (() => {
+                const hd = new Date(member.hire_date);
+                hd.setFullYear(hd.getFullYear() + 3);
+                return hd.toLocaleDateString("ko-KR");
+              })() : "기록 보존 중"}
+            </strong>
+          </p>
+        </div>
+
       </div>
 
       {/* ── 근태 입력 모달 ── */}
@@ -966,24 +1146,7 @@ export default function TeamMemberPage() {
                 {getAttStatus(parseInt(attDate.split("-")[2])) ? (
                   <>
                     <span style={{ fontSize: 11, background: "#f59e0b20", color: "#f59e0b", borderRadius: 6, padding: "3px 8px" }}>✏️ 수정</span>
-                    <button onClick={async () => {
-                      if (!confirm("이 날의 근태 기록을 삭제할까요?")) return;
-                      const existing = getAttStatus(parseInt(attDate.split("-")[2]));
-                      if (existing?.id) {
-                        await supabase.from("attendance_logs").insert({
-                          attendance_id: existing.id,
-                          team_member_id: member.id,
-                          action: "delete",
-                          actor_id: member.employer_id,
-                          actor_role: "employer",
-                          before_data: { status: existing.status, work_date: existing.work_date, check_in: existing.check_in, check_out: existing.check_out },
-                        });
-                        await supabase.from("attendance").delete().eq("id", existing.id);
-                        await loadAttendance(member.id);
-                        setAttLogRefreshKey(k => k + 1);
-                      }
-                      setShowAttModal(false);
-                    }}
+                    <button onClick={() => setShowDeleteConfirm(true)}
                       style={{ fontSize: 11, background: "#ef444420", color: "#ef4444", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
                       🗑️ 삭제
                     </button>
@@ -1199,6 +1362,479 @@ export default function TeamMemberPage() {
           </div>
         </div>
       )}
+
+      {/* 자동 발행 예약 설정 모달 */}
+      {settingsModalOpen && member && (() => {
+        const signedContract = contracts.find(c => c.worker_signed && c.employer_signed);
+        const contractPayday = (signedContract?.contract_data?.payDay as string) || null;
+
+        return (
+          <AutoIssueModalInner
+            member={member}
+            contractPayday={contractPayday}
+            onClose={() => setSettingsModalOpen(false)}
+            onSave={(updatedFields) => {
+              setMember((prev: any) => prev ? { ...prev, ...updatedFields } : null);
+              setSettingsModalOpen(false);
+              showToast("자동 발행 설정이 저장되었습니다!");
+            }}
+          />
+        );
+      })()}
+
+      {/* ── 근태 삭제 확인 모달 ── */}
+      {showDeleteConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "var(--surface)", borderRadius: 20, padding: 24, width: "100%", maxWidth: 360, border: "1px solid var(--border)", boxShadow: "0 10px 25px rgba(0,0,0,0.5)" }}>
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+              <p style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", margin: "0 0 8px" }}>근태 기록 삭제</p>
+              <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
+                선택하신 <span style={{ fontWeight: 700, color: "#ef4444" }}>{attDate}</span>의 근태 기록을 완전히 삭제하시겠습니까?
+              </p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5, background: "var(--surface2)", borderRadius: 8, padding: 8 }}>
+                삭제 시 누적 근무시간 및 예상 급여 통계에서 즉시 제외되며 복구할 수 없습니다.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowDeleteConfirm(false)}
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 700, color: "var(--text-muted)", cursor: "pointer" }}>
+                취소
+              </button>
+              <button onClick={async () => {
+                const dayStr = attDate.split("-")[2];
+                const existing = getAttStatus(parseInt(dayStr));
+                if (existing?.id) {
+                  const { error } = await supabase.from("attendance").delete().eq("id", existing.id);
+                  if (error) {
+                    showToast("삭제 실패: " + error.message, "error");
+                  } else {
+                    // 로그 기록 추가
+                    await supabase.from("attendance_logs").insert({
+                      attendance_id: existing.id,
+                      team_member_id: member.id,
+                      action: "delete",
+                      actor_id: member.employer_id,
+                      actor_role: "employer",
+                      before_data: { status: existing.status, work_date: existing.work_date, check_in: existing.check_in, check_out: existing.check_out },
+                    });
+                    await loadAttendance(member.id);
+                    setAttLogRefreshKey(k => k + 1);
+                    showToast("근태 기록이 삭제되었습니다.");
+                  }
+                } else {
+                  showToast("삭제할 대상을 찾지 못했습니다.", "error");
+                }
+                setShowDeleteConfirm(false);
+                setShowAttModal(false);
+              }}
+                style={{ flex: 1, background: "#ef4444", border: "none", borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+                삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 근태 일괄 등록 모달 ── */}
+      {showBatchModal && member && (() => {
+        const scheduledDays = member.work_days || "지정되지 않음";
+        return (
+          <AttendanceBatchModal
+            member={member}
+            contracts={contracts}
+            viewYear={viewYear}
+            viewMonth={viewMonth}
+            todayStr={todayStr}
+            scheduledDays={scheduledDays}
+            showToast={showToast}
+            onClose={() => setShowBatchModal(false)}
+            onComplete={async (msg) => {
+              await loadAttendance(member.id);
+              setAttLogRefreshKey(k => k + 1);
+              setShowBatchModal(false);
+              showToast(msg, "success");
+            }}
+          />
+        );
+      })()}
     </main>
+  );
+}
+
+function AutoIssueModalInner({
+  member,
+  contractPayday,
+  onClose,
+  onSave,
+}: {
+  member: any;
+  contractPayday: string | null;
+  onClose: () => void;
+  onSave: (updated: any) => void;
+}) {
+  const [enabled, setEnabled] = useState(member.payslip_auto_issue ?? false);
+  const [offset, setOffset] = useState(member.payslip_auto_issue_offset ?? 0);
+  const [fallbackPayday, setFallbackPayday] = useState(member.payslip_payday_fallback ?? 10);
+  const [saving, setSaving] = useState(false);
+  const [customOffsetOpen, setCustomOffsetOpen] = useState(![0, 1, 2, 3, 5].includes(member.payslip_auto_issue_offset ?? 0));
+  const [customOffsetVal, setCustomOffsetVal] = useState(member.payslip_auto_issue_offset ?? 0);
+
+  const saveSettings = async () => {
+    setSaving(true);
+    const finalOffset = customOffsetOpen ? customOffsetVal : offset;
+    const { error } = await supabase
+      .from("team_members")
+      .update({
+        payslip_auto_issue: enabled,
+        payslip_auto_issue_offset: finalOffset,
+        payslip_payday_fallback: fallbackPayday,
+      })
+      .eq("id", member.id);
+
+    setSaving(false);
+    if (error) {
+      alert("설정 저장 실패: " + error.message);
+      return;
+    }
+    onSave({
+      payslip_auto_issue: enabled,
+      payslip_auto_issue_offset: finalOffset,
+      payslip_payday_fallback: fallbackPayday,
+    });
+  };
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.6)", zIndex: 500,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 16
+    }}>
+      <div style={{
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 20, width: "100%", maxWidth: 380, padding: 20,
+        boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+        display: "flex", flexDirection: "column", gap: 16
+      }}>
+        {/* 헤더 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 15, fontWeight: 800 }}>⚙️ 명세서 자동 발행 설정</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: "var(--text-muted)", cursor: "pointer", padding: 4 }}>✕</button>
+        </div>
+
+        {/* 안내 */}
+        <div style={{ background: "rgba(124,58,237,0.06)", border: "1px solid rgba(124,58,237,0.15)", borderRadius: 12, padding: "10px 12px" }}>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 4px" }}>근무지 정산 정보</p>
+          {contractPayday ? (
+            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: 0 }}>
+              📝 계약서 상 급여지급일: 매월 {contractPayday}일
+            </p>
+          ) : (
+            <div>
+              <p style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700, margin: "0 0 6px" }}>
+                ⚠️ 서명 완료된 근로계약서가 없습니다.
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>기본 지급일 수동 설정:</span>
+                <input type="number" min={1} max={31} value={fallbackPayday}
+                  onChange={e => setFallbackPayday(Math.max(1, Math.min(31, Number(e.target.value))))}
+                  style={{ width: 60, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 6px", color: "var(--text)", fontSize: 12, outline: "none", textAlign: "center" }} />
+                <span style={{ fontSize: 12 }}>일</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 활성화 토글 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>급여명세서 자동 발행 활성화</span>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0" }}>매월 지정일에 명세서를 자동 발행 및 발송합니다.</p>
+          </div>
+          <button onClick={() => setEnabled(!enabled)} style={{
+            width: 44, height: 24, borderRadius: 12,
+            background: enabled ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--border)",
+            border: "none", cursor: "pointer", position: "relative",
+            transition: "background 0.2s"
+          }}>
+            <div style={{
+              width: 18, height: 18, borderRadius: "50%", background: "#fff",
+              position: "absolute", top: 3, left: enabled ? 23 : 3,
+              transition: "left 0.2s"
+            }} />
+          </button>
+        </div>
+
+        {/* 발행 시점 오프셋 설정 */}
+        {enabled && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>📅 발행 시점 (지급일 기준)</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {[
+                { label: "당일", val: 0 },
+                { label: "1일 전", val: 1 },
+                { label: "2일 전", val: 2 },
+                { label: "3일 전", val: 3 },
+                { label: "5일 전", val: 5 },
+              ].map(opt => {
+                const active = !customOffsetOpen && offset === opt.val;
+                return (
+                  <button key={opt.val} onClick={() => { setCustomOffsetOpen(false); setOffset(opt.val); }}
+                    style={{
+                      background: active ? "rgba(124,58,237,0.15)" : "var(--surface2)",
+                      border: active ? "1px solid #7c3aed" : "1px solid var(--border)",
+                      color: active ? "var(--purple-text)" : "var(--text)",
+                      borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", outline: "none"
+                    }}>
+                    {opt.label}
+                  </button>
+                );
+              })}
+              <button onClick={() => setCustomOffsetOpen(true)}
+                style={{
+                  background: customOffsetOpen ? "rgba(124,58,237,0.15)" : "var(--surface2)",
+                  border: customOffsetOpen ? "1px solid #7c3aed" : "1px solid var(--border)",
+                  color: customOffsetOpen ? "var(--purple-text)" : "var(--text)",
+                  borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", outline: "none"
+                }}>
+                직접 입력
+              </button>
+            </div>
+
+            {customOffsetOpen && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, background: "var(--surface2)", borderRadius: 10, padding: 8, border: "1px dashed var(--border)" }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>지급일 기준:</span>
+                <input type="number" min={0} max={30} value={customOffsetVal}
+                  onChange={e => setCustomOffsetVal(Math.max(0, Math.min(30, Number(e.target.value))))}
+                  style={{ width: 60, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text)", fontSize: 12, outline: "none", textAlign: "center" }} />
+                <span style={{ fontSize: 12 }}>일 전에 자동 발행</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 저장 버튼 */}
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button onClick={onClose}
+            style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "var(--text)", cursor: "pointer" }}>
+            취소
+          </button>
+          <button onClick={saveSettings} disabled={saving}
+            style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+            {saving ? "저장 중..." : "설정 저장"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceBatchModal({
+  member,
+  contracts,
+  viewYear,
+  viewMonth,
+  todayStr,
+  scheduledDays,
+  showToast,
+  onClose,
+  onComplete,
+}: {
+  member: any;
+  contracts: any[];
+  viewYear: number;
+  viewMonth: number;
+  todayStr: string;
+  scheduledDays: string;
+  showToast: (msg: string, type?: "success" | "error") => void;
+  onClose: () => void;
+  onComplete: (msg: string) => void;
+}) {
+  const [overwrite, setOverwrite] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // 계약서 또는 소속회원 데이터 기반 기본값 설정
+  const activeContract = contracts.find(c => c.worker_signed && c.employer_signed) || contracts[0];
+  const cd = activeContract?.contract_data || {};
+  
+  // 약정 시간 및 출퇴근 기본 설정
+  const defaultHours = cd.dailyHours || cd.work_hours || member.work_hours || 8;
+  const startTime = cd.startTime || "09:00";
+  const endTime = cd.endTime || "18:00";
+
+  const handleBatchRegister = async () => {
+    setSaving(true);
+
+    // 1. 해당 월의 총 일수 계산 및 약정 근무 요일 파싱
+    const lastDay = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const WORK_DAY_MAP: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
+    const targetDays = new Set<number>();
+    
+    for (const [label, num] of Object.entries(WORK_DAY_MAP)) {
+      if (member.work_days?.includes(label)) {
+        targetDays.add(num);
+      }
+    }
+
+    if (targetDays.size === 0) {
+      showToast("약정 근무 요일 정보가 존재하지 않습니다.", "error");
+      setSaving(false);
+      return;
+    }
+
+    // 2. 해당 월 중 오늘 포함 이전 날짜 중 약정 요일에 해당하는 날짜들 추출
+    const datesToUpsert: string[] = [];
+    for (let day = 1; day <= lastDay; day++) {
+      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      if (dateStr > todayStr) continue; // 미래 날짜 배제
+
+      const dayOfWeek = new Date(viewYear, viewMonth, day).getDay();
+      if (targetDays.has(dayOfWeek)) {
+        datesToUpsert.push(dateStr);
+      }
+    }
+
+    if (datesToUpsert.length === 0) {
+      showToast("일괄 등록할 수 있는 근무일이 존재하지 않습니다. (미래 날짜 제외)", "error");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      // 3. 기존 근태 내역 조회
+      const { data: existingAtt } = await supabase.from("attendance")
+        .select("id, work_date, status, memo, actual_hours, check_in, check_out")
+        .eq("team_member_id", member.id)
+        .in("work_date", datesToUpsert);
+
+      const existingMap = new Map<string, any>(existingAtt?.map((a: any) => [a.work_date, a]) || []);
+      const upsertPayload: any[] = [];
+
+      // 4. 페이로드 조립
+      for (const dateStr of datesToUpsert) {
+        const exist = existingMap.get(dateStr);
+        if (exist && !overwrite) continue; // 건너뛰기
+
+        const ci = `${dateStr}T${startTime}:00+09:00`;
+        const co = `${dateStr}T${endTime}:00+09:00`;
+
+        // ⚠️ id를 전달하지 않고 team_member_id, work_date 고유 제약 조건을 기반으로 upsert 하도록 설계
+        upsertPayload.push({
+          team_member_id: member.id,
+          employer_id: member.employer_id,
+          worker_id: member.worker_id,
+          work_date: dateStr,
+          status: "normal",
+          memo: "계약 약정일 일괄 등록",
+          check_in: ci,
+          check_out: co,
+          actual_hours: defaultHours,
+        });
+      }
+
+      if (upsertPayload.length === 0) {
+        onComplete("새로 등록할 내역이 없어 처리를 건너뛰었습니다.");
+        return;
+      }
+
+      // 5. DB 일괄 업서트 실행
+      const { error: upsertErr } = await supabase
+        .from("attendance")
+        .upsert(upsertPayload, { onConflict: "team_member_id,work_date" });
+      if (upsertErr) throw upsertErr;
+
+      // 6. DB 일괄 로깅 실행 (과거 내역을 한 번에 추적할 수 있도록 단일 일괄등록 감사로그 삽입)
+      const batchLog = {
+        team_member_id: member.id,
+        action: "batch_register",
+        actor_id: member.employer_id,
+        actor_role: "employer",
+        before_data: null,
+        after_data: {
+          year: viewYear,
+          month: viewMonth + 1,
+          count: upsertPayload.length,
+          dates: upsertPayload.map(p => p.work_date),
+        },
+      };
+
+      const { error: logErr } = await supabase.from("attendance_logs").insert(batchLog);
+      if (logErr) throw logErr;
+
+      onComplete(`🎉 ${viewYear}년 ${viewMonth + 1}월 약정 근무일 ${upsertPayload.length}건이 일괄 등록되었습니다!`);
+    } catch (err: any) {
+      showToast("일괄 등록 실패: " + err.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.6)", zIndex: 500,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 16
+    }}>
+      <div style={{
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 20, width: "100%", maxWidth: 380, padding: 20,
+        boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+        display: "flex", flexDirection: "column", gap: 16
+      }}>
+        {/* 헤더 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>⚡ 근태 일괄 등록</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: "var(--text-muted)", cursor: "pointer", padding: 4 }}>✕</button>
+        </div>
+
+        {/* 설명 구역 */}
+        <div style={{ background: "rgba(124,58,237,0.08)", border: "1.5px dashed #7c3aed", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", letterSpacing: 0.5 }}>일괄 등록 대상 월</span>
+          <span style={{ fontSize: 18, fontWeight: 900, color: "var(--purple-text)" }}>📅 {viewYear}년 {viewMonth + 1}월</span>
+          
+          <div style={{ width: "100%", height: "1px", background: "rgba(124,58,237,0.25)", margin: "6px 0" }} />
+          
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", letterSpacing: 0.5 }}>계약 근로 조건 정보</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>📅 약정 요일: <span style={{ color: "#7c3aed" }}>{scheduledDays}</span></span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>⏰ 근무 시간: <span style={{ color: "#7c3aed" }}>{startTime} ~ {endTime}</span> (일 {defaultHours}시간)</span>
+        </div>
+
+        {/* 주의 사항 경고 박스 */}
+        <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: 12 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "#f87171", margin: "0 0 4px" }}>⚠️ 필수 확인 및 주의사항</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, lineHeight: 1.6, fontWeight: 600 }}>
+            • 지정된 월의 전체 일자 중 <span style={{ color: "var(--text)", fontWeight: 800 }}>약정 근무 요일</span>만 자동 등록됩니다.<br />
+            • 부정 방지를 위해 <span style={{ color: "#ef4444", fontWeight: 800 }}>오늘 날짜 이후(미래 날짜)는 자동 등록에서 제외</span>됩니다.
+          </p>
+        </div>
+
+        {/* 덮어쓰기 옵션 토글 */}
+        <div onClick={() => setOverwrite(!overwrite)}
+          style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", background: "var(--surface2)", borderRadius: 12, padding: "10px 12px", border: "1px solid var(--border)" }}>
+          <span style={{ fontSize: 20, color: overwrite ? "#7c3aed" : "var(--text-muted)" }}>{overwrite ? "☑️" : "⬜"}</span>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text)" }}>기존 입력된 근태 기록 덮어쓰기</span>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0", lineHeight: 1.4 }}>
+              체크 해제 시: 기존에 입력된 일정을 보호하고 빈 일자만 채웁니다.<br />
+              체크 선택 시: 해당 월의 기존 근태를 모두 지우고 계약조건으로 덮어씁니다.
+            </p>
+          </div>
+        </div>
+
+        {/* 버튼들 */}
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <button onClick={onClose}
+            style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "var(--text)", cursor: "pointer" }}>
+            취소
+          </button>
+          <button onClick={handleBatchRegister} disabled={saving}
+            style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+            {saving ? "등록 중..." : "일괄 등록하기"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

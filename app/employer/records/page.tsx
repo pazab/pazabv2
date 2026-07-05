@@ -13,6 +13,10 @@ type Member = {
   wage: number | null;
   work_hours: string | null;
   member_role: string;
+  match_id: string | null;
+  payslip_auto_issue: boolean;
+  payslip_auto_issue_offset: number;
+  payslip_payday_fallback: number;
   worker: { nickname: string | null; email: string | null; avatar_url: string | null } | null;
   contracts: Contract[];
   attendance_count: number;
@@ -63,6 +67,20 @@ export default function EmployerRecordsPage() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
+  const [memberPayslips, setMemberPayslips] = useState<any[]>([]);
+  const [payslipLoading, setPayslipLoading] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState<Member | null>(null);
+
+  async function loadMemberPayslips(tmId: string) {
+    setPayslipLoading(true);
+    const { data } = await supabase.from("payslips")
+      .select("*")
+      .eq("team_member_id", tmId)
+      .order("year", { ascending: false })
+      .order("month", { ascending: false });
+    setMemberPayslips(data || []);
+    setPayslipLoading(false);
+  }
 
   useEffect(() => { init(); }, []);
 
@@ -72,7 +90,8 @@ export default function EmployerRecordsPage() {
 
     // 전·현직 팀원 전체
     const { data: tm } = await supabase.from("team_members")
-      .select(`id, worker_id, status, hire_date, work_days, wage, work_hours, member_role,
+      .select(`id, worker_id, match_id, status, hire_date, work_days, wage, work_hours, member_role,
+        payslip_auto_issue, payslip_auto_issue_offset, payslip_payday_fallback,
         users!team_members_worker_id_fkey (nickname, email, avatar_url)`)
       .eq("employer_id", user.id)
       .order("created_at", { ascending: false });
@@ -192,7 +211,7 @@ export default function EmployerRecordsPage() {
               const hasContract = m.contracts.length > 0;
               const signedContract = m.contracts.find(c => c.worker_signed && c.employer_signed);
               return (
-                <div key={m.id} onClick={() => { setSelectedMember(m); loadAttendance(m.id, attMonth); }}
+                <div key={m.id} onClick={() => router.push(`/employer/team/${m.id}`)}
                   style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "14px 16px", cursor: "pointer" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                     <div style={{ width: 40, height: 40, borderRadius: "50%", background: m.worker?.avatar_url ? `url(${m.worker.avatar_url}) center/cover` : "linear-gradient(135deg,#7c3aed,#ec4899)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
@@ -310,6 +329,33 @@ export default function EmployerRecordsPage() {
                         <span style={{ fontSize: 11, fontWeight: 700, color: c.worker_signed ? "#4ade80" : "#fb923c" }}>
                           직원 {c.worker_signed ? "✅" : "⏳"}
                         </span>
+                        {!c.worker_signed && (
+                          <button onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!m.match_id) {
+                              alert("⚠️ 매치 정보가 없습니다.");
+                              return;
+                            }
+                            const { data: { user } } = await supabase.auth.getUser();
+                            if (!user) return;
+                            
+                            await fetch("/api/chat", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                matchId: m.match_id,
+                                senderId: user.id,
+                                receiverId: m.worker_id,
+                                message: `⏳ [근로계약서 서명 요청]\n아직 근로계약서 서명이 완료되지 않았습니다. 아래 링크에서 확인 후 서명을 진행해 주세요.\n👉 http://localhost:3000/contract/view?contractId=${c.id}`,
+                                messageType: "system",
+                              }),
+                            }).catch(() => {});
+                            alert("🔔 알바생에게 계약서 서명 독촉 알림을 전송했습니다.");
+                          }}
+                            style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 6, padding: "2px 6px", fontSize: 10, color: "#f59e0b", fontWeight: 700, cursor: "pointer", marginTop: 2, outline: "none" }}>
+                            🔔 서명 독촉
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -359,6 +405,55 @@ export default function EmployerRecordsPage() {
                   )}
                 </div>
 
+                {/* 급여 명세서 */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <p style={{ fontSize: 13, fontWeight: 800, margin: 0 }}>📋 급여 명세서</p>
+                      <button onClick={() => setSettingsModalOpen(m)}
+                        style={{ background: "none", border: "none", padding: "2px", cursor: "pointer", display: "flex", alignItems: "center", fontSize: 14 }}
+                        title="자동 발행 설정">
+                        ⚙️
+                      </button>
+                    </div>
+                    <button onClick={() => router.push(`/payslip?tmId=${m.id}`)}
+                      style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 8, padding: "5px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      ➕ 새 명세서 발행
+                    </button>
+                  </div>
+                  {payslipLoading ? (
+                    <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13, padding: "12px 0" }}>불러오는 중...</p>
+                  ) : memberPayslips.length === 0 ? (
+                    <div style={{ background: "var(--surface2)", borderRadius: 10, padding: "12px", textAlign: "center" }}>
+                      <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>발행된 급여 명세서 없음</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {memberPayslips.map(ps => (
+                        <div key={ps.id}
+                          style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div>
+                            <p style={{ fontSize: 12, fontWeight: 700, margin: "0 0 2px" }}>{ps.year}년 {ps.month}월</p>
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
+                              지급액: {Number(ps.total_pay || ps.total_amount || 0).toLocaleString()}원
+                              {ps.net_pay && ` (실수령: ${Number(ps.net_pay).toLocaleString()}원)`}
+                            </p>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <span style={{ fontSize: 10, background: ps.confirmed_at ? "#10b98120" : "#f59e0b20", color: ps.confirmed_at ? "#10b981" : "#f59e0b", borderRadius: 6, padding: "2px 6px", fontWeight: 700 }}>
+                              {ps.confirmed_at ? "확인완료" : "서명대기"}
+                            </span>
+                            <button onClick={() => router.push(`/payslip?id=${ps.id}`)}
+                              style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", fontSize: 11, color: "var(--text)", cursor: "pointer" }}>
+                              보기
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* 보존 안내 */}
                 <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 12, padding: "12px 14px" }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 4px" }}>📌 법정 보존 기간 안내</p>
@@ -373,6 +468,197 @@ export default function EmployerRecordsPage() {
           </div>
         );
       })()}
+
+      {/* 자동 발행 예약 설정 모달 */}
+      {settingsModalOpen && (() => {
+        const m = settingsModalOpen;
+        const signedContract = m.contracts.find(c => c.worker_signed && c.employer_signed);
+        const contractPayday = (signedContract?.contract_data?.payDay as string) || null;
+
+        return (
+          <AutoIssueModalInner
+            member={m}
+            contractPayday={contractPayday}
+            onClose={() => setSettingsModalOpen(null)}
+            onSave={(updatedFields) => {
+              const updatedMember = { ...m, ...updatedFields };
+              setMembers(prev => prev.map(x => x.id === updatedMember.id ? updatedMember : x));
+              if (selectedMember?.id === updatedMember.id) {
+                setSelectedMember(updatedMember);
+              }
+              setSettingsModalOpen(null);
+            }}
+          />
+        );
+      })()}
     </main>
+  );
+}
+
+function AutoIssueModalInner({
+  member,
+  contractPayday,
+  onClose,
+  onSave,
+}: {
+  member: Member;
+  contractPayday: string | null;
+  onClose: () => void;
+  onSave: (updated: Partial<Member>) => void;
+}) {
+  const [enabled, setEnabled] = useState(member.payslip_auto_issue ?? false);
+  const [offset, setOffset] = useState(member.payslip_auto_issue_offset ?? 0);
+  const [fallbackPayday, setFallbackPayday] = useState(member.payslip_payday_fallback ?? 10);
+  const [saving, setSaving] = useState(false);
+  const [customOffsetOpen, setCustomOffsetOpen] = useState(![0, 1, 2, 3, 5].includes(member.payslip_auto_issue_offset ?? 0));
+  const [customOffsetVal, setCustomOffsetVal] = useState(member.payslip_auto_issue_offset ?? 0);
+
+  const saveSettings = async () => {
+    setSaving(true);
+    const finalOffset = customOffsetOpen ? customOffsetVal : offset;
+    const { error } = await supabase
+      .from("team_members")
+      .update({
+        payslip_auto_issue: enabled,
+        payslip_auto_issue_offset: finalOffset,
+        payslip_payday_fallback: fallbackPayday,
+      })
+      .eq("id", member.id);
+
+    setSaving(false);
+    if (error) {
+      alert("설정 저장 실패: " + error.message);
+      return;
+    }
+    onSave({
+      payslip_auto_issue: enabled,
+      payslip_auto_issue_offset: finalOffset,
+      payslip_payday_fallback: fallbackPayday,
+    });
+  };
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.6)", zIndex: 100,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 16
+    }}>
+      <div style={{
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 20, width: "100%", maxWidth: 380, padding: 20,
+        boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+        display: "flex", flexDirection: "column", gap: 16
+      }}>
+        {/* 헤더 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 15, fontWeight: 800 }}>⚙️ 명세서 자동 발행 설정</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: "var(--text-muted)", cursor: "pointer", padding: 4 }}>✕</button>
+        </div>
+
+        {/* 안내 */}
+        <div style={{ background: "rgba(124,58,237,0.06)", border: "1px solid rgba(124,58,237,0.15)", borderRadius: 12, padding: "10px 12px" }}>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 4px" }}>근무지 정산 정보</p>
+          {contractPayday ? (
+            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: 0 }}>
+              📝 계약서 상 급여지급일: 매월 {contractPayday}일
+            </p>
+          ) : (
+            <div>
+              <p style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700, margin: "0 0 6px" }}>
+                ⚠️ 서명 완료된 근로계약서가 없습니다.
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>기본 지급일 수동 설정:</span>
+                <input type="number" min={1} max={31} value={fallbackPayday}
+                  onChange={e => setFallbackPayday(Math.max(1, Math.min(31, Number(e.target.value))))}
+                  style={{ width: 60, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 6px", color: "var(--text)", fontSize: 12, outline: "none", textAlign: "center" }} />
+                <span style={{ fontSize: 12 }}>일</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 활성화 토글 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>급여명세서 자동 발행 활성화</span>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0" }}>매월 지정일에 명세서를 자동 발행 및 발송합니다.</p>
+          </div>
+          <button onClick={() => setEnabled(!enabled)} style={{
+            width: 44, height: 24, borderRadius: 12,
+            background: enabled ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--border)",
+            border: "none", cursor: "pointer", position: "relative",
+            transition: "background 0.2s"
+          }}>
+            <div style={{
+              width: 18, height: 18, borderRadius: "50%", background: "#fff",
+              position: "absolute", top: 3, left: enabled ? 23 : 3,
+              transition: "left 0.2s"
+            }} />
+          </button>
+        </div>
+
+        {/* 발행 시점 오프셋 설정 */}
+        {enabled && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>📅 발행 시점 (지급일 기준)</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {[
+                { label: "당일", val: 0 },
+                { label: "1일 전", val: 1 },
+                { label: "2일 전", val: 2 },
+                { label: "3일 전", val: 3 },
+                { label: "5일 전", val: 5 },
+              ].map(opt => {
+                const active = !customOffsetOpen && offset === opt.val;
+                return (
+                  <button key={opt.val} onClick={() => { setCustomOffsetOpen(false); setOffset(opt.val); }}
+                    style={{
+                      background: active ? "rgba(124,58,237,0.15)" : "var(--surface2)",
+                      border: active ? "1px solid #7c3aed" : "1px solid var(--border)",
+                      color: active ? "var(--purple-text)" : "var(--text)",
+                      borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", outline: "none"
+                    }}>
+                    {opt.label}
+                  </button>
+                );
+              })}
+              <button onClick={() => setCustomOffsetOpen(true)}
+                style={{
+                  background: customOffsetOpen ? "rgba(124,58,237,0.15)" : "var(--surface2)",
+                  border: customOffsetOpen ? "1px solid #7c3aed" : "1px solid var(--border)",
+                  color: customOffsetOpen ? "var(--purple-text)" : "var(--text)",
+                  borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", outline: "none"
+                }}>
+                직접 입력
+              </button>
+            </div>
+
+            {customOffsetOpen && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, background: "var(--surface2)", borderRadius: 10, padding: 8, border: "1px dashed var(--border)" }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>지급일 기준:</span>
+                <input type="number" min={0} max={30} value={customOffsetVal}
+                  onChange={e => setCustomOffsetVal(Math.max(0, Math.min(30, Number(e.target.value))))}
+                  style={{ width: 60, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text)", fontSize: 12, outline: "none", textAlign: "center" }} />
+                <span style={{ fontSize: 12 }}>일 전에 자동 발행</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 저장 버튼 */}
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button onClick={onClose}
+            style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "var(--text)", cursor: "pointer" }}>
+            취소
+          </button>
+          <button onClick={saveSettings} disabled={saving}
+            style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+            {saving ? "저장 중..." : "설정 저장"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

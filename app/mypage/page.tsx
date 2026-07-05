@@ -909,7 +909,7 @@ function MyPageContent() {
         </div>
 
         {/* 팀·소속 바로가기 */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
           <button onClick={() => router.push("/myteam")}
             style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 22 }}>👥</span>
@@ -923,6 +923,16 @@ function MyPageContent() {
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
           </button>
         </div>
+
+        {/* 급여 명세서 바로가기 */}
+        <button onClick={() => router.push("/payslip/list")}
+          style={{ width: "100%", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 20 }}>
+          <span style={{ fontSize: 22 }}>📋</span>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#10b981" }}>급여 명세서 보관함</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>발행했거나 수령한 급여 명세서 전체 목록</p>
+          </div>
+        </button>
 
         {/* ── 알바생 섹션 (worker / both) ── */}
         {(user.user_type === "worker" || user.user_type === "both") && (() => {

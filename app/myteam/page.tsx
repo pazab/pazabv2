@@ -7,6 +7,7 @@ import AppHeader from "@/components/AppHeader";
 import InviteBottomSheet from "@/components/InviteBottomSheet";
 import StoreRegisterModal from "@/components/StoreRegisterModal";
 import DateWheelPicker from "@/components/DateWheelPicker";
+import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
 import { getTrustGrade } from "@/lib/utils";
 import { sendPushNotification } from "@/lib/usePush";
@@ -575,8 +576,13 @@ function WorkerPayslipTab({ workerId, employerId, router }: { workerId:string; e
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
             <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{p.year}년 {p.month}월</span>
             <div style={{ display:"flex", gap:4 }}>
-              <span style={{ fontSize:11, background:"#10b98120", color:"#10b981", borderRadius:6, padding:"2px 6px" }}>✅ 발행됨</span>
-              {p.confirmed_at && <span style={{ fontSize:11, background:"#60a5fa20", color:"#60a5fa", borderRadius:6, padding:"2px 6px" }}>👁 확인됨</span>}
+              {p.status === "confirmed" || p.confirmed_at ? (
+                <span style={{ fontSize:11, background:"rgba(16,185,129,0.15)", color:"#10b981", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✅ 확인됨</span>
+              ) : p.status === "correction_requested" ? (
+                <span style={{ fontSize:11, background:"rgba(239,68,68,0.15)", color:"#ef4444", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✏️ 수정요청됨</span>
+              ) : (
+                <span style={{ fontSize:11, background:"rgba(245,158,11,0.15)", color:"#f59e0b", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>⏳ 확인대기</span>
+              )}
             </div>
           </div>
           <div style={{ display:"flex", gap:10, marginBottom:8 }}>
@@ -729,6 +735,11 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
           </div>
         )}
       </div>
+      {/* 급여 명세서 */}
+      <div style={{ ...cardStyle, padding:"14px 16px" }}>
+        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>📋 급여 명세서</p>
+        <WorkerPayslipTab workerId={userId} employerId={m.employer_id} router={router} />
+      </div>
     </div>
   );
 }
@@ -767,6 +778,7 @@ function MyTeamPageContent() {
   const [deleteTarget, setDeleteTarget] = useState<{ store: any; members: any[] } | null>(null);
   const [cancelContractTarget, setCancelContractTarget] = useState<{ memberId: string; contractId: string; name: string } | null>(null);
   const [toastMsg, setToastMsg] = useState("");
+  const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
 
   // 알바생 데이터
@@ -963,6 +975,12 @@ function MyTeamPageContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
+      <style>{`
+        .team-member-row:active {
+          background-color: var(--surface2) !important;
+          transform: scale(0.985);
+        }
+      `}</style>
       {toastMsg && (
         <div style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", background:"#1a1a2e", color:"#fff", borderRadius:20, padding:"10px 20px", fontSize:13, zIndex:2000, whiteSpace:"nowrap", pointerEvents:"none" }}>
           {toastMsg}
@@ -1191,12 +1209,23 @@ function MyTeamPageContent() {
                             const badge = contractBadge(m.contractStatus);
                             const name = m.worker?.nickname || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
                             return (
-                              <div key={m.id} style={{ padding:"10px 12px", borderTop:"1px solid var(--border)", display:"flex", gap:10, alignItems:"center" }}>
-                                <div onClick={() => router.push(`/employer/team/${m.id}`)}
+                              <div key={m.id}
+                                onClick={() => router.push(`/employer/team/${m.id}`)}
+                                className="team-member-row"
+                                style={{
+                                  padding:"12px 14px",
+                                  borderTop:"1px solid var(--border)",
+                                  display:"flex",
+                                  gap:10,
+                                  alignItems:"center",
+                                  cursor:"pointer",
+                                  transition:"background-color 0.1s ease, transform 0.1s ease",
+                                }}>
+                                <div onClick={(e) => { e.stopPropagation(); setActiveQuickProfile(m.worker_id); }}
                                   style={{ width:40, height:40, borderRadius:"50%", background:"linear-gradient(135deg,#f59e0b,#ef4444)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, cursor:"pointer" }}>
                                   {m.worker?.avatar_url ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : (PERSONALITY_EMOJI[pType]||"👤")}
                                 </div>
-                                <div onClick={() => router.push(`/employer/team/${m.id}`)} style={{ flex:1, minWidth:0, cursor:"pointer" }}>
+                                <div style={{ flex:1, minWidth:0 }}>
                                   <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:2 }}>
                                     <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{name}</span>
                                     {m.member_role === "manager" && <span style={{ fontSize:10, background:"#f59e0b20", color:"#f59e0b", borderRadius:5, padding:"1px 5px", fontWeight:700 }}>매니저</span>}
@@ -1354,6 +1383,13 @@ function MyTeamPageContent() {
             setEditingStore(null);
             if (user?.id) loadTeam(user.id);
           }}
+        />
+      )}
+
+      {activeQuickProfile && (
+        <UserProfileBottomSheet
+          userId={activeQuickProfile}
+          onClose={() => setActiveQuickProfile(null)}
         />
       )}
     </main>

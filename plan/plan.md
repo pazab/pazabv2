@@ -212,6 +212,16 @@
 - contract_status 컬럼이 실질적 계약 상태 단일 source of truth로 확립
 - 모든 저장/서명/취소 경로에서 team_members.contract_status 동시 업데이트 보장
 
+**근태 관리 및 감사 로그 고도화 (2026-07-05 2차)**
+- **근태 삭제 RLS 정책 누락 보완**: 사장님이 소속 팀원의 근태 데이터를 안전하게 제거할 수 있도록 `attendance` 테이블의 DELETE RLS 정책 추가 (`supabase/patch_delete_policy.sql` 실행 완료).
+- **커스텀 삭제 확인 모달 도입**: 브라우저 기본 `confirm()` 경고창을 유리모핑 스타일의 프리미엄 경고 모달 다이얼로그로 대체.
+- **최근 3건 타임라인 & 페이징 모달 이력 뷰어**: 달력 하단 최근 3건 근태 로그 요약 노출 및 3건 초과 시 10개 단위 페이징(Pagination)이 적용된 전체 이력 조회 모달창 탑재.
+- **⚡ 근태 일괄 등록 (소급 발행 지원)**: 특정 월의 계약 약정 요일들 중 오늘 날짜 이전의 근무일들을 일괄 '정상 출근'으로 원클릭 기입하는 기능 구현.
+  - 기존 근태 기록 덮어쓰기 토글 지원 (체크 해제 시 기존 수동 입력분 보호, 체크 시 일괄 덮어쓰기).
+  - 모달 설명 레이아웃 개편: 텍스트 볼드 및 경고 박스 가독성 전면 개선.
+- **감사 로그 컬럼 누락 해결 및 요약 로깅**: `attendance_logs` 테이블의 `attendance_id` 누락 컬럼 보완 패치 생성 (`supabase/patch_attendance_logs_column.sql`) 및 일괄 등록 시 timeline을 해치지 않고 `batch_register` 액션 단일 감사로그 1건으로 요약 등록되도록 구현.
+- **커스텀 토스트 알림 표준화**: 모달 내의 브라우저 기본 `alert` 경고들을 모두 파잡 전용 커스텀 토스트 알림(`showToast`)으로 통일.
+
 **P2**
 - [x] HEXACO 5턴 압축 CTA화 — app/interview/page.tsx 신규 구현 (5턴 채팅 UI, /api/analyze interview+analyze 모드 연동, 결과 localStorage+DB 저장, /result로 이동)
 - [ ] employer_profiles.geo_radius_meters (GPS 반경 200m 고정 → 사장님 설정 가능하게)

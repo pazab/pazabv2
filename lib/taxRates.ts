@@ -14,20 +14,7 @@ export async function getTaxRates(year?: number): Promise<TaxRates> {
   const y = year ?? new Date().getFullYear();
   if (cachedRates[y]) return cachedRates[y];
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
-  const { data } = await supabase
-    .from("tax_rates")
-    .select("*")
-    .lte("year", y)
-    .order("year", { ascending: false })
-    .limit(1)
-    .single();
-
-  const rates: TaxRates = data ?? {
+  const defaultRates: TaxRates = {
     year: y,
     health_insurance_rate: 3.545,
     employment_insurance_rate: 0.9,
@@ -35,8 +22,32 @@ export async function getTaxRates(year?: number): Promise<TaxRates> {
     industrial_accident_rate: 0,
   };
 
-  cachedRates[y] = rates;
-  return rates;
+  try {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const { data, error } = await supabase
+      .from("tax_rates")
+      .select("*")
+      .lte("year", y)
+      .order("year", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Error fetching tax rates, using fallback:", error);
+      return defaultRates;
+    }
+
+    const rates: TaxRates = data ?? defaultRates;
+    cachedRates[y] = rates;
+    return rates;
+  } catch (err) {
+    console.warn("Exception fetching tax rates, using fallback:", err);
+    return defaultRates;
+  }
 }
 
 // 캐시 무효화 (admin에서 업데이트 후 호출)
