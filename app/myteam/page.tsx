@@ -765,6 +765,7 @@ function MyTeamPageContent() {
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ store: any; members: any[] } | null>(null);
+  const [cancelContractTarget, setCancelContractTarget] = useState<{ memberId: string; contractId: string; name: string } | null>(null);
   const [toastMsg, setToastMsg] = useState("");
   const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
 
@@ -866,7 +867,7 @@ function MyTeamPageContent() {
 
     // 모든 팀원 로드 (employer_profile_id 포함)
     const { data } = await supabase.from("team_members")
-      .select(`id, worker_id, employer_id, employer_profile_id, hire_date, status, wage, work_days, work_hours, member_role,
+      .select(`id, worker_id, employer_id, employer_profile_id, hire_date, status, wage, work_days, work_hours, member_role, contract_status,
         users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, email, trust_score)`)
       .eq("employer_id", uid).eq("status", "active")
       .order("hire_date", { ascending: false });
@@ -885,13 +886,9 @@ function MyTeamPageContent() {
       ? await supabase.from("attendance").select("team_member_id, status, work_date").in("team_member_id", ids).gte("work_date", monthStart)
       : { data: [] };
 
-    const { data: contractsData } = ids.length > 0
-      ? await supabase.from("contracts").select("team_member_id, worker_signed, status").in("team_member_id", ids).neq("status", "superseded")
-      : { data: [] };
-
     const enriched = data.map((m: any) => {
-      const cList = (contractsData || []).filter((c: any) => c.team_member_id === m.id);
-      const contractStatus = cList.length === 0 ? "none" : cList.some((c: any) => c.worker_signed) ? "done" : "pending";
+      const contractStatus = m.contract_status === "active" ? "done"
+        : m.contract_status === "pending" ? "pending" : "none";
       return {
         ...m,
         worker: (m as any).users,
@@ -969,6 +966,49 @@ function MyTeamPageContent() {
       {toastMsg && (
         <div style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", background:"#1a1a2e", color:"#fff", borderRadius:20, padding:"10px 20px", fontSize:13, zIndex:2000, whiteSpace:"nowrap", pointerEvents:"none" }}>
           {toastMsg}
+        </div>
+      )}
+
+      {cancelContractTarget && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:500, display:"flex", alignItems:"flex-end" }}
+          onClick={() => setCancelContractTarget(null)}>
+          <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:480, margin:"0 auto" }}
+            onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize:15, fontWeight:700, color:"var(--text)", marginBottom:6 }}>
+              ⏳ {cancelContractTarget.name} — 서명 대기중
+            </p>
+            <p style={{ fontSize:13, color:"var(--text-muted)", marginBottom:20, lineHeight:1.6 }}>
+              아직 알바생이 계약서에 서명하지 않았어요.<br/>
+              발행을 취소하면 계약서가 무효 처리돼요.
+            </p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setCancelContractTarget(null)}
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>
+                닫기
+              </button>
+              <button onClick={() => { setCancelContractTarget(null); router.push(`/contract/view?memberId=${cancelContractTarget.memberId}`); }}
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text)", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+                📄 계약서 보기
+              </button>
+              <button onClick={async () => {
+                const { memberId, contractId } = cancelContractTarget;
+                setCancelContractTarget(null);
+                if (contractId) await supabase.from("contracts").update({ status:"cancelled" }).eq("id", contractId);
+                await supabase.from("team_members").update({ contract_status:"none" }).eq("id", memberId);
+                setMembersByStore(prev => {
+                  const u = { ...prev };
+                  for (const k of Object.keys(u)) {
+                    u[k] = u[k].map((tm: any) => tm.id === memberId ? { ...tm, contract_status:"none", contractStatus:"none" } : tm);
+                  }
+                  return u;
+                });
+                showToast("계약서 발행이 취소됐어요.");
+              }}
+                style={{ flex:1, background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", borderRadius:14, padding:14, color:"#ef4444", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                🗑️ 발행 취소
+              </button>
+            </div>
+          </div>
         </div>
       )}
       <AppHeader title="팀·소속" showBack />
@@ -1165,7 +1205,20 @@ function MyTeamPageContent() {
                                   <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 3px" }}>
                                     {m.work_days||"요일미정"} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
                                   </p>
-                                  <span onClick={e => { e.stopPropagation(); router.push(m.contractStatus==="none"?`/contract?memberId=${m.id}`:`/contract/view?memberId=${m.id}`); }}
+                                  <span onClick={async e => {
+                                    e.stopPropagation();
+                                    if (m.contractStatus === "none") {
+                                      router.push(`/contract?memberId=${m.id}`);
+                                    } else if (m.contractStatus === "pending") {
+                                      const { data: c } = await supabase.from("contracts")
+                                        .select("id").eq("team_member_id", m.id).eq("status","pending")
+                                        .order("created_at",{ascending:false}).limit(1).maybeSingle();
+                                      const name = m.worker?.nickname || "팀원";
+                                      setCancelContractTarget({ memberId: m.id, contractId: c?.id || "", name });
+                                    } else {
+                                      router.push(`/contract/view?memberId=${m.id}`);
+                                    }
+                                  }}
                                     style={{ fontSize:11, borderRadius:5, padding:"2px 6px", background:badge.bg, color:badge.color, cursor:"pointer" }}>
                                     {badge.label}
                                   </span>

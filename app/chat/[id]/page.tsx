@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -27,6 +27,7 @@ export default function ChatRoomPage() {
   const [leaveStep, setLeaveStep] = useState<"confirm" | "review">("confirm");
   const [quickReview, setQuickReview] = useState<"good" | "bad" | null>(null);
   const [quickReviewReason, setQuickReviewReason] = useState("");
+  const [showSignConfirm, setShowSignConfirm] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewScore, setReviewScore] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
@@ -74,9 +75,13 @@ export default function ChatRoomPage() {
   }, [matchId]);
 
   const checkContractStatus = async () => {
+    const { data: tm } = await supabase.from("team_members")
+      .select("id").eq("match_id", matchId).maybeSingle();
+    if (!tm) { setContractStatus("none"); return; }
     const { data } = await supabase.from("contracts")
       .select("id, worker_signed, employer_signed")
-      .eq("match_id", matchId).limit(1).maybeSingle();
+      .eq("team_member_id", tm.id).neq("status", "cancelled")
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!data) setContractStatus("none");
     else if (data.worker_signed) setContractStatus("done");
     else setContractStatus("pending");
@@ -148,7 +153,6 @@ export default function ChatRoomPage() {
         });
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
         if (payload.new.receiver_id === uid) {
-          supabase.from("chats").update({ is_read: true }).eq("id", payload.new.id);
           setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, is_read: true } : m));
           if (payload.new.message_type === "system" && payload.new.message?.includes("채용이 확정됐어요")) {
             setShowReviewModal(true);
@@ -271,8 +275,13 @@ export default function ChatRoomPage() {
   };
 
   const loadContract = async () => {
+    // contracts에 match_id 없음 → team_members 경유
+    const { data: tm } = await supabase.from("team_members")
+      .select("id").eq("match_id", matchId).maybeSingle();
     const { data } = await supabase.from("contracts")
-      .select("*").eq("match_id", matchId)
+      .select("*")
+      .eq(tm ? "team_member_id" : "employer_id", tm ? tm.id : "")
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (data) {
       setContractData(data);
@@ -353,14 +362,15 @@ export default function ChatRoomPage() {
           body: JSON.stringify({ matchId, action: "hire" }),
         });
         updateProgressStatus("hired");
-        // 사장님용 메시지 (receiver = employer)
-        await supabase.from("chats").insert({
-          match_id: matchId,
-          sender_id: userId,
-          receiver_id: match?.employer_id,
-          message: "🎉 채용이 확정됐어요!\n\n📄 [계약서] 버튼을 눌러 근로계약서를 작성해주세요.\n계약서 작성 후 저장하면 알바생에게 알림이 가요.",
-          message_type: "system",
-          is_read: false,
+        // 사장님용 메시지
+        await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matchId, senderId: userId, receiverId: match?.employer_id,
+            message: "🎉 채용이 확정됐어요!\n\n📄 [계약서] 버튼을 눌러 근로계약서를 작성해주세요.",
+            messageType: "system",
+          }),
         });
         // 알바생용 메시지 (본인 화면)
         await sendMessage(
@@ -456,20 +466,28 @@ export default function ChatRoomPage() {
       }
 
       // 상대방한테 시스템 메시지 전송
-      await supabase.from("chats").insert({
-        match_id: matchId,
-        sender_id: userId,
-        message: currentStatus === "hired" ? "상대방이 채팅방을 나갔어요." : "상대방이 채팅방을 나갔어요. 매칭이 취소됩니다.",
-        message_type: "system",
-        is_read: false,
-        receiver_id: match?.worker_id === userId ? match?.employer_id : match?.worker_id,
+      const receiverId = match?.worker_id === userId ? match?.employer_id : match?.worker_id;
+      await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          matchId,
+          senderId: userId,
+          receiverId,
+          message: currentStatus === "hired" ? "상대방이 채팅방을 나갔어요." : "상대방이 채팅방을 나갔어요. 매칭이 취소됩니다.",
+          messageType: "system",
+        }),
       });
       // 나간 사람 기록
-      await fetch("/api/lovecall", {
+      const leaveRes = await fetch("/api/lovecall", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ matchId, action: "leave", userId }),
       });
+      if (!leaveRes.ok) {
+        const leaveErr = await leaveRes.json().catch(() => ({}));
+        console.error("나가기 leave 오류:", leaveErr);
+      }
       // hired 상태가 아닐 때만 cancel 처리
       if (currentStatus !== "hired") {
         await fetch("/api/lovecall", {
@@ -479,7 +497,7 @@ export default function ChatRoomPage() {
         });
       }
       router.replace("/chat");
-    } catch { router.replace("/chat"); }
+    } catch (e) { console.error("나가기 오류:", e); router.replace("/chat"); }
   };
 
   const handleInterviewSubmit = async () => {
@@ -723,7 +741,7 @@ export default function ChatRoomPage() {
               ) : isMine ? (
                 /* 내 메시지 - 오른쪽 */
                 <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-                  <div style={{ maxWidth: "72%" }}>
+                  <div style={{ maxWidth: "82%" }}>
                     <div style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", borderRadius: "18px 18px 4px 18px", padding: "10px 14px", fontSize: 14, color: "#fff", lineHeight: 1.5, wordBreak: "break-word" }}>
                       {msg.message}
                     </div>
@@ -748,7 +766,7 @@ export default function ChatRoomPage() {
                       </div>
                     )}
                   </button>
-                  <div style={{ maxWidth: "72%" }}>
+                  <div style={{ maxWidth: "82%" }}>
                     {/* 닉네임 */}
                     <button onClick={() => router.push(`/profile/${counterpart?.id}`)}
                       style={{ background: "none", border: "none", padding: 0, cursor: "pointer", marginBottom: 4 }}>
@@ -1030,74 +1048,36 @@ export default function ChatRoomPage() {
                   style={{ flex:1, background:"var(--surface2)", border:"1px solid #f59e0b40", color:"#f59e0b", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
                   ⚠️ 수정 요청
                 </button>
-                <button onClick={async () => {
-                  // 1단계: 법적 안내 confirm
-                  const confirmed = window.confirm(
-                    "📄 근로계약서 동의 전 확인사항\n\n" +
-                    "✅ 본 동의는 전자문서법에 따라\n" +
-                    "   법적 효력이 있는 계약으로 성립됩니다.\n\n" +
-                    "📌 권장 사항\n" +
-                    "· 계약서를 출력하여 양측이 서명 후\n" +
-                    "  각 1부씩 보관하시길 권장해요.\n" +
-                    "· 출력은 [출력] 버튼을 이용해주세요.\n\n" +
-                    "⚠️ 동의 후에는 취소가 어려우니\n" +
-                    "   내용을 충분히 확인 후 동의해주세요.\n\n" +
-                    "[확인] 동의를 진행합니다\n" +
-                    "[취소] 다시 확인합니다"
-                  );
-                  if (!confirmed) return;
-
-                  // 2단계: 실제 동의 처리
-                  await supabase.from("contracts")
-                    .update({ worker_signed:true, status:"active", signed_at:new Date().toISOString() })
-                    .eq("id", contractData.id);
-
-                  if (progressStatus !== "hired") {
-                    await supabase.from("matches")
-                      .update({ progress_status:"hired", hire_confirmed_by_employer:true, hire_confirmed_by_worker:true })
-                      .eq("id", matchId);
-                    const { data: existingTm } = await supabase.from("team_members")
-                      .select("id")
-                      .eq("match_id", matchId)
-                      .maybeSingle();
-
-                    if (!existingTm) {
-                      await supabase.from("team_members").insert({
-                        employer_id: counterpart?.id,
-                        worker_id: userId,
-                        match_id: matchId,
-                        hire_date: new Date().toISOString().split("T")[0],
-                        status: "active",
-                      });
-                    }
-                    updateProgressStatus("hired");
-                  }
-
-                  await sendMessage(
-                    "🎉 근로계약서 동의가 완료됐어요!\n\n" +
-                    "📄 계약서는 MY → 팀·소속 관리에서\n언제든 확인하실 수 있어요.\n\n" +
-                    "📌 출력 후 각자 1부씩 보관하시길 권장해요.\n\n" +
-                    "이제 법적 고용 관계가 성립됐습니다 ✅",
-                    "system"
-                  );
-                  setContractData((p:any) => ({...p, worker_signed:true, status:"active"}));
-                  setContractStatus("done");
-                  setShowContractModal(false);
-                }}
+                <button onClick={() => setShowSignConfirm(true)}
                   style={{ flex:2, background:"linear-gradient(135deg,#10b981,#059669)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
                   ✅ 계약서에 동의합니다
                 </button>
               </div>
             ) : isEmployer ? (
-              <div style={{ display:"flex", gap:8 }}>
-                <button onClick={() => { setShowContractModal(false); router.push(`/contract?matchId=${matchId}&mode=update&from=chat`); }}
-                  style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
-                  ✏️ 수정하기
-                </button>
-                <button onClick={() => setShowContractModal(false)}
-                  style={{ flex:1, background:"none", border:"none", color:"var(--text-muted)", padding:14, fontSize:13, cursor:"pointer" }}>
-                  닫기
-                </button>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => { setShowContractModal(false); router.push(`/contract?matchId=${matchId}&mode=update&from=chat`); }}
+                    style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
+                    ✏️ 수정하기
+                  </button>
+                  <button onClick={() => setShowContractModal(false)}
+                    style={{ flex:1, background:"none", border:"none", color:"var(--text-muted)", padding:14, fontSize:13, cursor:"pointer" }}>
+                    닫기
+                  </button>
+                </div>
+                {contractData && !contractData.worker_signed && (
+                  <button onClick={async () => {
+                    await supabase.from("contracts").update({ status:"cancelled" }).eq("id", contractData.id);
+                    await supabase.from("team_members").update({ contract_status:"none" }).eq("id", contractData.team_member_id);
+                    await sendMessage("❌ 계약서 발행이 취소됐어요.", "system");
+                    setContractData(null);
+                    setContractStatus("none");
+                    setShowContractModal(false);
+                  }}
+                    style={{ width:"100%", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", color:"#ef4444", fontWeight:600, padding:12, borderRadius:14, fontSize:13, cursor:"pointer" }}>
+                    🗑️ 계약서 발행 취소
+                  </button>
+                )}
               </div>
             ) : (
               <button onClick={() => setShowContractModal(false)}
@@ -1105,6 +1085,60 @@ export default function ChatRoomPage() {
                 닫기
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 계약서 서명 확인 바텀시트 */}
+      {showSignConfirm && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:300, display:"flex", alignItems:"flex-end" }}
+          onClick={() => setShowSignConfirm(false)}>
+          <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"28px 20px 36px", width:"100%", maxWidth:480, margin:"0 auto" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ textAlign:"center", marginBottom:20 }}>
+              <div style={{ fontSize:44, marginBottom:10 }}>✍️</div>
+              <h3 style={{ fontSize:17, fontWeight:900, margin:"0 0 8px" }}>계약서에 동의하시겠어요?</h3>
+              <p style={{ fontSize:13, color:"var(--text-muted)", lineHeight:1.7, margin:0 }}>
+                본 동의는 전자문서법에 따라 법적 효력이 있는<br/>
+                근로계약으로 성립돼요.<br/>
+                동의 후에는 취소가 어려우니 내용을 충분히<br/>
+                확인한 후 진행해주세요.
+              </p>
+            </div>
+            <div style={{ background:"rgba(245,158,11,0.1)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:12, color:"#f59e0b", lineHeight:1.7 }}>
+              📌 계약서를 출력해 양측이 서명 후 각 1부씩 보관하시길 권장해요.
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => setShowSignConfirm(false)}
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text-muted)", fontWeight:600, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
+                다시 확인할게요
+              </button>
+              <button onClick={async () => {
+                setShowSignConfirm(false);
+                // 서버 API로 서명 처리 (team_members 업데이트는 service role 필요)
+                await fetch("/api/contract", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "sign",
+                    contractId: contractData.id,
+                    teamMemberId: contractData.team_member_id,
+                    matchId,
+                    workerId: userId,
+                    employerId: counterpart?.id,
+                    isHired: progressStatus === "hired",
+                  }),
+                });
+                if (progressStatus !== "hired") updateProgressStatus("hired");
+                await sendMessage("🎉 근로계약서 동의가 완료됐어요!\n계약서는 MY → 팀·소속 관리에서 확인하실 수 있어요. ✅", "system");
+                setContractData((p: Record<string,unknown>) => ({...p, worker_signed:true, status:"active"}));
+                setContractStatus("done");
+                setShowContractModal(false);
+              }}
+                style={{ flex:2, background:"linear-gradient(135deg,#10b981,#059669)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
+                ✅ 동의합니다
+              </button>
+            </div>
           </div>
         </div>
       )}

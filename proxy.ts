@@ -6,8 +6,7 @@ const PUBLIC_PATHS = [
   '/',
   '/login',
   '/auth',
-  '/api/auth', // OAuth 로그인/콜백 Route Handler
-  '/api/cron', // 서버 크론 Route Handler
+  '/api',      // API Route Handler 전체 (자체 인증 처리)
   '/terms',
   '/privacy',
   '/d',      // 대타 딥링크 (STEP 3)

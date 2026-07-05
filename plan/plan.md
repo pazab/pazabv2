@@ -1,5 +1,5 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-04 (2차) | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-05 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
 
@@ -175,8 +175,45 @@
   - employer/register 신규 매장 등록 시 users.region → 지역 자동채움
   - lib/regions.ts 신규: REGIONS 상수 공용화 (employer/register, worker/profile 중복 제거)
 
+**구현 완료 (2026-07-05)**
+
+**근로계약서 플로우 전면 정비**
+- 계약 타입(표준/단시간/연소자)에 "요일마다 달라요" 토글 추가 (parttime 제외)
+- `contracts` 테이블 누락 컬럼 추가: `contract_data` (JSONB), `work_days` (text)
+- `buildPayload()` 수정: `employer_signed_at`, `contract_type`, `duties`, `workplace_address` 포함
+- 계약서 저장 전 확인 모달(바텀시트): 근로자·계약유형·임금·시작일·근무요일 미리보기
+- 계약서 서명(`window.confirm`) → 바텀시트 확인 모달로 교체
+- 계약서 저장 시 `team_members.contract_status = "pending"` + 매칭 `status = "accepted"` 자동 승격
+
+**계약서 발행 취소 및 상태 동기화**
+- `/employer/team/[id]`, `/myteam`, `/chat/[id]` 세 화면 모두 발행 취소 지원
+- 취소 시 `contracts.status = "cancelled"` + `team_members.contract_status = "none"` 동시 업데이트
+- "서명대기" 뱃지 취소 후 즉시 소멸 (로컬 state 직결)
+
+**계약서 서명 server-side 처리 (`/api/contract` PATCH)**
+- 알바생 계약서 서명 시 `team_members.contract_status` 업데이트가 anon RLS에 막히던 문제 해결
+- `/api/contract` PATCH 핸들러 신규: `action:"sign"` — contracts/team_members/matches 모두 service role로 일괄 업데이트
+- team_member_id 없을 시 match_id+worker_id로 폴백 조회
+
+**채팅·매칭 버그 수정**
+- `/api/chat` POST: anon key → service role key로 교체 (chats INSERT RLS 차단 해결)
+- `/api/chatrooms` 전면 재작성: 비존재 컬럼(`last_message`, `chat_opened`, `employer_profile_id`) 참조 제거, chats 테이블 직접 집계
+- Realtime 채널명 `Date.now()` 접미사로 중복 채널 오류 해결
+- REPLICA IDENTITY FULL: matches·chats 테이블 적용 완료 (Supabase SQL 실행)
+- `/api/lovecall`: anon key → service role key (`worker_left` 업데이트 RLS 해결)
+- `proxy.ts` PUBLIC_PATHS: 개별 `/api/auth`, `/api/cron` → `/api` 전체로 단순화 (middleware 누락 차단 방지)
+
+**채팅방 나가기 안정화**
+- 클라이언트 `supabase.from("chats").insert` → `/api/chat` POST 경유로 교체 (RLS 우회)
+- `/api/lovecall` `case "leave"`: 중괄호 블록으로 const 스코프 명확화, DB 오류 콘솔 로깅 추가
+- 나가기 응답 체크: fetch 실패 시 `console.error`로 기록
+
+**`team_members` 단일 진실 원천 확립**
+- contract_status 컬럼이 실질적 계약 상태 단일 source of truth로 확립
+- 모든 저장/서명/취소 경로에서 team_members.contract_status 동시 업데이트 보장
+
 **P2**
-- [ ] HEXACO 5턴 압축 CTA화 — explore 배너 진입으로 설계 확정, /interview 라우트 미구현 (/personality 페이지는 있으나 /interview 없어 404)
+- [x] HEXACO 5턴 압축 CTA화 — app/interview/page.tsx 신규 구현 (5턴 채팅 UI, /api/analyze interview+analyze 모드 연동, 결과 localStorage+DB 저장, /result로 이동)
 - [ ] employer_profiles.geo_radius_meters (GPS 반경 200m 고정 → 사장님 설정 가능하게)
 - [ ] 웹푸시 실사용 테스트 미완료
 - [ ] 대타 SOS nearby_workers RPC 실연동 점검

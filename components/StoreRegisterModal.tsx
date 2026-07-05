@@ -4,26 +4,31 @@ import { supabase } from "@/lib/supabase";
 import { modalOverlay, modalSheet, btnPrimary, btnSecondary, inputStyle } from "@/lib/styles";
 
 const BIZ_CATEGORIES = [
-  { emoji: "🍽️", name: "음식점" },
-  { emoji: "☕", name: "카페" },
-  { emoji: "🏪", name: "편의점" },
-  { emoji: "🛒", name: "마트/슈퍼" },
-  { emoji: "💊", name: "약국" },
-  { emoji: "👗", name: "의류/잡화" },
-  { emoji: "💈", name: "미용/뷰티" },
-  { emoji: "🏋️", name: "스포츠/레저" },
-  { emoji: "🏨", name: "숙박/관광" },
-  { emoji: "🚚", name: "물류/배달" },
-  { emoji: "🏗️", name: "건설/제조" },
+  { emoji: "🍽️", name: "식당/음식점" },
+  { emoji: "☕", name: "카페/음료" },
+  { emoji: "🏪", name: "편의점/마트" },
+  { emoji: "💄", name: "뷰티/미용" },
+  { emoji: "🚚", name: "물류/배송" },
+  { emoji: "💼", name: "사무/행정" },
+  { emoji: "🛍️", name: "판매/매장" },
+  { emoji: "🎪", name: "이벤트/행사" },
+  { emoji: "📚", name: "교육/돌봄" },
+  { emoji: "🏥", name: "의료/복지" },
+  { emoji: "🏗️", name: "생산/제조" },
+  { emoji: "⛏️", name: "건설/노무" },
   { emoji: "📦", name: "기타" },
 ];
 
-// 카카오 category_group_name → 우리 카테고리 매핑
+// 카카오 category_group_name → 우리 카테고리 매핑 (job_categories 부모 이름과 일치)
 const KAKAO_CAT_MAP: Record<string, string> = {
-  "음식점": "음식점", "카페": "카페", "편의점": "편의점",
-  "마트": "마트/슈퍼", "슈퍼마켓": "마트/슈퍼",
-  "약국": "약국", "의류": "의류/잡화", "미용실": "미용/뷰티",
-  "스포츠": "스포츠/레저", "숙박": "숙박/관광",
+  "음식점": "식당/음식점", "한식": "식당/음식점", "일식": "식당/음식점",
+  "중식": "식당/음식점", "양식": "식당/음식점", "패스트푸드": "식당/음식점",
+  "분식": "식당/음식점", "술집": "식당/음식점",
+  "카페": "카페/음료", "커피": "카페/음료", "제과": "카페/음료",
+  "베이커리": "카페/음료", "디저트": "카페/음료",
+  "편의점": "편의점/마트", "마트": "편의점/마트", "슈퍼마켓": "편의점/마트",
+  "미용실": "뷰티/미용", "네일": "뷰티/미용", "피부": "뷰티/미용",
+  "물류": "물류/배송", "배송": "물류/배송",
 };
 
 function mapKakaoCategory(categoryName: string): string {

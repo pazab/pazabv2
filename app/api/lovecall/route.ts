@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 // 러브콜 보내기 (POST)
@@ -300,21 +300,25 @@ export async function PATCH(req: NextRequest) {
           }
         }
         break;
-      case "leave":
+      case "leave": {
         // 채팅방 나가기 - 본인 기준 숨김 (matches는 유지, 채팅 히스토리만 삭제)
         const leavingUserId = actionUserId;
-        const { data: leaveMatch } = await supabase.from("matches").select("worker_id, employer_id, status").eq("id", matchId).single();
+        const { data: leaveMatch, error: leaveMatchErr } = await supabase.from("matches").select("worker_id, employer_id, status").eq("id", matchId).single();
+        if (leaveMatchErr) console.error("leave: match 조회 실패", leaveMatchErr);
         if (leaveMatch) {
           const isWorkerLeaving = leaveMatch.worker_id === leavingUserId;
-          // 나간 사람 기록
-          await supabase.from("matches").update({
-            [isWorkerLeaving ? "worker_left" : "employer_left"]: true,
+          const leaveField = isWorkerLeaving ? "worker_left" : "employer_left";
+          const { error: leaveErr } = await supabase.from("matches").update({
+            [leaveField]: true,
           }).eq("id", matchId);
+          if (leaveErr) console.error(`leave: ${leaveField} 업데이트 실패`, leaveErr);
           // 채팅 내용 삭제 (본인 기준)
-          await supabase.from("chats").delete().eq("match_id", matchId).eq("sender_id", leavingUserId);
+          if (leavingUserId) {
+            await supabase.from("chats").delete().eq("match_id", matchId).eq("sender_id", leavingUserId);
+          }
         }
         return NextResponse.json({ success: true });
-        break;
+      }
       case "interview":
         updateData.progress_status = "interviewing";
         updateData.interview_at = interviewAt || null;

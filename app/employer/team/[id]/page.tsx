@@ -281,6 +281,7 @@ export default function TeamMemberPage() {
   async function loadContracts(empId: string, wrkId: string, tmId?: string) {
     let q = supabase.from("contracts")
       .select("id, team_member_id, start_date, end_date, created_at, contract_data, worker_signed, employer_signed, status")
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false });
     if (tmId) {
       q = q.eq("team_member_id", tmId);
@@ -838,11 +839,15 @@ export default function TeamMemberPage() {
             title="계약서"
             open={contractOpen}
             onToggle={() => setContractOpen(v => !v)}
-            badge={contracts.length > 0 ? (contracts[0]?.worker_signed ? "✅ 서명완료" : "⏳ 서명대기") : undefined}
+            badge={(() => {
+              const active = contracts.find(c => c.status !== "cancelled" && c.status !== "superseded");
+              if (!active) return undefined;
+              return active.worker_signed ? "✅ 서명완료" : "⏳ 서명대기";
+            })()}
           />
           {contractOpen && (
             <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-              {contracts.length === 0 ? (
+              {contracts.filter(c => c.status !== "cancelled").length === 0 ? (
                 <div style={{ background: "var(--surface2)", borderRadius: 14, padding: "18px 16px", border: "1px solid var(--border)", marginBottom: 4 }}>
                   <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
                   <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 8px" }}>아직 계약서가 없어요</p>
@@ -861,7 +866,7 @@ export default function TeamMemberPage() {
                   </div>
                 </div>
               ) : (
-                contracts.map((c, i) => {
+                contracts.filter(c => c.status !== "cancelled").map((c, i) => {
                   const isLatest = i === 0 && c.status !== "superseded";
                   const isSuperseded = c.status === "superseded";
                   const isSigned = c.worker_signed;
@@ -887,19 +892,30 @@ export default function TeamMemberPage() {
                           </span>
                         )}
                       </p>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => router.push(`/contract/view?matchId=${c.match_id}`)}
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button onClick={() => router.push(`/contract/view?id=${c.id}`)}
                           style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
                           📄 보기
                         </button>
                         {isLatest && !isSuperseded && (
-                          <button onClick={() => router.push(`/contract?matchId=${c.match_id}&mode=update`)}
+                          <button onClick={() => router.push(`/contract?memberId=${c.team_member_id}&mode=update`)}
                             style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
                             ✏️ 수정
                           </button>
                         )}
                         {(!isLatest || isSuperseded) && (
                           <span style={{ flex: 1, textAlign: "center", fontSize: 11, color: "var(--text-muted)", padding: "8px", alignSelf: "center" }}>🔒 이력 보존</span>
+                        )}
+                        {isPending && (
+                          <button onClick={async () => {
+                            await supabase.from("contracts").update({ status: "cancelled" }).eq("id", c.id);
+                            await supabase.from("team_members").update({ contract_status: "none" }).eq("id", c.team_member_id);
+                            setContracts(prev => prev.filter(x => x.id !== c.id));
+                            showToast("계약서 발행이 취소됐어요.");
+                          }}
+                            style={{ flex: 1, minWidth: "100%", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "8px", fontSize: 12, color: "#ef4444", cursor: "pointer" }}>
+                            🗑️ 발행 취소
+                          </button>
                         )}
                       </div>
                     </div>

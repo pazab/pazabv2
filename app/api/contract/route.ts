@@ -609,3 +609,66 @@ print("OK")
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+// 계약서 서명 / 기타 상태 변경 (PATCH)
+export async function PATCH(req: NextRequest) {
+  try {
+    const { action, contractId, teamMemberId, matchId, workerId, employerId, isHired } = await req.json();
+
+    if (action === "sign") {
+      // 계약서 worker_signed = true
+      if (contractId) {
+        await supabaseAdmin.from("contracts")
+          .update({ worker_signed: true, status: "active", worker_signed_at: new Date().toISOString() })
+          .eq("id", contractId);
+      }
+
+      // team_members.contract_status = "active"
+      if (teamMemberId) {
+        await supabaseAdmin.from("team_members")
+          .update({ contract_status: "active" })
+          .eq("id", teamMemberId);
+      } else if (matchId && workerId) {
+        // teamMemberId 없으면 matchId+workerId로 찾기
+        await supabaseAdmin.from("team_members")
+          .update({ contract_status: "active" })
+          .eq("match_id", matchId)
+          .eq("worker_id", workerId);
+      }
+
+      // 아직 hired 아닐 때: matches 업데이트 + team_members 생성
+      if (!isHired && matchId) {
+        await supabaseAdmin.from("matches")
+          .update({ progress_status: "hired", hire_confirmed_by_employer: true, hire_confirmed_by_worker: true })
+          .eq("id", matchId);
+
+        if (workerId && employerId) {
+          const { data: existingTm } = await supabaseAdmin.from("team_members")
+            .select("id").eq("match_id", matchId).maybeSingle();
+          if (!existingTm) {
+            await supabaseAdmin.from("team_members").insert({
+              employer_id: employerId,
+              worker_id: workerId,
+              match_id: matchId,
+              hire_date: new Date().toISOString().split("T")[0],
+              status: "active",
+              contract_status: "active",
+            });
+          }
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: "알 수 없는 action" }, { status: 400 });
+  } catch (error: any) {
+    console.error("Contract PATCH error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

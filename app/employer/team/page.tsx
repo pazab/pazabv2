@@ -23,7 +23,7 @@ export default function TeamPage() {
     setLoading(true);
     const { data } = await supabase
       .from("team_members")
-      .select(`id, worker_id, employer_id, match_id, hire_date, status, wage, work_days, work_hours,
+      .select(`id, worker_id, employer_id, match_id, hire_date, status, wage, work_days, work_hours, contract_status,
         users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, email, trust_score)`)
       .eq("employer_id", employerId)
       .eq("status", "active")
@@ -40,22 +40,13 @@ export default function TeamPage() {
       .in("team_member_id", ids)
       .gte("work_date", monthStart);
 
-    const matchIds = data.map(m => m.match_id).filter(Boolean);
-    const { data: contractsData } = matchIds.length > 0
-      ? await supabase.from("contracts").select("match_id, worker_signed").in("match_id", matchIds)
-      : { data: [] };
-
     setMembers(data.map(m => ({
       ...m,
       worker: (m as any).users,
       this_month: att?.filter(a => a.team_member_id === m.id && (a.status === "normal" || a.status === "late")).length || 0,
       late: att?.filter(a => a.team_member_id === m.id && a.status === "late").length || 0,
-      contractStatus: (() => {
-        const c = (contractsData || []).find((c: any) => c.match_id === m.match_id);
-        if (!c) return "none";
-        if (c.worker_signed) return "done";
-        return "pending";
-      })(),
+      contractStatus: (m as any).contract_status === "active" ? "done"
+        : (m as any).contract_status === "pending" ? "pending" : "none",
     })));
     setLoading(false);
   }

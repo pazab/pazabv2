@@ -15,18 +15,31 @@ export default function ChatListPage() {
   const [chatrooms, setChatrooms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { init(); }, []);
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        localStorage.setItem("login_redirect", window.location.pathname);
+        router.push("/login");
+        return;
+      }
+      const uid = session.user.id;
+      setUserId(uid);
+      await fetchChatrooms(uid);
 
-  const init = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      localStorage.setItem("login_redirect", window.location.pathname);
-      router.push("/login");
-      return;
-    }
-    setUserId(session.user.id);
-    await fetchChatrooms(session.user.id);
-  };
+      channel = supabase.channel(`chat-list-${Date.now()}`)
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "matches" }, () => {
+          fetchChatrooms(uid);
+        })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "chats" }, () => {
+          fetchChatrooms(uid);
+        })
+        .subscribe();
+    };
+    init();
+    return () => { if (channel) supabase.removeChannel(channel); };
+  }, []);
 
   const fetchChatrooms = async (uid: string) => {
     try {

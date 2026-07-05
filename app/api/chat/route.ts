@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+// GET은 anon(RLS), POST는 service_role(서버에서 시스템 메시지 삽입)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 // 채팅 메시지 목록 조회 (GET)
@@ -86,7 +91,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("chats")
       .insert({
         match_id: matchId,
@@ -101,19 +106,15 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error;
 
-    await supabase
+    await supabaseAdmin
       .from("matches")
-      .update({
-        last_message: message,
-        last_message_at: new Date().toISOString(),
-        chat_opened: true,
-      })
+      .update({ updated_at: new Date().toISOString() })
       .eq("id", matchId);
 
     // 수신자에게 푸시 알림 (백그라운드)
-    const { data: senderUser } = await supabase
+    const { data: senderUser } = await supabaseAdmin
       .from("users").select("nickname").eq("id", senderId).maybeSingle();
-    const { data: sub } = await supabase
+    const { data: sub } = await supabaseAdmin
       .from("push_subscriptions").select("subscription").eq("user_id", receiverId).maybeSingle();
 
     if (sub?.subscription) {

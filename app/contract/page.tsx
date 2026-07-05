@@ -111,14 +111,17 @@ function ContractContent() {
   const [step, setStep] = useState<"select" | "edit">("select");
   const [saving, setSaving] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [existingContract, setExistingContract] = useState<any>(null);
   const [myEps, setMyEps] = useState<any[]>([]);
   const [selEp, setSelEp] = useState<any>(null);
   const [myUserId, setMyUserId] = useState<string>("");
-  const [jobDuties, setJobDuties] = useState<string[]>([]);
+  const [jobDuties, setJobDuties] = useState<{ name: string; parentName: string }[]>([]);
 
   // 스텝 위자드 상태 (0=사업체, 1=근로자, 2=근무, 3=임금, 4=보험/서명)
   const [wizardStep, setWizardStep] = useState(0);
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [triedNext, setTriedNext] = useState(false);
 
   const [f, setF] = useState({
     biz: "", bizRegNo: "", ceo: "", ceoPhone: "",
@@ -129,7 +132,7 @@ function ContractContent() {
     startDate: "", endDate: "",
     workDaysMon: false, workDaysTue: false, workDaysWed: false,
     workDaysThu: false, workDaysFri: false, workDaysSat: false, workDaysSun: false,
-    workDaysMode: "check", workDaysText: "",
+    workDaysMode: "check", workDaysText: "", perDayHours: false,
     workStart: "", workEnd: "", breakTime: "30", noBreak: false,
     workStartMon: "09:00", workEndMon: "18:00", breakTimeMon: "30",
     workStartTue: "09:00", workEndTue: "18:00", breakTimeTue: "30",
@@ -157,6 +160,22 @@ function ContractContent() {
     breakEnd: "13:00",
   });
 
+  const errStyle = (empty: boolean) => empty && triedNext
+    ? { ...inputStyle, border: "1.5px solid #ef4444" }
+    : inputStyle;
+
+  const calcAge = (birthStr: string): number | null => {
+    // "YYYY. MM. DD." 또는 "YYYY-MM-DD" 형식 모두 처리
+    const cleaned = birthStr.replace(/\.\s*/g, "-").replace(/-+$/, "");
+    const d = new Date(cleaned);
+    if (isNaN(d.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - d.getFullYear();
+    const m = today.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+    return age;
+  };
+
   const updateField = (k: string, v: any) => {
     setF((p) => {
       const next = { ...p, [k]: v };
@@ -172,6 +191,16 @@ function ContractContent() {
       }
       return next;
     });
+    // 생년월일 입력 시 미성년 자동 감지 → 계약서 종류 자동 전환
+    if (k === "workerBirth") {
+      const age = calcAge(v);
+      if (age !== null && age < 18) {
+        setCt("minor");
+      } else if (age !== null && age >= 18) {
+        // 성인으로 확인되면 minor에서 해제 (기본값 단시간으로)
+        setCt(prev => prev === "minor" ? "parttime" : prev);
+      }
+    }
   };
 
   const selectedDays = DAYS.filter((_, i) => (f as any)[`workDays${DAYKEYS[i]}`]);
@@ -258,9 +287,35 @@ function ContractContent() {
 
   useEffect(() => {
     loadInit();
-    supabase.from("job_categories").select("name, parent_id").not("parent_id", "is", null).order("sort_order")
-      .then((res: { data: { name: string }[] | null }) => { if (res.data) setJobDuties(res.data.map(c => c.name)); });
   }, [matchId, memberId]);
+
+  useEffect(() => {
+    loadJobDuties(f.bizType);
+  }, [f.bizType]);
+
+  const loadJobDuties = async (bizType: string) => {
+    const { data } = await supabase.from("job_categories").select("id, name, parent_id").order("sort_order");
+    if (!data) return;
+    const parents = (data as { id: string; name: string; parent_id: string | null }[]).filter(c => !c.parent_id);
+    const children = (data as { id: string; name: string; parent_id: string | null }[]).filter(c => c.parent_id);
+    const withParent = children.map(c => ({
+      name: c.name,
+      parentName: parents.find(p => p.id === c.parent_id)?.name ?? "",
+    }));
+    if (bizType) {
+      // 부분 매칭: "카페" ↔ "카페/디저트" 등도 처리
+      const filtered = withParent.filter(d =>
+        d.parentName === bizType ||
+        d.parentName.includes(bizType) ||
+        bizType.includes(d.parentName)
+      );
+      setJobDuties(filtered.length > 0 ? filtered : withParent.filter(d =>
+        ["카페", "음식점", "편의점", "패스트푸드"].some(g => d.parentName.includes(g))
+      ));
+    } else {
+      setJobDuties(withParent);
+    }
+  };
 
   const loadInit = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -368,7 +423,7 @@ function ContractContent() {
   const loadByMember = async () => {
     const { data: tm } = await supabase
       .from("team_members")
-      .select("id, employer_id, worker_id, employer_profile_id, wage, work_days, work_hours, member_role, status")
+      .select("id, match_id, employer_id, worker_id, employer_profile_id, wage, work_days, work_hours, member_role, status")
       .eq("id", memberId)
       .single();
     if (!tm) { setLoading(false); return; }
@@ -556,19 +611,41 @@ function ContractContent() {
     return `${n.slice(0, 3)}-${n.slice(3, 5)}-${n.slice(5, 10)}`;
   };
 
-  const validate = (): string | null => {
-    if (!f.biz.trim()) return "사업체명을 입력해주세요.";
-    if (!f.ceo.trim()) return "대표자 성명을 입력해주세요.";
-    if (!f.worker.trim()) return "근로자 성명을 입력해주세요.";
-    if (!f.startDate.trim()) return "계약 시작일을 입력해주세요.";
-    if (!f.wage.trim()) return "시급을 입력해주세요.";
-    const wageNum = parseInt(f.wage.replace(/,/g, ""));
-    const minWage = getMinWageForDate(f.startDate);
-    if (isNaN(wageNum) || isUnderMinWage(wageNum, f.startDate)) {
-      return `시급이 최저임금(${minWage.toLocaleString()}원)보다 낮아요.\n현재 입력: ${f.wage}원`;
+  const validateStep = (step: number): string | null => {
+    switch (step) {
+      case 0: // 사업체
+        if (!f.biz.trim()) return "사업체명을 입력해주세요.";
+        if (!f.ceo.trim()) return "대표자 성명을 입력해주세요.";
+        if (!f.bizAddr.trim()) return "사업장 주소를 입력해주세요.";
+        return null;
+      case 1: // 근로자
+        if (!f.worker.trim()) return "근로자 성명을 입력해주세요.";
+        if (!f.workerBirth.trim()) return "근로자 생년월일을 입력해주세요.";
+        if (!f.startDate.trim()) return "계약 시작일을 입력해주세요.";
+        return null;
+      case 2: // 근무
+        if (!f.jobDesc.trim()) return "담당업무를 입력해주세요.";
+        if (f.workDaysMode === "check" && selectedDays.length === 0) return "근무 요일을 선택해주세요.";
+        if (!f.workStart || !f.workEnd) return "출퇴근 시각을 입력해주세요.";
+        return null;
+      case 3: // 임금
+        if (!f.wage.trim()) return "시급(임금)을 입력해주세요.";
+        if (!f.payDay.trim()) return "임금 지급일을 선택해주세요.";
+        const wageNum = parseInt(f.wage.replace(/,/g, ""));
+        const minWage = getMinWageForDate(f.startDate);
+        if (isNaN(wageNum) || isUnderMinWage(wageNum, f.startDate)) {
+          return `시급이 최저임금(${minWage.toLocaleString()}원)보다 낮아요. 현재 입력: ${f.wage}원`;
+        }
+        return null;
+      default:
+        return null;
     }
-    if (f.workDaysMode === "check" && selectedDays.length === 0) {
-      return "근무 요일을 선택해주세요.";
+  };
+
+  const validate = (): string | null => {
+    for (let i = 0; i <= 3; i++) {
+      const err = validateStep(i);
+      if (err) return err;
     }
     return null;
   };
@@ -586,7 +663,10 @@ function ContractContent() {
     status: "pending",
     employer_signed: true,
     worker_signed: false,
-    signed_at: new Date().toISOString(),
+    employer_signed_at: new Date().toISOString(),
+    contract_type: ct,
+    duties: f.jobDesc || null,
+    workplace_address: f.bizAddr || null,
   });
 
   const doSave = async (saveMode: "overwrite" | "new") => {
@@ -645,29 +725,36 @@ function ContractContent() {
           wage: payload.wage,
           work_days: payload.work_days,
           work_hours: payload.work_hours,
+          contract_status: "pending",
         }).eq("id", selMatch.id);
       }
 
       // 3. 채팅방 알림 메시지 전송
-      const sendMatchId = selMatch.id || matchId;
+      let sendMatchId = matchId || selMatch.match_id;
+      if (!sendMatchId && selMatch.id) {
+        // team_member에서 match_id 조회
+        const { data: tmRow } = await supabase.from("team_members")
+          .select("match_id").eq("id", selMatch.id).maybeSingle();
+        sendMatchId = tmRow?.match_id || null;
+      }
       if (sendMatchId) {
+        // match가 pending 상태면 accepted로 올려야 채팅방에 표시됨
+        await supabase.from("matches")
+          .update({ status: "accepted" })
+          .eq("id", sendMatchId)
+          .eq("status", "pending");
+
         const { data: { user } } = await supabase.auth.getUser();
         if (user && selMatch.employer_id && selMatch.worker_id) {
           const receiverId = user.id === selMatch.employer_id ? selMatch.worker_id : selMatch.employer_id;
           try {
             const msg = saveMode === "new"
-              ? "📄 새 근로계약서가 발행됐어요.\n기존 계약서를 대체하는 새 계약서예요.\n검토 후 동의해주세요."
-              : "📄 근로계약서가 수정됐어요. 검토 후 동의해주세요.";
+              ? "📄 근로계약서가 발행됐어요. 채팅방에서 확인 후 서명해주세요."
+              : "📄 근로계약서가 수정됐어요. 다시 확인 후 서명해주세요.";
             await fetch("/api/chat", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                matchId: sendMatchId,
-                senderId: user.id,
-                receiverId,
-                message: msg,
-                messageType: "system",
-              }),
+              body: JSON.stringify({ matchId: sendMatchId, senderId: user.id, receiverId, message: msg, messageType: "system" }),
             });
           } catch (msgErr) {
             console.error("채팅 API 오류:", msgErr);
@@ -680,15 +767,13 @@ function ContractContent() {
         : "✅ 새 계약서가 발행됐어요! 알바생 동의 대기중");
 
       setTimeout(() => {
-        if (fromParam === "chat" && selMatch?.id) {
-          router.replace(`/chat/${selMatch.id}`);
+        if (fromParam === "chat" && sendMatchId) {
+          router.replace(`/chat/${sendMatchId}`);
         } else if (fromParam === "team") {
           router.back();
-        } else {
-          if (selMatch?.id) router.replace(`/chat/${selMatch.id}`);
-          else router.back();
         }
-      }, 1000);
+        // 그 외엔 자동 이동 없음 — 네비바 배지로 확인
+      }, 800);
     } else {
       showToast("저장 오류: " + error.message, "error");
     }
@@ -701,6 +786,7 @@ function ContractContent() {
       .select("id, created_at, contract_data, worker_signed, status")
       .eq("team_member_id", selMatch.id)
       .neq("status", "superseded")
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(1).maybeSingle();
 
@@ -723,7 +809,7 @@ function ContractContent() {
         setShowSaveModal(true);
       }
     } else {
-      doSave("new");
+      setShowConfirmModal(true);
     }
   };
 
@@ -1042,6 +1128,53 @@ function ContractContent() {
       {ToastUI}
 
       {/* 저장 선택 모달 */}
+      {showConfirmModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:300, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+          onClick={() => setShowConfirmModal(false)}>
+          <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:480 }}
+            onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize:15, fontWeight:700, color:"var(--text)", marginBottom:16 }}>📄 계약서 발행 전 확인</p>
+            <div style={{ background:"var(--surface2)", borderRadius:12, padding:"14px 16px", marginBottom:20, display:"flex", flexDirection:"column", gap:8, fontSize:13 }}>
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ color:"var(--text-muted)" }}>근로자</span>
+                <span style={{ fontWeight:600, color:"var(--text)" }}>{f.worker || "-"}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ color:"var(--text-muted)" }}>계약 유형</span>
+                <span style={{ fontWeight:600, color:"var(--text)" }}>
+                  {ct==="parttime"?"단시간근로자":ct==="minor"?"연소근로자":ct==="standard_fixed"?"기간제":"무기계약"}
+                </span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ color:"var(--text-muted)" }}>시급</span>
+                <span style={{ fontWeight:700, color:"#a78bfa" }}>{f.wage ? Number(f.wage.replace(/,/g,"")).toLocaleString()+"원" : "-"}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ color:"var(--text-muted)" }}>근무 시작일</span>
+                <span style={{ fontWeight:600, color:"var(--text)" }}>{f.startDate || "-"}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ color:"var(--text-muted)" }}>근무 요일</span>
+                <span style={{ fontWeight:600, color:"var(--text)" }}>{workDaysStr || "-"}</span>
+              </div>
+            </div>
+            <p style={{ fontSize:11, color:"var(--text-muted)", marginBottom:16, lineHeight:1.6 }}>
+              발행 후 알바생에게 서명 요청이 전송돼요.<br/>내용이 맞는지 확인 후 발행해주세요.
+            </p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowConfirmModal(false)}
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text-muted)", fontSize:14, cursor:"pointer" }}>
+                다시 확인
+              </button>
+              <button onClick={() => { setShowConfirmModal(false); doSave("new"); }}
+                style={{ flex:2, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                📄 발행하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSaveModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 480 }}>
@@ -1118,6 +1251,16 @@ function ContractContent() {
           )}
 
           {/* 계약서 종류 선택 */}
+          {(() => {
+            const age = f.workerBirth ? calcAge(f.workerBirth) : null;
+            if (age !== null && age < 18) return (
+              <div style={{ background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.4)", borderRadius: 12, padding: "10px 14px", marginBottom: 12 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "#fb923c", margin: "0 0 2px" }}>👨‍👩‍👦 미성년자 ({age}세) — 연소근로자 계약서 필수</p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>친권자 동의서가 포함된 계약서로 자동 선택됩니다.</p>
+              </div>
+            );
+            return null;
+          })()}
           <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>계약서 종류 선택</p>
           {([
             { id: "standard_unlimited" as CT, label: "표준근로계약서 (무기계약)", desc: "기간의 정함이 없는 일반 근로계약" },
@@ -1250,7 +1393,7 @@ function ContractContent() {
                   )}
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>회사명/상호</label>
-                    <input style={inputStyle} value={f.biz} onChange={e => updateField("biz", e.target.value)} placeholder="예) 파스쿠찌 신창점" />
+                    <input style={errStyle(!f.biz.trim())} value={f.biz} onChange={e => updateField("biz", e.target.value)} placeholder="예) 파스쿠찌 신창점" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>사업자등록번호</label>
@@ -1258,7 +1401,7 @@ function ContractContent() {
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>대표자 성명</label>
-                    <input style={inputStyle} value={f.ceo} onChange={e => updateField("ceo", e.target.value)} placeholder="성명 입력" />
+                    <input style={errStyle(!f.ceo.trim())} value={f.ceo} onChange={e => updateField("ceo", e.target.value)} placeholder="성명 입력" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>대표 연락처</label>
@@ -1267,7 +1410,7 @@ function ContractContent() {
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>사업장 소재지 주소</label>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <input style={{ ...inputStyle, flex: 1 }} value={f.bizAddr} onChange={e => updateField("bizAddr", e.target.value)} placeholder="주소 입력" readOnly />
+                      <input style={{ ...(triedNext && !f.bizAddr.trim() ? { ...inputStyle, border: "1.5px solid #ef4444" } : inputStyle), flex: 1 }} value={f.bizAddr} onChange={e => updateField("bizAddr", e.target.value)} placeholder="주소 입력" readOnly />
                       <button onClick={() => openAddressSearch("bizAddr")} style={{ ...btnSecondary, width: "auto", fontSize: 11, padding: "10px 12px" }}>🔍 검색</button>
                     </div>
                     {f.bizAddr && (
@@ -1287,11 +1430,32 @@ function ContractContent() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>근로자 이름</label>
-                    <input style={inputStyle} value={f.worker} onChange={e => updateField("worker", e.target.value)} placeholder="근로자 이름" />
+                    <input style={errStyle(!f.worker.trim())} value={f.worker} onChange={e => updateField("worker", e.target.value)} placeholder="근로자 이름" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>생년월일</label>
-                    <input type="date" style={inputStyle} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} />
+                    <input type="date" style={errStyle(!f.workerBirth.trim())} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} />
+                    {(() => {
+                      const age = f.workerBirth ? calcAge(f.workerBirth) : null;
+                      if (age === null) return null;
+                      if (age < 18) return (
+                        <div style={{ marginTop: 8, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.4)", borderRadius: 12, padding: "10px 14px" }}>
+                          <p style={{ fontSize: 12, fontWeight: 700, color: "#fb923c", margin: "0 0 4px" }}>👨‍👩‍👦 미성년자 ({age}세) — 연소근로자 계약서 자동 선택</p>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
+                            근로기준법상 만 18세 미만은 친권자(부모) 동의서가 필요합니다.<br />
+                            계약서 종류가 <strong style={{ color: "#fb923c" }}>연소근로자 표준근로계약서</strong>로 자동 변경됐어요.
+                          </p>
+                        </div>
+                      );
+                      if (age < 20) return (
+                        <div style={{ marginTop: 8, background: "rgba(250,204,21,0.08)", border: "1px solid rgba(250,204,21,0.3)", borderRadius: 12, padding: "8px 12px" }}>
+                          <p style={{ fontSize: 11, color: "#fbbf24", margin: 0 }}>
+                            ℹ️ 만 {age}세 — 성인이므로 친권자 동의 불필요합니다.
+                          </p>
+                        </div>
+                      );
+                      return null;
+                    })()}
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>연락처</label>
@@ -1322,7 +1486,7 @@ function ContractContent() {
                   {/* 계약 기간 */}
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계약 개시일</label>
-                    <input type="date" style={inputStyle} value={toDateInput(f.startDate)} onChange={e => updateField("startDate", fromDateInput(e.target.value))} />
+                    <input type="date" style={errStyle(!f.startDate.trim())} value={toDateInput(f.startDate)} onChange={e => updateField("startDate", fromDateInput(e.target.value))} />
                   </div>
                   {ct !== "standard_unlimited" && (
                     <div>
@@ -1355,12 +1519,16 @@ function ContractContent() {
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>담당업무 <span style={{ fontWeight: 400 }}>(복수 선택 가능)</span></label>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-                      {(jobDuties.length > 0 ? jobDuties : ["홀서빙", "주방보조", "카운터", "매장청소", "배달", "재고관리", "바리스타", "포장/배달"]).map(preset => {
+                      {(jobDuties.length > 0 ? jobDuties : [
+                        { name: "홀서빙", parentName: "" }, { name: "주방보조", parentName: "" },
+                        { name: "카운터", parentName: "" }, { name: "매장청소", parentName: "" },
+                        { name: "배달", parentName: "" }, { name: "재고관리", parentName: "" },
+                      ]).map(d => {
                         const parts = f.jobDesc ? f.jobDesc.split(", ").map((s: string) => s.trim()).filter(Boolean) : [];
-                        const on = parts.includes(preset);
+                        const on = parts.includes(d.name);
                         return (
-                          <button key={preset} onClick={() => {
-                            const next = on ? parts.filter((p: string) => p !== preset) : [...parts, preset];
+                          <button key={d.name} onClick={() => {
+                            const next = on ? parts.filter((p: string) => p !== d.name) : [...parts, d.name];
                             updateField("jobDesc", next.join(", "));
                           }}
                             style={{
@@ -1369,12 +1537,12 @@ function ContractContent() {
                               borderRadius: 20, padding: "8px 14px",
                               color: on ? "#fff" : "var(--text)", fontSize: 12, fontWeight: 600, cursor: "pointer",
                             }}>
-                            {preset}
+                            {d.name}
                           </button>
                         );
                       })}
                     </div>
-                    <input style={inputStyle} value={f.jobDesc} onChange={e => updateField("jobDesc", e.target.value)} placeholder="직접 입력 또는 위에서 선택" />
+                    <input style={errStyle(!f.jobDesc.trim())} value={f.jobDesc} onChange={e => updateField("jobDesc", e.target.value)} placeholder="직접 입력 또는 위에서 선택" />
                   </div>
 
                   <div style={divider} />
@@ -1403,76 +1571,112 @@ function ContractContent() {
                   {/* 시간 입력 */}
                   {ct !== "parttime" ? (
                     <>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        <div>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>출근 시각</label>
-                          <input type="time" style={inputStyle} value={f.workStart} onChange={e => {
-                            const start = e.target.value;
-                            const end = f.workEnd;
-                            const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
-                            if (start && end) {
-                              const [sh, sm] = start.split(":").map(Number);
-                              const [eh, em] = end.split(":").map(Number);
-                              const totalMin = (eh * 60 + em) - (sh * 60 + sm);
-                              if (totalMin > 0) {
-                                const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
-                                const workDayCount = selectedDays.length || 5;
-                                setF(p => ({ ...p, workStart: start, dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
-                                return;
-                              }
-                            }
-                            updateField("workStart", start);
-                          }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>퇴근 시각</label>
-                          <input type="time" style={inputStyle} value={f.workEnd} onChange={e => {
-                            const end = e.target.value;
-                            const start = f.workStart;
-                            const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
-                            if (start && end) {
-                              const [sh, sm] = start.split(":").map(Number);
-                              const [eh, em] = end.split(":").map(Number);
-                              const totalMin = (eh * 60 + em) - (sh * 60 + sm);
-                              if (totalMin > 0) {
-                                const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
-                                const workDayCount = selectedDays.length || 5;
-                                setF(p => ({ ...p, workEnd: end, dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
-                                return;
-                              }
-                            }
-                            updateField("workEnd", end);
-                          }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 시작</label>
-                          <input type="time" style={{ ...inputStyle, opacity: f.noBreak ? 0.4 : 1 }} value={f.noBreak ? "" : f.breakStart} disabled={f.noBreak} onChange={e => updateField("breakStart", e.target.value)} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 종료</label>
-                          <input type="time" style={{ ...inputStyle, opacity: f.noBreak ? 0.4 : 1 }} value={f.noBreak ? "" : f.breakEnd} disabled={f.noBreak} onChange={e => updateField("breakEnd", e.target.value)} />
-                        </div>
+                      {/* 요일마다 달라요 토글 */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>출퇴근 시각</span>
+                        <button onClick={() => updateField("perDayHours", !f.perDayHours)}
+                          style={{ fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 20, border: `1px solid ${f.perDayHours ? "#7c3aed" : "var(--border)"}`, background: f.perDayHours ? "rgba(139,92,246,0.12)" : "var(--surface2)", color: f.perDayHours ? "#c4b5fd" : "var(--text-muted)", cursor: "pointer" }}>
+                          {f.perDayHours ? "✓ 요일마다 달라요" : "요일마다 달라요"}
+                        </button>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -4 }}>
-                        <input type="checkbox" id="noBreak" checked={!!f.noBreak} onChange={e => {
-                          const noBreak = e.target.checked;
-                          const breakMin = noBreak ? 0 : 30;
-                          const start = f.workStart; const end = f.workEnd;
-                          if (start && end) {
-                            const [sh, sm] = start.split(":").map(Number);
-                            const [eh, em] = end.split(":").map(Number);
-                            const totalMin = (eh * 60 + em) - (sh * 60 + sm);
-                            if (totalMin > 0) {
-                              const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
-                              const workDayCount = selectedDays.length || 5;
-                              setF(p => ({ ...p, noBreak, breakTime: String(breakMin), dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
-                              return;
-                            }
-                          }
-                          setF(p => ({ ...p, noBreak, breakTime: String(breakMin) }));
-                        }} style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
-                        <label htmlFor="noBreak" style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>휴게시간 없음</label>
-                      </div>
+
+                      {!f.perDayHours ? (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                            <div>
+                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>출근 시각</label>
+                              <input type="time" style={inputStyle} value={f.workStart} onChange={e => {
+                                const start = e.target.value; const end = f.workEnd;
+                                const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
+                                if (start && end) {
+                                  const [sh, sm] = start.split(":").map(Number);
+                                  const [eh, em] = end.split(":").map(Number);
+                                  const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                                  if (totalMin > 0) {
+                                    const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
+                                    const workDayCount = selectedDays.length || 5;
+                                    setF(p => ({ ...p, workStart: start, dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
+                                    return;
+                                  }
+                                }
+                                updateField("workStart", start);
+                              }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>퇴근 시각</label>
+                              <input type="time" style={inputStyle} value={f.workEnd} onChange={e => {
+                                const end = e.target.value; const start = f.workStart;
+                                const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
+                                if (start && end) {
+                                  const [sh, sm] = start.split(":").map(Number);
+                                  const [eh, em] = end.split(":").map(Number);
+                                  const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                                  if (totalMin > 0) {
+                                    const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
+                                    const workDayCount = selectedDays.length || 5;
+                                    setF(p => ({ ...p, workEnd: end, dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
+                                    return;
+                                  }
+                                }
+                                updateField("workEnd", end);
+                              }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 시작</label>
+                              <input type="time" style={{ ...inputStyle, opacity: f.noBreak ? 0.4 : 1 }} value={f.noBreak ? "" : f.breakStart} disabled={f.noBreak} onChange={e => updateField("breakStart", e.target.value)} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게 종료</label>
+                              <input type="time" style={{ ...inputStyle, opacity: f.noBreak ? 0.4 : 1 }} value={f.noBreak ? "" : f.breakEnd} disabled={f.noBreak} onChange={e => updateField("breakEnd", e.target.value)} />
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -4 }}>
+                            <input type="checkbox" id="noBreak" checked={!!f.noBreak} onChange={e => {
+                              const noBreak = e.target.checked;
+                              const breakMin = noBreak ? 0 : 30;
+                              const start = f.workStart; const end = f.workEnd;
+                              if (start && end) {
+                                const [sh, sm] = start.split(":").map(Number);
+                                const [eh, em] = end.split(":").map(Number);
+                                const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                                if (totalMin > 0) {
+                                  const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
+                                  const workDayCount = selectedDays.length || 5;
+                                  setF(p => ({ ...p, noBreak, breakTime: String(breakMin), dailyHours: String(daily), weeklyHours: String(Math.round(daily * workDayCount * 10) / 10) }));
+                                  return;
+                                }
+                              }
+                              setF(p => ({ ...p, noBreak, breakTime: String(breakMin) }));
+                            }} style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
+                            <label htmlFor="noBreak" style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>휴게시간 없음</label>
+                          </div>
+                        </>
+                      ) : selectedDays.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.12)", padding: 12, borderRadius: 12 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 68px", gap: 6 }}>
+                            <div />
+                            <span style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>출근</span>
+                            <span style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>퇴근</span>
+                            <span style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>휴게(분)</span>
+                          </div>
+                          {selectedDays.map(d => {
+                            const idx = DAYS.indexOf(d);
+                            const keyStart = "workStart" + DAYKEYS[idx];
+                            const keyEnd = "workEnd" + DAYKEYS[idx];
+                            const keyBreak = "breakTime" + DAYKEYS[idx];
+                            return (
+                              <div key={d} style={{ display: "grid", gridTemplateColumns: "36px 1fr 1fr 68px", gap: 6, alignItems: "center" }}>
+                                <span style={{ fontSize: 12, fontWeight: 700 }}>{d}</span>
+                                <input type="time" style={{ ...inputStyle, fontSize: 12, padding: "10px 8px" }} value={(f as any)[keyStart]} onChange={e => updateField(keyStart, e.target.value)} />
+                                <input type="time" style={{ ...inputStyle, fontSize: 12, padding: "10px 8px" }} value={(f as any)[keyEnd]} onChange={e => updateField(keyEnd, e.target.value)} />
+                                <input type="number" inputMode="numeric" style={{ ...inputStyle, fontSize: 12, padding: "10px 6px" }} value={(f as any)[keyBreak]} onChange={e => updateField(keyBreak, e.target.value)} placeholder="30" />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "12px 0", background: "rgba(0,0,0,0.08)", borderRadius: 12 }}>위에서 근무 요일을 먼저 선택해주세요</p>
+                      )}
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>1일 소정시간(h)</label>
@@ -1511,30 +1715,57 @@ function ContractContent() {
                       </div>
                     </>
                   ) : (
-                    selectedDays.length > 0 && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.15)", padding: 12, borderRadius: 12 }}>
-                        <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>요일별 근무 시간</p>
-                        {selectedDays.map(d => {
-                          const idx = DAYS.indexOf(d);
-                          const keyStart = "workStart" + DAYKEYS[idx];
-                          const keyEnd = "workEnd" + DAYKEYS[idx];
-                          const keyBreak = "breakTime" + DAYKEYS[idx];
-                          return (
-                            <div key={d}>
-                              <p style={{ fontSize: 12, fontWeight: 700, margin: "0 0 6px" }}>{d}요일</p>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px", gap: 6 }}>
-                                <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyStart]} onChange={e => updateField(keyStart, e.target.value)} />
-                                <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyEnd]} onChange={e => updateField(keyEnd, e.target.value)} />
-                                <div style={{ position: "relative" }}>
-                                  <input type="number" inputMode="numeric" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyBreak]} onChange={e => updateField(keyBreak, e.target.value)} placeholder="30" />
-                                  <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)", pointerEvents: "none" }}>분</span>
+                    <>
+                      {/* 파트타임: 기본 출퇴근/휴게 (요일 미선택 시에도 표시) */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>기본 출근 시각</label>
+                          <input type="time" style={inputStyle} value={f.workStart} onChange={e => updateField("workStart", e.target.value)} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>기본 퇴근 시각</label>
+                          <input type="time" style={inputStyle} value={f.workEnd} onChange={e => updateField("workEnd", e.target.value)} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게시간</label>
+                          <div style={{ position: "relative" }}>
+                            <input type="number" inputMode="numeric" style={{ ...inputStyle, opacity: f.noBreak ? 0.4 : 1 }} value={f.noBreak ? "" : f.breakTime} disabled={f.noBreak} onChange={e => updateField("breakTime", e.target.value)} placeholder="30" />
+                            <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--text-muted)", pointerEvents: "none" }}>분</span>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input type="checkbox" id="noBreakPt" checked={!!f.noBreak} onChange={e => setF(p => ({ ...p, noBreak: e.target.checked, breakTime: e.target.checked ? "0" : "30" }))} style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
+                            <label htmlFor="noBreakPt" style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>휴게 없음</label>
+                          </div>
+                        </div>
+                      </div>
+                      {/* 요일별 시간이 다를 경우 개별 설정 */}
+                      {selectedDays.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.15)", padding: 12, borderRadius: 12 }}>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>요일별 근무 시간 <span style={{ opacity: 0.6 }}>(기본값과 다른 경우만 수정)</span></p>
+                          {selectedDays.map(d => {
+                            const idx = DAYS.indexOf(d);
+                            const keyStart = "workStart" + DAYKEYS[idx];
+                            const keyEnd = "workEnd" + DAYKEYS[idx];
+                            const keyBreak = "breakTime" + DAYKEYS[idx];
+                            return (
+                              <div key={d}>
+                                <p style={{ fontSize: 12, fontWeight: 700, margin: "0 0 6px" }}>{d}요일</p>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px", gap: 6 }}>
+                                  <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyStart]} onChange={e => updateField(keyStart, e.target.value)} />
+                                  <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyEnd]} onChange={e => updateField(keyEnd, e.target.value)} />
+                                  <div style={{ position: "relative" }}>
+                                    <input type="number" inputMode="numeric" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyBreak]} onChange={e => updateField(keyBreak, e.target.value)} placeholder="30" />
+                                    <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "var(--text-muted)", pointerEvents: "none" }}>분</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -1564,7 +1795,7 @@ function ContractContent() {
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
                       임금액 (원) — {new Date().getFullYear()}년 최저시급 {getMinWageForDate(f.startDate).toLocaleString()}원
                     </label>
-                    <input type="tel" inputMode="numeric" style={inputStyle} value={f.wage}
+                    <input type="tel" inputMode="numeric" style={errStyle(!f.wage.trim())} value={f.wage}
                       onChange={e => {
                         const n = e.target.value.replace(/[^0-9]/g, "");
                         updateField("wage", n ? Number(n).toLocaleString() : "");
@@ -1808,13 +2039,18 @@ function ContractContent() {
               {/* 이전 / 다음 네비게이션 */}
               <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
                 {wizardStep > 0 && (
-                  <button onClick={() => setWizardStep(s => s - 1)}
+                  <button onClick={() => { setStepError(null); setWizardStep(s => s - 1); }}
                     style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: "13px", borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
                     ← 이전
                   </button>
                 )}
                 {wizardStep < 4 ? (
-                  <button onClick={() => setWizardStep(s => s + 1)}
+                  <button onClick={() => {
+                    const err = validateStep(wizardStep);
+                    if (err) { setStepError(err); setTriedNext(true); showToast(`⚠️ ${err}`, "error"); return; }
+                    setStepError(null); setTriedNext(false);
+                    setWizardStep(s => s + 1);
+                  }}
                     style={{ flex: 2, background: "linear-gradient(135deg,#8b5cf6,#7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: "13px", borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
                     다음 →
                   </button>

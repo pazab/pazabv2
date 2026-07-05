@@ -16,19 +16,22 @@ const BANK_OPTIONS = ["신한은행", "국민은행", "우리은행", "하나은
 const mapKakaoCategory = (kakaoCategory: string): string => {
   if (!kakaoCategory) return "기타";
   if (kakaoCategory.includes("카페") || kakaoCategory.includes("커피") || kakaoCategory.includes("제과") || kakaoCategory.includes("베이커리") || kakaoCategory.includes("디저트")) {
-    return "카페";
+    return "카페/음료";
   }
   if (kakaoCategory.includes("음식점") || kakaoCategory.includes("한식") || kakaoCategory.includes("일식") || kakaoCategory.includes("중식") || kakaoCategory.includes("양식") || kakaoCategory.includes("패스트푸드") || kakaoCategory.includes("분식") || kakaoCategory.includes("술집") || kakaoCategory.includes("호프") || kakaoCategory.includes("포장마차") || kakaoCategory.includes("식당")) {
-    return "음식점";
+    return "식당/음식점";
   }
   if (kakaoCategory.includes("편의점") || kakaoCategory.includes("마트") || kakaoCategory.includes("슈퍼")) {
-    return "편의점";
+    return "편의점/마트";
   }
   if (kakaoCategory.includes("미용") || kakaoCategory.includes("뷰티") || kakaoCategory.includes("헤어") || kakaoCategory.includes("네일") || kakaoCategory.includes("피부")) {
     return "뷰티/미용";
   }
   if (kakaoCategory.includes("판매") || kakaoCategory.includes("리테일") || kakaoCategory.includes("매장") || kakaoCategory.includes("백화점") || kakaoCategory.includes("쇼핑") || kakaoCategory.includes("아웃렛")) {
-    return "매장관리";
+    return "판매/매장";
+  }
+  if (kakaoCategory.includes("물류") || kakaoCategory.includes("배송") || kakaoCategory.includes("택배")) {
+    return "물류/배송";
   }
   return "기타";
 };
@@ -55,7 +58,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   // 1. 신규 사장님 간편 가입/인증 폼 상태
   const [step, setStep] = useState<"cert" | "form">("cert"); // cert: 신원인증/매장등록, form: 대타근무조건
   const [newBusinessName, setNewBusinessName] = useState("");
-  const [newBusinessType, setNewBusinessType] = useState("음식점");
+  const [newBusinessType, setNewBusinessType] = useState("식당/음식점");
   const [addressQuery, setAddressQuery] = useState("");
   const [addressResults, setAddressResults] = useState<any[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
@@ -471,11 +474,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                     <div>
                       <span style={{ fontSize: 10, color: "#8b5cf6", fontWeight: 700, letterSpacing: 0.5, display: "block", marginBottom: 2 }}>📂 자동 감지된 업종</span>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>
-                        {newBusinessType === "카페" ? "☕ 카페 / 베이커리" :
-                         newBusinessType === "음식점" ? "🍳 식당 / 음식점" :
-                         newBusinessType === "편의점" ? "🏪 편의점 / 마트" :
-                         newBusinessType === "뷰티/미용" ? "💈 뷰티 / 미용" :
-                         newBusinessType === "매장관리" ? "📦 매장 관리 / 일반 알바" :
+                        {newBusinessType === "카페/음료" ? "☕ 카페 / 음료" :
+                         newBusinessType === "식당/음식점" ? "🍳 식당 / 음식점" :
+                         newBusinessType === "편의점/마트" ? "🏪 편의점 / 마트" :
+                         newBusinessType === "뷰티/미용" ? "💄 뷰티 / 미용" :
+                         newBusinessType === "판매/매장" ? "🛍️ 판매 / 매장" :
+                         newBusinessType === "물류/배송" ? "🚚 물류 / 배송" :
+                         newBusinessType !== "기타" ? `📂 ${newBusinessType}` :
                          "❓ 기타 업종"}
                       </div>
                     </div>
@@ -527,7 +532,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                       onChange={e => {
                         if (e.target.value === "new_shop") {
                           setNewBusinessName("");
-                          setNewBusinessType("음식점");
+                          setNewBusinessType("식당/음식점");
                           setAddressQuery("");
                           setAddressResults([]);
                           setSelectedAddress(null);
