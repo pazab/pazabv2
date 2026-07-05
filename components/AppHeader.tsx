@@ -36,12 +36,13 @@ export default function AppHeader({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        supabase.from("users").select("avatar_url").eq("id", data.user.id).maybeSingle()
-          .then(({ data: u }) => setAvatarUrl(u?.avatar_url || null));
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: u } = await supabase.from("users").select("avatar_url").eq("id", user.id).maybeSingle();
+        setAvatarUrl(u?.avatar_url || null);
       }
-    });
+    })();
   }, []);
 
   return (

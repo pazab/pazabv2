@@ -31,10 +31,11 @@ function PayslipContent() {
   const [existingPayslip, setExistingPayslip] = useState<any>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) { router.push("/login"); return; }
-      setUser(data.user);
-      const { data: ud } = await supabase.from("users").select("user_type").eq("id", data.user.id).single();
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
+      setUser(user);
+      const { data: ud } = await supabase.from("users").select("user_type").eq("id", user.id).single();
       setUserType(ud?.user_type || "worker");
       if (payslipId) {
         await loadExistingPayslip(payslipId);
@@ -42,7 +43,7 @@ function PayslipContent() {
         await loadMember(teamMemberId);
       }
       setLoading(false);
-    });
+    })();
   }, []);
 
   useEffect(() => {
