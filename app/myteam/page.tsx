@@ -657,11 +657,38 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
             {[
               { label:"시급", value: m.wage ? `${m.wage.toLocaleString()}원` : "미정" },
               { label:"근무요일", value: m.work_days || "미정" },
-              { label:"근무시간", value: m.work_hours || "미정" },
+              {
+                label:"근무시간",
+                value: (() => {
+                  if (!m.work_hours) return "미정";
+                  const latestContract = contracts.find(c => c.status === "active") || contracts[0];
+                  const cd = latestContract?.contract_data;
+                  const cleanWorkHours = m.work_hours.replace(/\s+/g, "");
+                  if (cleanWorkHours.includes("~") || cleanWorkHours.includes("-")) {
+                    const hours = cd?.dailyHours || cd?.work_hours;
+                    return hours ? `${cleanWorkHours} (${hours}h)` : cleanWorkHours;
+                  }
+                  const num = parseFloat(m.work_hours);
+                  if (!isNaN(num)) {
+                    if (cd?.workStart && cd?.workEnd) {
+                      return `${cd.workStart.replace(/\s+/g, "")}~${cd.workEnd.replace(/\s+/g, "")} (${num}h)`;
+                    }
+                    return `${num}h`;
+                  }
+                  return m.work_hours;
+                })()
+              },
             ].map(r => (
-              <div key={r.label} style={{ background:"rgba(255,255,255,0.15)", borderRadius:10, padding:"8px 10px" }}>
+              <div key={r.label} style={{ background:"rgba(255,255,255,0.15)", borderRadius:10, padding:"8px 10px", minWidth: 0 }}>
                 <p style={{ fontSize:10, color:"rgba(255,255,255,0.7)", margin:"0 0 2px" }}>{r.label}</p>
-                <p style={{ fontSize:12, fontWeight:700, color:"#fff", margin:0 }}>{r.value}</p>
+                <p style={{
+                  fontSize: r.value.length > 8 ? 10 : 12,
+                  fontWeight: 700,
+                  color: "#fff",
+                  margin: 0,
+                  wordBreak: "break-all",
+                  lineHeight: 1.3
+                }}>{r.value}</p>
               </div>
             ))}
           </div>
@@ -860,6 +887,34 @@ function MyTeamPageContent() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
+  // Realtime 구독: team_members 변경 감지 시 사장님/알바생 화면 데이터 갱신
+  useEffect(() => {
+    if (!user || !userType) return;
+
+    const channel = supabase
+      .channel(`team-members-realtime-${user.id}-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "team_members" },
+        (payload: any) => {
+          const isEmployerMode = userType === "employer" || userType === "both";
+          const isWorkerMode = userType === "worker" || userType === "both";
+
+          if (isEmployerMode && (payload.new?.employer_id === user.id || payload.old?.employer_id === user.id)) {
+            loadTeam(user.id);
+          }
+          if (isWorkerMode && (payload.new?.worker_id === user.id || payload.old?.worker_id === user.id)) {
+            loadMyWork(user.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, userType]);
+
   async function loadUserType(uid: string) {
     const { data } = await supabase.from("users")
       .select("user_type, nickname, avatar_url, employer_result")
@@ -938,6 +993,23 @@ function MyTeamPageContent() {
       .order("hire_date", { ascending: false });
     if (!data) return;
 
+    // 각 팀원의 최신 계약서 로드
+    const teamMemberIds = data.map((m: any) => m.id);
+    const { data: memberContracts } = teamMemberIds.length > 0
+      ? await supabase.from("contracts")
+          .select("team_member_id, wage, work_days, work_hours, contract_data, status")
+          .in("team_member_id", teamMemberIds)
+          .neq("status", "cancelled")
+          .order("created_at", { ascending: false })
+      : { data: [] };
+
+    const contractByMember: Record<string, any> = {};
+    for (const c of (memberContracts || [])) {
+      if (!contractByMember[c.team_member_id]) {
+        contractByMember[c.team_member_id] = c;
+      }
+    }
+
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
     const todayStr = (() => {
@@ -952,10 +1024,41 @@ function MyTeamPageContent() {
       : { data: [] };
 
     const enriched = data.map((m: any) => {
+      let wage = m.wage;
+      let work_days = m.work_days;
+      let work_hours = m.work_hours;
+
+      const contract = contractByMember[m.id];
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        if (cd) {
+          if (cd.workDaysMode === "text" && cd.workDaysText) work_days = cd.workDaysText;
+          else {
+            const days = ["월", "화", "수", "목", "금", "토", "일"]
+              .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+              .join("·");
+            if (days) work_days = days;
+          }
+          if (cd.workStart && cd.workEnd) {
+            work_hours = `${cd.workStart} ~ ${cd.workEnd}`;
+          } else if (cd.dailyHours) {
+            work_hours = cd.dailyHours;
+          }
+        } else {
+          if (contract.work_days) work_days = contract.work_days;
+          if (contract.work_hours) work_hours = contract.work_hours;
+        }
+      }
+
       const contractStatus = m.contract_status === "active" ? "done"
         : m.contract_status === "pending" ? "pending" : "none";
       return {
         ...m,
+        wage,
+        work_days,
+        work_hours,
         worker: (m as any).users,
         thisMonth: att?.filter((a: any) => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
         late: att?.filter((a: any) => a.team_member_id === m.id && a.status==="late").length || 0,
@@ -989,10 +1092,27 @@ function MyTeamPageContent() {
 
   async function loadMyWork(uid: string) {
     const { data: activeData } = await supabase.from("team_members")
-      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, role_desc, invite_status, created_at,
+      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, role_desc, invite_status, created_at, contract_status,
         users!team_members_employer_id_fkey (nickname, avatar_url)`)
       .eq("worker_id", uid).eq("status", "active")
       .order("created_at", { ascending: false });
+
+    // 각 소속의 최신 계약서 로드
+    const tmIds = (activeData||[]).map((d: any) => d.id);
+    const { data: memberContracts } = tmIds.length > 0
+      ? await supabase.from("contracts")
+          .select("team_member_id, wage, work_days, work_hours, contract_data, status")
+          .in("team_member_id", tmIds)
+          .neq("status", "cancelled")
+          .order("created_at", { ascending: false })
+      : { data: [] };
+
+    const contractByMember: Record<string, any> = {};
+    for (const c of (memberContracts || [])) {
+      if (!contractByMember[c.team_member_id]) {
+        contractByMember[c.team_member_id] = c;
+      }
+    }
 
     const empIds = (activeData||[]).map((d: any) => d.employer_id);
     const profiles: any[] = [];
@@ -1007,12 +1127,48 @@ function MyTeamPageContent() {
       }
     }
 
-    const mapped = (activeData||[]).map((d: any) => ({
-      ...d,
-      employer: d.users,
-      profile: profiles.find((p: any) => p.user_id === d.employer_id),
-      contractStatus: "none",
-    }));
+    const mapped = (activeData||[]).map((d: any) => {
+      let wage = d.wage;
+      let work_days = d.work_days;
+      let work_hours = d.work_hours;
+
+      const contract = contractByMember[d.id];
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        if (cd) {
+          if (cd.workDaysMode === "text" && cd.workDaysText) work_days = cd.workDaysText;
+          else {
+            const days = ["월", "화", "수", "목", "금", "토", "일"]
+              .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+              .join("·");
+            if (days) work_days = days;
+          }
+          if (cd.workStart && cd.workEnd) {
+            work_hours = `${cd.workStart} ~ ${cd.workEnd}`;
+          } else if (cd.dailyHours) {
+            work_hours = cd.dailyHours;
+          }
+        } else {
+          if (contract.work_days) work_days = contract.work_days;
+          if (contract.work_hours) work_hours = contract.work_hours;
+        }
+      }
+
+      const contractStatus = d.contract_status === "active" ? "done"
+        : d.contract_status === "pending" ? "pending" : "none";
+
+      return {
+        ...d,
+        wage,
+        work_days,
+        work_hours,
+        employer: d.users,
+        profile: profiles.find((p: any) => p.user_id === d.employer_id),
+        contractStatus,
+      };
+    });
     setCurrent(mapped);
     if (mapped.length > 0) setWorkOpen(true);
   }
@@ -1103,12 +1259,11 @@ function MyTeamPageContent() {
                 </button>
                 {workOpen && (
                   current.length === 0 ? (
-                    <div style={{ ...cardStyle, padding:"28px 16px", textAlign:"center" }}>
-                      <div style={{ fontSize:36, marginBottom:8 }}>🏪</div>
-                      <p style={{ color:"var(--text-muted)", fontSize:13, margin:"0 0 12px" }}>소속 매장이 없어요</p>
+                    <div style={{ ...cardStyle, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                      <span style={{ color:"var(--text-muted)", fontSize:13 }}>소속 매장이 없어요</span>
                       <button onClick={() => router.push("/explore")}
-                        style={{ ...btnPrimary, width:"auto", padding:"8px 20px", fontSize:13 }}>
-                        공고 탐색하기 →
+                        style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", whiteSpace:"nowrap" }}>
+                        공고 탐색 →
                       </button>
                     </div>
                   ) : (
@@ -1139,13 +1294,11 @@ function MyTeamPageContent() {
 
                 {/* 매장 없는 사장님 — 등록 CTA */}
                 {myStores.length === 0 && (
-                  <div style={{ ...cardStyle, padding:"32px 20px", textAlign:"center", marginBottom:10 }}>
-                    <div style={{ fontSize:40, marginBottom:10 }}>🏪</div>
-                    <p style={{ color:"var(--text)", fontSize:15, fontWeight:700, margin:"0 0 6px" }}>아직 매장이 없어요</p>
-                    <p style={{ color:"var(--text-muted)", fontSize:13, margin:"0 0 18px" }}>매장을 등록하면 팀원을 초대하고 근태·급여를 관리할 수 있어요</p>
+                  <div style={{ ...cardStyle, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+                    <span style={{ color:"var(--text-muted)", fontSize:13 }}>등록된 매장이 없어요</span>
                     <button onClick={() => { setEditingStore(null); setStoreModalOpen(true); }}
-                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:14, padding:"12px 28px", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-                      매장 등록하기 →
+                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:20, padding:"5px 14px", color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                      매장 등록 →
                     </button>
                   </div>
                 )}
@@ -1253,8 +1406,7 @@ function MyTeamPageContent() {
                             </button>
                           </div>
                           {activeMembers.length === 0 ? (
-                            <div style={{ textAlign:"center", padding:"20px 0" }}>
-                              <div style={{ fontSize:28, marginBottom:6 }}>👥</div>
+                            <div style={{ padding:"10px 0" }}>
                               <p style={{ color:"var(--text-muted)", fontSize:13, margin:0 }}>아직 팀원이 없어요</p>
                             </div>
                           ) : activeMembers.map((m: any) => {
@@ -1285,7 +1437,14 @@ function MyTeamPageContent() {
                                     {m.worker?.trust_score != null && (() => { const g = getTrustGrade(m.worker.trust_score); return <span style={{ fontSize:10, color:g.color, fontWeight:700 }}>{g.emoji}</span>; })()}
                                   </div>
                                   <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 3px" }}>
-                                    {m.work_days||"요일미정"} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
+                                    {m.work_days||"요일미정"} · {(() => {
+                                      if (!m.work_hours) return "시간미정";
+                                      if (m.work_hours.includes("~") || m.work_hours.includes("-")) {
+                                        return m.work_hours.replace(/\s+/g, "");
+                                      }
+                                      const num = parseFloat(m.work_hours);
+                                      return !isNaN(num) ? `${num}시간` : m.work_hours;
+                                    })()} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
                                   </p>
                                   <span onClick={async e => {
                                     e.stopPropagation();

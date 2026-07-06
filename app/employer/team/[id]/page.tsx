@@ -293,6 +293,7 @@ export default function TeamMemberPage() {
   const [payslips, setPayslips] = useState<any[]>([]);
   const [payslipsLoading, setPayslipsLoading] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [cancelTargetContract, setCancelTargetContract] = useState<any>(null);
 
   // 달력 상태
   const now = new Date();
@@ -341,30 +342,34 @@ export default function TeamMemberPage() {
       let work_days = data.work_days;
       let work_hours = data.work_hours;
 
-      if (data.match_id) {
-        const { data: contract } = await supabase.from("contracts")
-          .select("wage, work_days, work_hours, contract_data")
-          .eq("match_id", data.match_id)
-          .order("created_at", { ascending: false })
-          .limit(1).maybeSingle();
+      // team_member_id 기준으로 계약서 조회 (match_id가 없는 신규 계약 흐름 대응)
+      const { data: contract } = await supabase.from("contracts")
+        .select("wage, work_days, work_hours, contract_data")
+        .eq("team_member_id", data.id)
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false })
+        .limit(1).maybeSingle();
 
-        if (contract) {
-          const cd = contract.contract_data;
-          if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
-          else if (contract.wage) wage = contract.wage;
-          if (cd) {
-            if (cd.workDaysMode === "text" && cd.workDaysText) work_days = cd.workDaysText;
-            else {
-              const days = ["월", "화", "수", "목", "금", "토", "일"]
-                .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
-                .join("·");
-              if (days) work_days = days;
-            }
-            if (cd.dailyHours) work_hours = cd.dailyHours;
-          } else {
-            if (contract.work_days) work_days = contract.work_days;
-            if (contract.work_hours) work_hours = contract.work_hours;
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        if (cd) {
+          if (cd.workDaysMode === "text" && cd.workDaysText) work_days = cd.workDaysText;
+          else {
+            const days = ["월", "화", "수", "목", "금", "토", "일"]
+              .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+              .join("·");
+            if (days) work_days = days;
           }
+          if (cd.workStart && cd.workEnd) {
+            work_hours = `${cd.workStart} ~ ${cd.workEnd}`;
+          } else if (cd.dailyHours) {
+            work_hours = cd.dailyHours;
+          }
+        } else {
+          if (contract.work_days) work_days = contract.work_days;
+          if (contract.work_hours) work_hours = contract.work_hours;
         }
       }
 
@@ -654,11 +659,38 @@ export default function TeamMemberPage() {
               {[
                 { label: "시급", value: member.wage ? `${member.wage.toLocaleString()}원` : "미정" },
                 { label: "근무요일", value: member.work_days || "미정" },
-                { label: "근무시간", value: member.work_hours ? `${member.work_hours}시간` : "미정" },
+                {
+                  label: "근무시간",
+                  value: (() => {
+                    if (!member.work_hours) return "미정";
+                    const latestContract = contracts.find(c => c.status === "active") || contracts[0];
+                    const cd = latestContract?.contract_data;
+                    const cleanWorkHours = member.work_hours.replace(/\s+/g, "");
+                    if (cleanWorkHours.includes("~") || cleanWorkHours.includes("-")) {
+                      const hours = cd?.dailyHours || cd?.work_hours;
+                      return hours ? `${cleanWorkHours} (${hours}h)` : cleanWorkHours;
+                    }
+                    const num = parseFloat(member.work_hours);
+                    if (!isNaN(num)) {
+                      if (cd?.workStart && cd?.workEnd) {
+                        return `${cd.workStart.replace(/\s+/g, "")}~${cd.workEnd.replace(/\s+/g, "")} (${num}h)`;
+                      }
+                      return `${num}h`;
+                    }
+                    return member.work_hours;
+                  })()
+                },
               ].map(r => (
-                <div key={r.label} style={{ textAlign: "center", background: "var(--surface2)", borderRadius: 10, padding: "8px 4px" }}>
+                <div key={r.label} style={{ textAlign: "center", background: "var(--surface2)", borderRadius: 10, padding: "8px 4px", minWidth: 0 }}>
                   <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>{r.label}</p>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", margin: 0 }}>{r.value}</p>
+                  <p style={{
+                    fontSize: r.value.length > 8 ? 10 : 12,
+                    fontWeight: 700,
+                    color: "var(--text)",
+                    margin: 0,
+                    wordBreak: "break-all",
+                    lineHeight: 1.3
+                  }}>{r.value}</p>
                 </div>
               ))}
             </div>
@@ -1070,12 +1102,7 @@ export default function TeamMemberPage() {
                               style={{ flex: 1, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 8, padding: "8px", fontSize: 12, color: "#f59e0b", cursor: "pointer", fontWeight: 700 }}>
                               🔔 서명 독촉
                             </button>
-                            <button onClick={async () => {
-                              await supabase.from("contracts").update({ status: "cancelled" }).eq("id", c.id);
-                              await supabase.from("team_members").update({ contract_status: "none" }).eq("id", c.team_member_id);
-                              setContracts(prev => prev.filter(x => x.id !== c.id));
-                              showToast("계약서 발행이 취소됐어요.");
-                            }}
+                            <button onClick={() => setCancelTargetContract(c)}
                               style={{ flex: 1, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "8px", fontSize: 12, color: "#ef4444", cursor: "pointer" }}>
                               🗑️ 발행 취소
                             </button>
@@ -1382,6 +1409,50 @@ export default function TeamMemberPage() {
         );
       })()}
 
+      {/* ── 계약서 발행 취소 확인 모달 ── */}
+      {cancelTargetContract && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 9999, padding: 24
+        }}>
+          <div style={{
+            background: "var(--surface)", borderRadius: 20,
+            width: "100%", maxWidth: 360, padding: 24,
+            border: "1px solid var(--border)",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+            textAlign: "center"
+          }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: "0 0 10px" }}>
+              계약서 발행 취소
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
+              정말로 계약서 발행을 취소하시겠습니까?<br />
+              취소하시면 알바생의 <span style={{ fontWeight: 700, color: "#f59e0b" }}>서명 대기</span> 상태가 해제되며, 계약서가 무효 처리됩니다.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setCancelTargetContract(null)}
+                style={{ flex: 1, padding: "12px", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                닫기
+              </button>
+              <button onClick={async () => {
+                const c = cancelTargetContract;
+                await supabase.from("contracts").update({ status: "cancelled" }).eq("id", c.id);
+                await supabase.from("team_members").update({ contract_status: "none" }).eq("id", c.team_member_id);
+                setContracts(prev => prev.filter(x => x.id !== c.id));
+                setCancelTargetContract(null);
+                showToast("계약서 발행이 취소됐어요.");
+              }}
+                style={{ flex: 1, padding: "12px", background: "#ef4444", border: "none", color: "#fff", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                발행 취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 근태 삭제 확인 모달 ── */}
       {showDeleteConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
@@ -1446,11 +1517,11 @@ export default function TeamMemberPage() {
           todayStr={todayStr}
           showToast={showToast}
           onClose={() => setBatchContract(null)}
-          onComplete={async (msg) => {
+          onComplete={async (msg, count) => {
             await loadAttendance(member.id);
             setAttLogRefreshKey(k => k + 1);
             setBatchContract(null);
-            showToast(msg, "success");
+            if (count > 0) showToast(msg, "success");
           }}
         />
       )}
@@ -1643,10 +1714,11 @@ function AttendanceBatchModal({
   todayStr: string;
   showToast: (msg: string, type?: "success" | "error") => void;
   onClose: () => void;
-  onComplete: (msg: string) => void;
+  onComplete: (msg: string, count: number) => void;
 }) {
   const [overwrite, setOverwrite] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [doneCount, setDoneCount] = useState<number | null>(null);
 
   // 해당 계약서 기준 데이터
   const targetContract = contracts.find(c =>
@@ -1721,7 +1793,7 @@ function AttendanceBatchModal({
       }
 
       if (upsertPayload.length === 0) {
-        onComplete("새로 등록할 내역이 없어 처리를 건너뛰었습니다.");
+        onComplete("새로 등록할 내역이 없어 처리를 건너뛰었습니다.", 0);
         return;
       }
 
@@ -1745,13 +1817,76 @@ function AttendanceBatchModal({
       });
       if (logErr) throw logErr;
 
-      onComplete(`🎉 ${periodLabel} 계약 기간 내 약정 근무일 ${upsertPayload.length}건이 소급 등록되었습니다!`);
+      setDoneCount(upsertPayload.length);
     } catch (err: any) {
       showToast("소급 등록 실패: " + err.message, "error");
     } finally {
       setSaving(false);
     }
   };
+
+  // 성공 화면
+  if (doneCount !== null) {
+    // 계약 기간 내 월별 목록 계산 (급여 명세서 생성용)
+    const months: { year: number; month: number }[] = [];
+    const s = new Date(contractStartDate);
+    const eRaw = contractEndDate ? new Date(contractEndDate) : new Date(todayStr);
+    const eLimit = eRaw > new Date(todayStr) ? new Date(todayStr) : eRaw;
+    let cur = new Date(s.getFullYear(), s.getMonth(), 1);
+    while (cur <= eLimit) {
+      months.push({ year: cur.getFullYear(), month: cur.getMonth() + 1 });
+      cur.setMonth(cur.getMonth() + 1);
+    }
+
+    return (
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+        background: "rgba(0,0,0,0.6)", zIndex: 500,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16
+      }}>
+        <div style={{
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderRadius: 20, width: "100%", maxWidth: 380, padding: 24,
+          boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+          display: "flex", flexDirection: "column", gap: 20, textAlign: "center"
+        }}>
+          <div style={{ fontSize: 48 }}>🎉</div>
+          <div>
+            <p style={{ fontSize: 17, fontWeight: 900, color: "var(--text)", margin: "0 0 6px" }}>소급 등록 완료!</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+              {doneCount > 0 ? `${periodLabel} 기간 내 ${doneCount}건 등록됐어요.` : "새로 등록할 내역이 없었어요."}
+            </p>
+          </div>
+
+          {doneCount > 0 && months.length > 0 && (
+            <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", margin: "0 0 10px", textAlign: "left" }}>💰 급여 명세서 발행하기</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {months.map(({ year: y, month: m }) => (
+                  <button key={`${y}-${m}`}
+                    onClick={() => {
+                      onComplete(`${periodLabel} ${doneCount}건 소급 등록 완료`, doneCount);
+                      const params = new URLSearchParams({ tmId: member.id });
+                      window.location.href = `/payslip?${params.toString()}&year=${y}&month=${m}`;
+                    }}
+                    style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "var(--text)", cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>📋 {y}년 {m}월 명세서</span>
+                    <span style={{ fontSize: 11, color: "#7c3aed", fontWeight: 800 }}>발행하기 →</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button onClick={() => onComplete(doneCount > 0 ? `${periodLabel} ${doneCount}건 소급 등록 완료` : "새로 등록할 내역이 없어 처리를 건너뛰었습니다.", doneCount)}
+            style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 14, padding: 14, fontSize: 14, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+            확인
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{

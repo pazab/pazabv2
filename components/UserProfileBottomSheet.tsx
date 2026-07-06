@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getTrustGrade } from "@/lib/utils";
+import { useToast } from "@/lib/useToast";
 
 interface UserProfileBottomSheetProps {
   userId: string;
@@ -15,6 +16,7 @@ export default function UserProfileBottomSheet({
   onClose,
 }: UserProfileBottomSheetProps) {
   const router = useRouter();
+  const { showToast, ToastUI } = useToast();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [teamMember, setTeamMember] = useState<any>(null);
@@ -79,53 +81,57 @@ export default function UserProfileBottomSheet({
     setLoading(false);
   }
 
-  const handleChat = () => {
-    if (!currentUser) {
-      alert("로그인이 필요합니다.");
-      router.push("/login");
+  const handleChat = async () => {
+    if (!currentUser) { router.push("/login"); return; }
+
+    const res = await fetch(`/api/dm?targetId=${userId}`);
+    const data = await res.json();
+
+    if (!res.ok || !data.matchId) {
+      showToast(data.error || "채팅방을 열 수 없어요.", "error");
       return;
     }
+
     onClose();
-    router.push(`/chat?worker=${userId}`);
+    router.push(`/chat/${data.matchId}`);
   };
+
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   const handleBlock = async () => {
     if (!currentUser) return;
+    if (!isBlocked) {
+      setShowBlockConfirm(true);
+      return;
+    }
+    // 차단 해제 (confirm 불필요)
     setBlocking(true);
-    if (isBlocked) {
-      // 차단 해제
-      const { error } = await supabase
-        .from("user_blocks")
-        .delete()
-        .eq("blocker_id", currentUser.id)
-        .eq("blocked_id", userId);
-
-      if (!error) {
-        setIsBlocked(false);
-        alert("차단이 해제되었습니다.");
-      } else {
-        alert("차단 해제 실패: " + error.message);
-      }
+    const { error } = await supabase
+      .from("user_blocks")
+      .delete()
+      .eq("blocker_id", currentUser.id)
+      .eq("blocked_id", userId);
+    if (!error) {
+      setIsBlocked(false);
+      showToast("차단이 해제되었습니다.");
     } else {
-      // 차단 설정
-      const confirmed = window.confirm("이 사용자를 차단하시겠습니까?\n차단 시 회원님의 대타 공고 지원이 제한되며 메시지 수신이 차단됩니다.");
-      if (!confirmed) {
-        setBlocking(false);
-        return;
-      }
-      const { error } = await supabase
-        .from("user_blocks")
-        .insert({
-          blocker_id: currentUser.id,
-          blocked_id: userId,
-        });
+      showToast("차단 해제 실패: " + error.message, "error");
+    }
+    setBlocking(false);
+  };
 
-      if (!error) {
-        setIsBlocked(true);
-        alert("사용자가 차단되었습니다.");
-      } else {
-        alert("차단 처리 실패: " + error.message);
-      }
+  const confirmBlock = async () => {
+    if (!currentUser) return;
+    setShowBlockConfirm(false);
+    setBlocking(true);
+    const { error } = await supabase
+      .from("user_blocks")
+      .insert({ blocker_id: currentUser.id, blocked_id: userId });
+    if (!error) {
+      setIsBlocked(true);
+      showToast("사용자가 차단되었습니다.");
+    } else {
+      showToast("차단 처리 실패: " + error.message, "error");
     }
     setBlocking(false);
   };
@@ -142,6 +148,28 @@ export default function UserProfileBottomSheet({
   const hasBankbook = !!profile?.user?.bank_verified;
 
   return (
+    <>
+    {ToastUI}
+    {showBlockConfirm && (
+      <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:1100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+        <div style={{ background:"var(--surface)", borderRadius:20, padding:24, width:"100%", maxWidth:340 }}>
+          <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", margin:"0 0 8px" }}>🚫 차단하기</p>
+          <p style={{ fontSize:13, color:"var(--text-muted)", margin:"0 0 20px", lineHeight:1.6 }}>
+            차단 시 이 사용자의 대타 공고 지원이 제한되며 메시지 수신이 차단됩니다.
+          </p>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={() => setShowBlockConfirm(false)}
+              style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:12, fontSize:13, fontWeight:700, color:"var(--text)", cursor:"pointer" }}>
+              취소
+            </button>
+            <button onClick={confirmBlock}
+              style={{ flex:1, background:"#ef4444", border:"none", borderRadius:12, padding:12, fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer" }}>
+              차단하기
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 1000,
       display: "flex", alignItems: "flex-end", justifyContent: "center"
@@ -281,5 +309,6 @@ export default function UserProfileBottomSheet({
         )}
       </div>
     </div>
+    </>
   );
 }

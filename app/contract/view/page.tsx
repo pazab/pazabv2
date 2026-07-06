@@ -63,13 +63,25 @@ function ContractViewContent() {
   async function handleAgree() {
     if (!contract) return;
     setAgreeing(true);
-    const { error } = await supabase.from("contracts")
-      .update({ worker_signed: true, status: "active", worker_signed_at: new Date().toISOString() })
-      .eq("id", contract.id);
-    if (!error) {
+    const res = await fetch("/api/contract", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "sign",
+        contractId: contract.id,
+        teamMemberId: contract.team_member_id || memberId || null,
+        matchId: contract.match_id || matchId || null,
+        workerId: contract.worker_id || null,
+        employerId: contract.employer_id || null,
+        isHired: true,
+      }),
+    });
+    if (res.ok) {
       showToast("✅ 계약서에 동의했어요!");
       setShowAgreeModal(false);
       setTimeout(() => router.replace("/myteam"), 800);
+    } else {
+      showToast("서명 처리 중 오류가 발생했어요.", "error");
     }
     setAgreeing(false);
   }
@@ -500,10 +512,6 @@ function ContractViewContent() {
             <button onClick={print}
               style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
               📄 화면인쇄
-            </button>
-            <button onClick={() => router.push(`/contract?memberId=${contract.team_member_id || memberId}&mode=update${fromTab ? `&tab=${fromTab}` : ""}`)}
-              style={{ flex:1.2, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
-              ✏️ 계약서수정
             </button>
             <button onClick={downloadPDF} disabled={downloading}
               style={{ flex:1.8, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", color:"#fff", fontWeight:700, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>

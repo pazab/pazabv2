@@ -25,8 +25,10 @@ function PayslipContent() {
   };
 
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const initYear = parseInt(sp.get("year") || "") || now.getFullYear();
+  const initMonth = parseInt(sp.get("month") || "") || (now.getMonth() + 1);
+  const [year, setYear] = useState(initYear);
+  const [month, setMonth] = useState(initMonth);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [memo, setMemo] = useState("");
   const [existingPayslip, setExistingPayslip] = useState<any>(null);

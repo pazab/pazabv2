@@ -135,7 +135,7 @@ function ContractContent() {
     workDaysMon: false, workDaysTue: false, workDaysWed: false,
     workDaysThu: false, workDaysFri: false, workDaysSat: false, workDaysSun: false,
     workDaysMode: "check", workDaysText: "", perDayHours: false,
-    workStart: "", workEnd: "", breakTime: "30", noBreak: false,
+    workStart: "09:00", workEnd: "18:00", breakTime: "30", noBreak: false,
     workStartMon: "09:00", workEndMon: "18:00", breakTimeMon: "30",
     workStartTue: "09:00", workEndTue: "18:00", breakTimeTue: "30",
     workStartWed: "09:00", workEndWed: "18:00", breakTimeWed: "30",
@@ -143,7 +143,7 @@ function ContractContent() {
     workStartFri: "09:00", workEndFri: "18:00", breakTimeFri: "30",
     workStartSat: "09:00", workEndSat: "18:00", breakTimeSat: "30",
     workStartSun: "09:00", workEndSun: "18:00", breakTimeSun: "30",
-    weeklyHours: "", dailyHours: "",
+    weeklyHours: "40", dailyHours: "8",
     wage: "", payDay: "말일", payMethod: "계좌이체", bankAccount: "",
     insEmp: false, insAcc: false, insPension: false, insHealth: false,
     contractDate: "",
@@ -177,6 +177,7 @@ function ContractContent() {
     if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
     return age;
   };
+
 
   const updateField = (k: string, v: any) => {
     setF((p) => {
@@ -547,8 +548,8 @@ function ContractContent() {
       startDate: `${md.getFullYear()}. ${String(md.getMonth() + 1).padStart(2, "0")}. ${String(md.getDate()).padStart(2, "0")}.`,
       ...dayFlags,
       ...dayHours,
-      workStart: ws, workEnd: we,
-      dailyHours: ws && we ? String(Math.round((parseInt(we) - parseInt(ws)) * 10) / 10) : "",
+      workStart: ws || "09:00", workEnd: we || "18:00",
+      dailyHours: ws && we ? String(Math.round((parseInt(we) - parseInt(ws)) * 10) / 10) : "8",
       wage: ep?.wage ? Number(ep.wage).toLocaleString() : "",
       weeklyHoliday: defaultHoliday,
       contractDate: `${today.getFullYear()}년  ${String(today.getMonth() + 1).padStart(2, "0")}월  ${String(today.getDate()).padStart(2, "0")}일`,
@@ -616,11 +617,17 @@ function ContractContent() {
         if (!f.biz.trim()) return "사업체명을 입력해주세요.";
         if (!f.ceo.trim()) return "대표자 성명을 입력해주세요.";
         if (!f.bizAddr.trim()) return "사업장 주소를 입력해주세요.";
+        if (!f.ceoPhone.trim()) return "대표자 연락처를 입력해주세요.";
         return null;
       case 1: // 근로자
         if (!f.worker.trim()) return "근로자 성명을 입력해주세요.";
         if (!f.workerBirth.trim()) return "근로자 생년월일을 입력해주세요.";
         if (!f.startDate.trim()) return "계약 시작일을 입력해주세요.";
+        if (!f.workerPhone.trim()) return "근로자 연락처를 입력해주세요.";
+        const workerPhoneRegex = /^01[016789]-\d{3,4}-\d{4}$/;
+        if (!workerPhoneRegex.test(f.workerPhone.trim())) {
+          return "근로자 연락처를 올바른 휴대폰 번호 형식(010-XXXX-XXXX)으로 입력해주세요.";
+        }
         return null;
       case 2: // 근무
         if (!f.jobDesc.trim()) return "담당업무를 입력해주세요.";
@@ -725,14 +732,33 @@ function ContractContent() {
         }).eq("id", selMatch.id);
       }
 
-      // 3. 채팅방 알림 메시지 전송
+      // 3. 채팅방 알림 메시지 전송 및 채팅방 연동
       let sendMatchId = matchId || selMatch.match_id;
       if (!sendMatchId && selMatch.id) {
-        // team_member에서 match_id 조회
         const { data: tmRow } = await supabase.from("team_members")
           .select("match_id").eq("id", selMatch.id).maybeSingle();
         sendMatchId = tmRow?.match_id || null;
       }
+
+      // 만약 채팅방(matches)이 연동되어 있지 않다면 accepted 상태로 신규 개설
+      if (!sendMatchId && selMatch.employer_id && selMatch.worker_id) {
+        const { data: newMatch, error: matchErr } = await supabase
+          .from("matches")
+          .insert({
+            employer_id: selMatch.employer_id,
+            worker_id: selMatch.worker_id,
+            status: "accepted"
+          })
+          .select("id")
+          .single();
+        if (!matchErr && newMatch) {
+          sendMatchId = newMatch.id;
+          await supabase.from("team_members")
+            .update({ match_id: sendMatchId })
+            .eq("id", selMatch.id);
+        }
+      }
+
       if (sendMatchId) {
         // match가 pending 상태면 accepted로 올려야 채팅방에 표시됨
         await supabase.from("matches")
@@ -758,16 +784,35 @@ function ContractContent() {
         }
       }
 
-      // push 알림 전송
+      // 4. 인앱 알림 & push 알림 전송
       if (selMatch?.worker_id) {
         const pushMsg = saveMode === "new"
           ? "📄 새 근로계약서가 발행됐어요. 확인 후 서명해주세요."
           : "📄 근로계약서가 수정됐어요. 다시 확인 후 서명해주세요.";
+
+        // 인앱 알림 발송 (알림 배지 실시간 동기화)
+        try {
+          await fetch("/api/notifications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: selMatch.worker_id,
+              type: "contract",
+              title: `📄 ${selEp?.business_name || "매장"}에서 근로계약서가 발행됐어요!`,
+              body: pushMsg,
+              data: { url: `/contract/view?memberId=${selMatch.id}` },
+            }),
+          });
+        } catch (notifErr) {
+          console.warn("인앱 알림 발송 실패:", notifErr);
+        }
+
+        // 모바일 브라우저 푸쉬 알림 발송
         sendPushNotification({
           userId: selMatch.worker_id,
           title: "근로계약서 서명 요청",
           body: pushMsg,
-          url: sendMatchId ? `/contract/view?matchId=${sendMatchId}` : `/worker/mywork`,
+          url: `/contract/view?memberId=${selMatch.id}`,
           tag: "contract",
         });
       }
@@ -1469,11 +1514,11 @@ function ContractContent() {
                       const age = f.workerBirth ? calcAge(f.workerBirth) : null;
                       if (age === null) return null;
                       if (age < 18) return (
-                        <div style={{ marginTop: 8, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.4)", borderRadius: 12, padding: "10px 14px" }}>
+                        <div style={{ marginTop: 8, background: "rgba(251,146,60,0.12)", border: "1px solid rgba(251,146,60,0.4)", borderRadius: 12, padding: "10px 14px" }}>
                           <p style={{ fontSize: 12, fontWeight: 700, color: "#fb923c", margin: "0 0 4px" }}>👨‍👩‍👦 미성년자 ({age}세) — 연소근로자 계약서 자동 선택</p>
                           <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
-                            근로기준법상 만 18세 미만은 친권자(부모) 동의서가 필요합니다.<br />
-                            계약서 종류가 <strong style={{ color: "#fb923c" }}>연소근로자 표준근로계약서</strong>로 자동 변경됐어요.
+                            근로기준법상 만 18세 미만 근로자는 <strong style={{ color: "#fb923c" }}>보호자(친권자/후견인) 동의서 작성이 법적 필수</strong>입니다.<br />
+                            이에 따라 마지막 단계에서 보호자 동의 항목이 활성화되며, 계약서가 <strong style={{ color: "#fb923c" }}>연소근로자 표준근로계약서</strong>로 자동 전환되었습니다.
                           </p>
                         </div>
                       );
@@ -1786,7 +1831,7 @@ function ContractContent() {
                             return (
                               <div key={d}>
                                 <p style={{ fontSize: 12, fontWeight: 700, margin: "0 0 6px" }}>{d}요일</p>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px", gap: 6 }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px", gap: 6, alignItems: "center" }}>
                                   <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyStart]} onChange={e => updateField(keyStart, e.target.value)} />
                                   <input type="time" style={{ ...inputStyle, fontSize: 12 }} value={(f as any)[keyEnd]} onChange={e => updateField(keyEnd, e.target.value)} />
                                   <div style={{ position: "relative" }}>
@@ -2091,7 +2136,7 @@ function ContractContent() {
                 ) : (
                   <button onClick={saveContract} disabled={saving}
                     style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", color: "#fff", fontWeight: 700, padding: "13px", borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
-                    {saving ? "저장 중..." : "💾 계약서 저장"}
+                    {saving ? "발행 중..." : "📨 계약서 발행"}
                   </button>
                 )}
               </div>
@@ -2125,19 +2170,7 @@ function ContractContent() {
             <ContractOfficialForm data={f} contractType={ct} />
           </div>
 
-          {/* 하단 플로팅 액션 바 */}
-          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: "10px 16px 14px", background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--border)", maxWidth: 1200, margin: "0 auto", zIndex: 10 }}>
-            <div style={{ display: "flex", gap: 6, maxWidth: 480, margin: "0 auto" }}>
-              <button onClick={print}
-                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: "12px 10px", borderRadius: 12, fontSize: 12, cursor: "pointer" }}>
-                📄 화면인쇄
-              </button>
-              <button onClick={downloadPDF} disabled={saving}
-                style={{ flex: 2, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", color: "#fff", fontWeight: 700, padding: "12px 10px", borderRadius: 12, fontSize: 12, cursor: "pointer" }}>
-                📥 공식 양식 PDF
-              </button>
-            </div>
-          </div>
+          {/* 하단 플로팅 액션 바 제거 (작성 중에는 불필요) */}
         </div>
       )}
     </main>

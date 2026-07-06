@@ -192,15 +192,17 @@ function WorkerProfileContent() {
 
     const decodedReturn = currReturnTo ? decodeURIComponent(currReturnTo) : "";
     if (currIsNew || (decodedReturn.startsWith("/") && !decodedReturn.includes("mypage"))) {
-      // 신규 등록 시 users.region으로 희망지역 자동채움
+      // 신규 등록 시 users 기본 정보 자동 채움
       const { data: userData } = await supabase.from("users")
-        .select("region").eq("id", session.user.id).maybeSingle();
+        .select("region, nickname, bio, profile_image").eq("id", session.user.id).maybeSingle();
       if (userData?.region) {
         const parts = userData.region.split(" ");
         setSido(parts[0] || "");
         setGugun(parts[1] || "");
         setRegionSearch(userData.region);
       }
+      if (userData?.bio) setBio(userData.bio);
+      if (userData?.profile_image) setImageUrls([userData.profile_image]);
       setLoading(false);
       return;
     }

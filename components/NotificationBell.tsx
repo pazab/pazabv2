@@ -29,7 +29,7 @@ export default function NotificationBell() {
         .channel(`notif-bell-${user.id}-${Date.now()}`)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
+          { event: "*", schema: "public", table: "notifications" },
           async (payload: any) => {
             if (payload.eventType === "INSERT") {
               setUnread(prev => prev + 1);

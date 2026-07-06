@@ -206,13 +206,11 @@ export default function MyWorkPage() {
             {tab === "current" && (
               <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
                 {current.length === 0 ? (
-                  <div style={{ textAlign:"center", padding:"60px 0" }}>
-                    <div style={{ fontSize:48, marginBottom:12 }}>🏪</div>
-                    <p style={{ color:"var(--text-muted)", fontSize:14 }}>현재 소속 매장이 없어요</p>
-                    <p style={{ color:"var(--text-muted)", fontSize:12, marginTop:4 }}>채용 확정 시 자동으로 표시돼요</p>
+                  <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:14, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <span style={{ color:"var(--text-muted)", fontSize:13 }}>소속 매장이 없어요</span>
                     <button onClick={() => router.push("/explore")}
-                      style={{ marginTop:16, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:12, padding:"10px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                      공고 탐색하기 →
+                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", whiteSpace:"nowrap" }}>
+                      공고 탐색 →
                     </button>
                   </div>
                 ) : current.map(m => (
@@ -278,9 +276,8 @@ export default function MyWorkPage() {
             {tab === "history" && (
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                 {history.length === 0 ? (
-                  <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>
-                    <div style={{ fontSize:40, marginBottom:8 }}>📋</div>
-                    <p style={{ fontSize:14 }}>근무 이력이 없어요</p>
+                  <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:14, padding:"12px 16px" }}>
+                    <span style={{ color:"var(--text-muted)", fontSize:13 }}>근무 이력이 없어요</span>
                   </div>
                 ) : history.map(m => (
                   <div key={m.id} style={{ background:"var(--surface)", borderRadius:14, padding:"14px 16px", border:"1px solid var(--border)", display:"flex", gap:12, alignItems:"center" }}>

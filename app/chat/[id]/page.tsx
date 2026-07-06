@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -23,6 +23,9 @@ export default function ChatRoomPage() {
   const [showHireProposalModal, setShowHireProposalModal] = useState(false);
   const [showContractModal, setShowContractModal] = useState(false);
   const [contractData, setContractData] = useState<any>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
   const [contractStatus, setContractStatus] = useState<"none"|"pending"|"done">("none");
   const [leaveStep, setLeaveStep] = useState<"confirm" | "review">("confirm");
   const [quickReview, setQuickReview] = useState<"good" | "bad" | null>(null);
@@ -86,6 +89,21 @@ export default function ChatRoomPage() {
     else if (data.worker_signed) setContractStatus("done");
     else setContractStatus("pending");
   };
+
+  const goToUpdateContract = async () => {
+    if (contractData?.team_member_id) {
+      router.push(`/contract?memberId=${contractData.team_member_id}&mode=update&from=chat`);
+      return;
+    }
+    const { data: tm } = await supabase.from("team_members")
+      .select("id").eq("match_id", matchId).maybeSingle();
+    if (tm) {
+      router.push(`/contract?memberId=${tm.id}&mode=update&from=chat`);
+    } else {
+      router.push(`/contract?matchId=${matchId}&mode=update&from=chat`);
+    }
+  };
+
 
   const init = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -298,12 +316,39 @@ export default function ChatRoomPage() {
     if (!text) setInput("");
     setSending(true);
     const counterpartId = match?.employer_id === userId ? match?.worker_id : match?.employer_id;
+
+    // 낙관적 업데이트 — realtime 지연/누락과 무관하게 즉시 표시
+    const tempId = `temp-${Date.now()}`;
+    const tempMsg = {
+      id: tempId,
+      match_id: matchId,
+      sender_id: userId,
+      receiver_id: counterpartId,
+      message: msg,
+      message_type: type,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempMsg]);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
     try {
-      await fetch("/api/chat", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ matchId, senderId: userId, receiverId: counterpartId, message: msg, messageType: type }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data?.id) {
+          setMessages(prev => {
+            // realtime이 먼저 추가했으면 temp만 제거, 아니면 temp → 실제 레코드 교체
+            const alreadyAdded = prev.some(m => m.id === data.data.id);
+            if (alreadyAdded) return prev.filter(m => m.id !== tempId);
+            return prev.map(m => m.id === tempId ? data.data : m);
+          });
+        }
+      }
     } catch {}
     setSending(false);
     inputRef.current?.focus();
@@ -705,7 +750,7 @@ export default function ChatRoomPage() {
                           📄 계약서 확인하기
                         </button>
                         {isEmployer && (
-                          <button onClick={() => router.push(`/contract?matchId=${matchId}&mode=update&from=chat`)}
+                          <button onClick={goToUpdateContract}
                             style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
                             ✏️ 수정하기
                           </button>
@@ -715,7 +760,7 @@ export default function ChatRoomPage() {
                     {/* 수정 요청 → 사장님: 계약서 수정하기 버튼 */}
                     {msg.message?.includes("수정 요청") && isEmployer && (
                       <div style={{ marginTop: 10 }}>
-                        <button onClick={() => router.push(`/contract?matchId=${matchId}&mode=update&from=chat`)}
+                        <button onClick={goToUpdateContract}
                           style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 10, padding: "8px 16px", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           ✏️ 계약서 수정하기
                         </button>
@@ -729,7 +774,7 @@ export default function ChatRoomPage() {
                           📄 계약서 보기
                         </button>
                         {isEmployer && (
-                          <button onClick={() => router.push(`/contract?matchId=${matchId}&mode=update&from=chat`)}
+                          <button onClick={goToUpdateContract}
                             style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
                             📝 재계약하기
                           </button>
@@ -1039,11 +1084,9 @@ export default function ChatRoomPage() {
           <div style={{ padding:"12px 16px 24px", background:"rgba(24,24,27,0.98)", borderTop:"1px solid var(--border)", flexShrink:0 }}>
             {!isEmployer && contractData && !contractData.worker_signed ? (
               <div style={{ display:"flex", gap:8 }}>
-                <button onClick={async () => {
-                  const reason = prompt("수정 요청 내용을 입력해주세요:");
-                  if (!reason) return;
-                  await sendMessage(`⚠️ 계약서 수정 요청\n"${reason}"`, "system");
-                  setShowContractModal(false);
+                <button onClick={() => {
+                  setRevisionReason("");
+                  setShowRevisionModal(true);
                 }}
                   style={{ flex:1, background:"var(--surface2)", border:"1px solid #f59e0b40", color:"#f59e0b", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
                   ⚠️ 수정 요청
@@ -1056,7 +1099,7 @@ export default function ChatRoomPage() {
             ) : isEmployer ? (
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                 <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={() => { setShowContractModal(false); router.push(`/contract?matchId=${matchId}&mode=update&from=chat`); }}
+                  <button onClick={() => { setShowContractModal(false); goToUpdateContract(); }}
                     style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
                     ✏️ 수정하기
                   </button>
@@ -1066,14 +1109,7 @@ export default function ChatRoomPage() {
                   </button>
                 </div>
                 {contractData && !contractData.worker_signed && (
-                  <button onClick={async () => {
-                    await supabase.from("contracts").update({ status:"cancelled" }).eq("id", contractData.id);
-                    await supabase.from("team_members").update({ contract_status:"none" }).eq("id", contractData.team_member_id);
-                    await sendMessage("❌ 계약서 발행이 취소됐어요.", "system");
-                    setContractData(null);
-                    setContractStatus("none");
-                    setShowContractModal(false);
-                  }}
+                  <button onClick={() => setShowCancelConfirm(true)}
                     style={{ width:"100%", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", color:"#ef4444", fontWeight:600, padding:12, borderRadius:14, fontSize:13, cursor:"pointer" }}>
                     🗑️ 계약서 발행 취소
                   </button>
@@ -1085,6 +1121,119 @@ export default function ChatRoomPage() {
                 닫기
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 계약서 발행 취소 확인 모달 ── */}
+      {showCancelConfirm && contractData && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 9999, padding: 24
+        }}>
+          <div style={{
+            background: "var(--surface)", borderRadius: 20,
+            width: "100%", maxWidth: 360, padding: 24,
+            border: "1px solid var(--border)",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+            textAlign: "center"
+          }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: "0 0 10px" }}>
+              계약서 발행 취소
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
+              정말로 계약서 발행을 취소하시겠습니까?<br />
+              취소하시면 알바생의 <span style={{ fontWeight: 700, color: "#f59e0b" }}>서명 대기</span> 상태가 해제되며, 계약서가 무효 처리됩니다.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowCancelConfirm(false)}
+                style={{ flex: 1, padding: "12px", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                닫기
+              </button>
+              <button onClick={async () => {
+                await supabase.from("contracts").update({ status:"cancelled" }).eq("id", contractData.id);
+                await supabase.from("team_members").update({ contract_status:"none" }).eq("id", contractData.team_member_id);
+                await sendMessage("❌ 계약서 발행이 취소됐어요.", "system");
+                setContractData(null);
+                setContractStatus("none");
+                setShowCancelConfirm(false);
+                setShowContractModal(false);
+              }}
+                style={{ flex: 1, padding: "12px", background: "#ef4444", border: "none", color: "#fff", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                발행 취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 계약서 수정 요청 모달 ── */}
+      {showRevisionModal && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 9999, padding: 24
+        }}>
+          <div style={{
+            background: "var(--surface)", borderRadius: 20,
+            width: "100%", maxWidth: 380, padding: 24,
+            border: "1px solid var(--border)",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+          }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
+              ✏️ 계약서 수정 요청
+            </h3>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 14px", lineHeight: 1.5 }}>
+              사장님에게 보낼 수정 요청 내용을 상세히 입력해 주세요.
+            </p>
+            <textarea
+              value={revisionReason}
+              onChange={e => setRevisionReason(e.target.value)}
+              placeholder="예: 시급을 10,000원에서 10,500원으로 변경해 주세요. / 근무 요일을 화, 목에서 월, 수, 금으로 조정해 주세요."
+              style={{
+                width: "100%", height: 100,
+                background: "var(--surface2)",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                padding: 12,
+                color: "var(--text)",
+                fontSize: 13,
+                fontFamily: "inherit",
+                resize: "none",
+                outline: "none",
+                boxSizing: "border-box",
+                marginBottom: 20
+              }}
+            />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setShowRevisionModal(false); setRevisionReason(""); }}
+                style={{ flex: 1, padding: "12px", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                취소
+              </button>
+              <button
+                disabled={!revisionReason.trim()}
+                onClick={async () => {
+                  if (!revisionReason.trim()) return;
+                  await sendMessage(`⚠️ 계약서 수정 요청\n"${revisionReason.trim()}"`, "system");
+                  setShowRevisionModal(false);
+                  setShowContractModal(false);
+                }}
+                style={{
+                  flex: 1, padding: "12px",
+                  background: revisionReason.trim() ? "linear-gradient(135deg,#f59e0b,#d97706)" : "var(--border)",
+                  border: "none", color: "#fff", borderRadius: 12,
+                  cursor: revisionReason.trim() ? "pointer" : "default",
+                  fontSize: 13, fontWeight: 700,
+                  opacity: revisionReason.trim() ? 1 : 0.5
+                }}
+              >
+                전송하기
+              </button>
+            </div>
           </div>
         </div>
       )}

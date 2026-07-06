@@ -204,7 +204,7 @@ export default function InviteBottomSheet({ isOpen, onClose, onSuccess }: Invite
           style={{
             width: 40,
             height: 4,
-            background: "rgba(255,255,255,0.15)",
+            background: "var(--border)",
             borderRadius: 2,
             alignSelf: "center",
             marginBottom: -4,
@@ -340,11 +340,11 @@ export default function InviteBottomSheet({ isOpen, onClose, onSuccess }: Invite
             초대할 알바생 검색 <span style={{ color: "#ef4444" }}>*</span>
           </p>
           {/* 안내 배너 */}
-          <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 10, padding: "9px 12px", marginBottom: 10, display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 10, padding: "9px 12px", marginBottom: 10, display: "flex", gap: 8, alignItems: "flex-start" }}>
             <span style={{ fontSize: 15, flexShrink: 0 }}>💡</span>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: 0, lineHeight: 1.6 }}>
-              초대하려는 직원이 <strong style={{ color: "rgba(255,255,255,0.8)" }}>파잡에 먼저 가입</strong>되어 있어야 해요.<br />
-              가입 시 설정한 <strong style={{ color: "rgba(255,255,255,0.8)" }}>닉네임</strong>으로 검색할 수 있어요.
+            <p style={{ fontSize: 11, color: "var(--text-sub)", margin: 0, lineHeight: 1.6 }}>
+              초대하려는 직원이 <strong style={{ color: "var(--purple-text)", fontWeight: 700 }}>파잡에 먼저 가입</strong>되어 있어야 해요.<br />
+              가입 시 설정한 <strong style={{ color: "var(--purple-text)", fontWeight: 700 }}>닉네임</strong>으로 검색할 수 있어요.
             </p>
           </div>
           <div style={{ position: "relative" }}>
@@ -402,9 +402,9 @@ export default function InviteBottomSheet({ isOpen, onClose, onSuccess }: Invite
           )}
           {!searching && searchDone && !selected && query.trim() && results.length === 0 && (
             <div style={{ marginTop: 8, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "9px 12px" }}>
-              <p style={{ fontSize: 11, color: "#f87171", margin: 0, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 11, color: "#ef4444", margin: 0, lineHeight: 1.6 }}>
                 <strong>'{query}'</strong> 닉네임을 가진 유저를 찾을 수 없어요.<br />
-                <span style={{ color: "rgba(255,255,255,0.4)" }}>직원이 아직 파잡에 가입하지 않았을 수 있어요. 가입 후 다시 검색해주세요.</span>
+                <span style={{ color: "var(--text-muted)" }}>직원이 아직 파잡에 가입하지 않았을 수 있어요. 가입 후 다시 검색해주세요.</span>
               </p>
             </div>
           )}

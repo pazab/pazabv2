@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// GET은 anon(RLS), POST는 service_role(서버에서 시스템 메시지 삽입)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// 모두 service_role 사용 — server-side anon은 auth.uid()=null이라 RLS 통과 불가
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -23,7 +19,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 현재 match 정보
-    const { data: match } = await supabase
+    const { data: match } = await supabaseAdmin
       .from("matches")
       .select("employer_id, worker_id, status, progress_status, match_score, interview_at, interview_memo")
       .eq("id", matchId)
@@ -32,7 +28,7 @@ export async function GET(req: NextRequest) {
     if (!match) return NextResponse.json({ error: "매칭 없음", success: false }, { status: 404 });
 
     // 같은 두 사람의 모든 match_id 가져오기 (B방식: 이전 대화 이어가기)
-    const { data: allMatches } = await supabase
+    const { data: allMatches } = await supabaseAdmin
       .from("matches")
       .select("id, created_at")
       .eq("employer_id", match.employer_id)
@@ -41,7 +37,7 @@ export async function GET(req: NextRequest) {
 
     const allMatchIds = (allMatches || []).map(m => m.id);
 
-    const { data: messages, error } = await supabase
+    const { data: messages, error } = await supabaseAdmin
       .from("chats")
       .select("*")
       .in("match_id", allMatchIds)
@@ -50,7 +46,7 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
 
     // 읽음 처리 - 같은 두 사람 모든 채팅방의 내가 받은 메시지
-    await supabase
+    await supabaseAdmin
       .from("chats")
       .update({ is_read: true })
       .in("match_id", allMatchIds)
@@ -58,7 +54,7 @@ export async function GET(req: NextRequest) {
       .eq("is_read", false);
 
     const counterpartId = match?.employer_id === userId ? match?.worker_id : match?.employer_id;
-    const { data: counterpart } = await supabase
+    const { data: counterpart } = await supabaseAdmin
       .from("users")
       .select("id, nickname, name, user_type, grade, trust_score, avatar_url")
       .eq("id", counterpartId)
@@ -67,7 +63,7 @@ export async function GET(req: NextRequest) {
     // 사장님이면 employer_profiles도
     let counterpartProfile = null;
     if (counterpart?.user_type === "employer") {
-      const { data: emp } = await supabase
+      const { data: emp } = await supabaseAdmin
         .from("employer_profiles")
         .select("business_name, business_type")
         .eq("user_id", counterpartId)
