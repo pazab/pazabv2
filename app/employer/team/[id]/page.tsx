@@ -6,6 +6,7 @@ import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { getTrustGrade } from "@/lib/utils";
+import DateWheelPicker from "@/components/DateWheelPicker";
 
 // ─────────────────────────────────────────────
 // 근태 이력 타임라인 (아코디언, 기본 접힘)
@@ -263,6 +264,8 @@ export default function TeamMemberPage() {
   const [docsOpen, setDocsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(true);
   const [showResignModal, setShowResignModal] = useState(false);
+  const [editHireDate, setEditHireDate] = useState(false);
+  const [hireDateInput, setHireDateInput] = useState("");
 
   // 서류 현황
   const [docsSubmitted, setDocsSubmitted] = useState<Record<string, boolean>>({});
@@ -281,6 +284,7 @@ export default function TeamMemberPage() {
   const [attLogRefreshKey, setAttLogRefreshKey] = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [batchContract, setBatchContract] = useState<{ id: string; startDate: string; endDate: string | null } | null>(null);
+  const [monthBatchTarget, setMonthBatchTarget] = useState<{ id: string; startDate: string; endDate: string | null } | null>(null);
 
   // 근무조건 수정 모달
   const [showWorkModal, setShowWorkModal] = useState(false);
@@ -344,14 +348,17 @@ export default function TeamMemberPage() {
 
       // team_member_id 기준으로 계약서 조회 (match_id가 없는 신규 계약 흐름 대응)
       const { data: contract } = await supabase.from("contracts")
-        .select("wage, work_days, work_hours, contract_data")
+        .select("wage, wage_type, work_days, work_hours, contract_data")
         .eq("team_member_id", data.id)
         .neq("status", "cancelled")
         .order("created_at", { ascending: false })
         .limit(1).maybeSingle();
 
+      let wage_type: string = "hourly";
       if (contract) {
         const cd = contract.contract_data;
+        if (cd?.wageType) wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        else if (contract.wage_type) wage_type = contract.wage_type;
         if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
         else if (contract.wage) wage = contract.wage;
         if (cd) {
@@ -373,8 +380,9 @@ export default function TeamMemberPage() {
         }
       }
 
-      setMember({ ...data, worker: (data as any).users, wage, work_days, work_hours });
+      setMember({ ...data, worker: (data as any).users, wage, work_days, work_hours, wage_type });
       setDocsSubmitted((data as any).docs_submitted || {});
+      setHireDateInput(data.hire_date || "");
 
       // 미성년자 여부 (계약서 타입 or 생년월일)
       const contractData = data.match_id ? null : null; // 아래 contracts에서 확인
@@ -595,9 +603,29 @@ export default function TeamMemberPage() {
   const expectedHours = (thisMonthStats.normal + thisMonthStats.late + thisMonthStats.early_leave) * contractHours;
   const overtimeHours = Math.max(0, totalActualHours - expectedHours);
   const wage = member?.wage || 0;
-  const regularPay = Math.min(totalActualHours, expectedHours) * wage;
-  const overtimePay = overtimeHours * wage * 1.5;
-  const estimatedPay = Math.round(regularPay + overtimePay);
+  const wageType: string = member?.wage_type || "hourly";
+  const workedDays = thisMonthStats.normal + thisMonthStats.late + thisMonthStats.early_leave;
+  const estimatedPay = (() => {
+    if (wageType === "monthly") {
+      // 월급: 예정 출근일 기준 일할 계산 + 초과근무 시 시급 환산(월급/209h) × 1.5
+      const dailyRate = scheduledDaysInMonth > 0 ? wage / scheduledDaysInMonth : 0;
+      const base = Math.round(dailyRate * workedDays);
+      const hourlyEquiv = wage / 209;
+      const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
+      return base + overtime;
+    } else if (wageType === "daily") {
+      // 일급: 출근일 × 일급 + 초과근무 × (일급/contractHours) × 1.5
+      const base = workedDays * wage;
+      const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
+      const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
+      return base + overtime;
+    } else {
+      // 시급 (hourly): 기존 계산
+      const regularPay = Math.min(totalActualHours, expectedHours) * wage;
+      const overtimePay = overtimeHours * wage * 1.5;
+      return Math.round(regularPay + overtimePay);
+    }
+  })();
 
   const todayStr = (() => {
     const d = new Date();
@@ -646,8 +674,14 @@ export default function TeamMemberPage() {
                   </span>
                 </div>
                 {pType && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", margin: "0 0 2px" }}>{PERSONALITY_EMOJI[pType]} {pType}</p>}
-                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0 }}>
-                  입사일 {member.hire_date || "미설정"}
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                  입사일 {member.hire_date || "미설정"}{" "}
+                  <button onClick={() => {
+                    setHireDateInput(member.hire_date || new Date().toISOString().split("T")[0]);
+                    setEditHireDate(true);
+                  }} style={{ fontSize: 10, color: "#fff", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer" }}>
+                    수정
+                  </button>
                 </p>
               </div>
             </div>
@@ -797,6 +831,16 @@ export default function TeamMemberPage() {
                 disabled={`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7)}
                 style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--text-muted)", padding: "0 8px", opacity: `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}` >= todayStr.slice(0, 7) ? 0.3 : 1 }}>›</button>
             </div>
+            {(() => {
+              const signedC = contracts.find(c => c.worker_signed && c.employer_signed && c.status !== "cancelled" && c.status !== "superseded");
+              if (!signedC) return null;
+              return (
+                <button onClick={() => setMonthBatchTarget({ id: signedC.id, startDate: signedC.start_date, endDate: signedC.end_date })}
+                  style={{ background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.3)", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700, color: "#0ea5e9", cursor: "pointer" }}>
+                  📅 이달 소급
+                </button>
+              );
+            })()}
           </div>
 
           {/* 통계 4열 */}
@@ -824,10 +868,17 @@ export default function TeamMemberPage() {
           )}
           {/* 급여 요약 카드 */}
           <div style={{ background: "linear-gradient(135deg,#7c3aed15,#ec489915)", borderRadius: 12, padding: "12px 14px", marginBottom: 12, border: "1px solid #7c3aed30" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: overtimeHours > 0 ? 6 : 0 }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>총 근무시간</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{totalActualHours.toFixed(1)}시간</span>
-            </div>
+            {wageType === "monthly" ? (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: overtimeHours > 0 ? 6 : 0 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>출근 ({workedDays}/{scheduledDaysInMonth}일)</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{wage.toLocaleString()}원 일할 계산</span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: overtimeHours > 0 ? 6 : 0 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{wageType === "daily" ? `출근 ${workedDays}일` : `총 근무시간`}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{wageType === "daily" ? `${workedDays}일 × ${wage.toLocaleString()}원` : `${totalActualHours.toFixed(1)}시간`}</span>
+              </div>
+            )}
             {overtimeHours > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: "#f59e0b" }}>초과근무 (×1.5)</span>
@@ -1082,10 +1133,12 @@ export default function TeamMemberPage() {
                           </button>
                         )}
                         {isSigned && !isSuperseded && (
-                          <button onClick={() => setBatchContract({ id: c.id, startDate: c.start_date, endDate: c.end_date })}
-                            style={{ flex: 1, background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "var(--purple-text)", cursor: "pointer" }}>
-                            ⚡ 소급 등록
-                          </button>
+                          <>
+                            <button onClick={() => setBatchContract({ id: c.id, startDate: c.start_date, endDate: c.end_date })}
+                              style={{ flex: 1, background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "var(--purple-text)", cursor: "pointer" }}>
+                              ⚡ 전체 소급
+                            </button>
+                          </>
                         )}
                         {(!isLatest || isSuperseded) && (
                           <span style={{ flex: 1, textAlign: "center", fontSize: 11, color: "var(--text-muted)", padding: "8px", alignSelf: "center" }}>🔒 이력 보존</span>
@@ -1121,22 +1174,8 @@ export default function TeamMemberPage() {
                   );
                 })
               )}
-              <button onClick={async () => {
-                if (member.match_id) {
-                  router.push(`/contract?matchId=${member.match_id}`);
-                } else {
-                  const { data: newMatch, error } = await supabase.from("matches").insert({
-                    employer_id: member.employer_id,
-                    worker_id: member.worker_id,
-                    progress_status: "hired",
-                    hire_confirmed_by_employer: true,
-                    hire_confirmed_by_worker: true,
-                    match_score: 0,
-                  }).select("id").single();
-                  if (error || !newMatch) { showToast("오류: " + error?.message, "error"); return; }
-                  await supabase.from("team_members").update({ match_id: newMatch.id }).eq("id", member.id);
-                  router.push(`/contract?matchId=${newMatch.id}`);
-                }
+              <button onClick={() => {
+                router.push(`/contract?memberId=${member.id}`);
               }}
                 style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 13, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                 + 새 계약서 작성
@@ -1170,6 +1209,25 @@ export default function TeamMemberPage() {
         </div>
 
       </div>
+
+      {editHireDate && (
+        <DateWheelPicker
+          value={hireDateInput || new Date().toISOString().split("T")[0]}
+          onChange={v => setHireDateInput(v)}
+          onClose={() => setEditHireDate(false)}
+          onConfirm={async v => {
+            setHireDateInput(v);
+            const { error } = await supabase.from("team_members").update({ hire_date: v }).eq("id", memberId);
+            if (error) {
+              showToast("오류: " + error.message, "error");
+            } else {
+              showToast("입사일이 수정되었습니다.");
+              setMember((prev: any) => prev ? { ...prev, hire_date: v } : prev);
+            }
+            setEditHireDate(false);
+          }}
+        />
+      )}
 
       {/* ── 근태 입력 모달 ── */}
       {showAttModal && (
@@ -1518,6 +1576,65 @@ export default function TeamMemberPage() {
           </div>
         </div>
       )}
+
+      {/* ── 월별 소급 등록 — 월 선택 모달 ── */}
+      {monthBatchTarget && member && (() => {
+        const contractStart = new Date(monthBatchTarget.startDate);
+        const contractEnd = monthBatchTarget.endDate ? new Date(monthBatchTarget.endDate) : new Date(todayStr);
+        const capEnd = contractEnd > new Date(todayStr) ? new Date(todayStr) : contractEnd;
+
+        // 선택 가능한 월 목록 (계약 기간 내)
+        const months: { label: string; ym: string }[] = [];
+        const cur = new Date(contractStart.getFullYear(), contractStart.getMonth(), 1);
+        const endMonth = new Date(capEnd.getFullYear(), capEnd.getMonth(), 1);
+        while (cur <= endMonth) {
+          months.push({
+            label: `${cur.getFullYear()}년 ${cur.getMonth() + 1}월`,
+            ym: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`,
+          });
+          cur.setMonth(cur.getMonth() + 1);
+        }
+        months.reverse(); // 최신 월 위로
+
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 400, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+            onClick={() => setMonthBatchTarget(null)}>
+            <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: "24px 20px 40px", width: "100%", maxWidth: 480 }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>📅 월별 소급 등록</span>
+                <button onClick={() => setMonthBatchTarget(null)} style={{ background: "none", border: "none", fontSize: 20, color: "var(--text-muted)", cursor: "pointer" }}>✕</button>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
+                등록할 달을 선택하면 해당 월의 약정 근무일이 소급 등록돼요.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
+                {months.length === 0 ? (
+                  <p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: 20 }}>선택 가능한 월이 없습니다.</p>
+                ) : months.map(m => {
+                  // 해당 월의 계약 기간 내 시작/끝
+                  const [y, mo] = m.ym.split("-").map(Number);
+                  const monthStart = new Date(Math.max(new Date(`${m.ym}-01`).getTime(), contractStart.getTime()));
+                  const lastDay = new Date(y, mo, 0);
+                  const monthEnd = new Date(Math.min(lastDay.getTime(), capEnd.getTime()));
+                  const rangeStart = monthStart.toISOString().slice(0, 10);
+                  const rangeEnd = monthEnd.toISOString().slice(0, 10);
+                  return (
+                    <button key={m.ym} onClick={() => {
+                      setMonthBatchTarget(null);
+                      setBatchContract({ id: monthBatchTarget.id, startDate: rangeStart, endDate: rangeEnd });
+                    }}
+                      style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{m.label}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{rangeStart} ~ {rangeEnd}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── 근태 소급 등록 모달 ── */}
       {batchContract && member && (

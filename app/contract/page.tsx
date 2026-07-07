@@ -182,6 +182,46 @@ function ContractContent() {
   const updateField = (k: string, v: any) => {
     setF((p) => {
       const next = { ...p, [k]: v };
+      if (k === "breakStart" || k === "breakEnd") {
+        const calcDiff = (start: string, end: string): string => {
+          if (!start || !end) return "0";
+          const [sH, sM] = start.split(":").map(Number);
+          const [eH, eM] = end.split(":").map(Number);
+          if (isNaN(sH) || isNaN(sM) || isNaN(eH) || isNaN(eM)) return "0";
+          let diff = (eH * 60 + eM) - (sH * 60 + sM);
+          if (diff < 0) diff += 24 * 60;
+          return String(diff);
+        };
+        next.breakTime = calcDiff(next.breakStart, next.breakEnd);
+      }
+      if (
+        k === "workStart" || k === "workEnd" ||
+        k === "breakStart" || k === "breakEnd" ||
+        k === "breakTime" || k === "noBreak"
+      ) {
+        const getMinutes = (start: string, end: string): number => {
+          if (!start || !end) return 0;
+          const [sH, sM] = start.split(":").map(Number);
+          const [eH, eM] = end.split(":").map(Number);
+          if (isNaN(sH) || isNaN(sM) || isNaN(eH) || isNaN(eM)) return 0;
+          let diff = (eH * 60 + eM) - (sH * 60 + sM);
+          if (diff < 0) diff += 24 * 60;
+          return diff;
+        };
+        const workMin = getMinutes(next.workStart, next.workEnd);
+        const breakMin = next.noBreak ? 0 : parseInt(next.breakTime || "0", 10) || 0;
+        let daily = (workMin - breakMin) / 60;
+        if (daily < 0) daily = 0;
+        daily = Math.round(daily * 10) / 10;
+        next.dailyHours = String(daily);
+        
+        const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
+        const DAYKEYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        const selectedDays = DAYS.filter((_, i) => (p as any)[`workDays${DAYKEYS[i]}`]);
+        const workDayCount = selectedDays.length || 5;
+        const weekly = Math.round(daily * workDayCount * 10) / 10;
+        next.weeklyHours = String(weekly);
+      }
       if (k === "bizAddr" && p.samePlace) {
         next.workPlace = v;
       }
@@ -401,8 +441,8 @@ function ContractContent() {
     setMatches(enriched);
 
     const [eu, wu] = await Promise.all([
-      supabase.from("users").select("nickname, real_name, birth_date, phone").eq("id", cur.employer_id).single(),
-      supabase.from("users").select("nickname, real_name, birth_date, phone").eq("id", cur.worker_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", cur.employer_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", cur.worker_id).single(),
     ]);
 
     const cur2 = enriched.find(m => m.id === matchId) || enriched[0];
@@ -412,9 +452,28 @@ function ContractContent() {
       const { data: existing } = await supabase.from("contracts")
         .select("*").eq("match_id", matchId)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+      let epData: any = null;
+      if (existing?.employer_profile_id) {
+        const { data } = await supabase.from("employer_profiles")
+          .select("region, address, address_detail")
+          .eq("id", existing.employer_profile_id).maybeSingle();
+        epData = data;
+      }
+
       if (existing?.contract_data) {
-        setF(existing.contract_data);
-        setCt(existing.contract_data.contractType || "parttime");
+        const mergedData = {
+          ...existing.contract_data,
+          bizAddr: existing.contract_data.bizAddr || epData?.region || epData?.address || "",
+          bizAddrDetail: existing.contract_data.bizAddrDetail || epData?.address_detail || "",
+          worker: existing.contract_data.worker || wu.data?.real_name || wu.data?.nickname || "",
+          workerBirth: existing.contract_data.workerBirth || (wu.data?.birth_date ? wu.data.birth_date.replace(/-/g, ". ") : ""),
+          workerPhone: existing.contract_data.workerPhone || wu.data?.phone || "",
+          workerAddr: existing.contract_data.workerAddr || wu.data?.address || "",
+          workerAddrDetail: existing.contract_data.workerAddrDetail || wu.data?.address_detail || "",
+        };
+        setF(mergedData);
+        setCt(mergedData.contractType || "parttime");
         setExistingContract(existing);
         setStep("edit");
       }
@@ -429,11 +488,11 @@ function ContractContent() {
       .select("id, match_id, employer_id, worker_id, employer_profile_id, wage, work_days, work_hours, member_role, status, hire_date")
       .eq("id", memberId)
       .single();
-    if (!tm) { setLoading(false); return; }
+    if (!tm) { showToast("⚠️ 팀원 정보를 불러올 수 없어요.", "error"); setLoading(false); return; }
 
     const [eu, wu] = await Promise.all([
-      supabase.from("users").select("nickname, real_name, birth_date, phone, address").eq("id", tm.employer_id).single(),
-      supabase.from("users").select("nickname, real_name, birth_date, phone, address").eq("id", tm.worker_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", tm.employer_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", tm.worker_id).single(),
     ]);
 
     let ep = null;
@@ -489,14 +548,73 @@ function ContractContent() {
         .select("*").eq("team_member_id", memberId)
         .neq("status", "superseded")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+      let epData: any = null;
+      if (existing?.employer_profile_id) {
+        const { data } = await supabase.from("employer_profiles")
+          .select("region, address, address_detail")
+          .eq("id", existing.employer_profile_id).maybeSingle();
+        epData = data;
+      }
+
       if (existing?.contract_data) {
-        setF(existing.contract_data);
-        setCt(existing.contract_data.contractType || "parttime");
+        const mergedData = {
+          ...existing.contract_data,
+          bizAddr: existing.contract_data.bizAddr || epData?.region || epData?.address || "",
+          bizAddrDetail: existing.contract_data.bizAddrDetail || epData?.address_detail || "",
+          worker: existing.contract_data.worker || wu.data?.real_name || wu.data?.nickname || "",
+          workerBirth: existing.contract_data.workerBirth || (wu.data?.birth_date ? wu.data.birth_date.replace(/-/g, ". ") : ""),
+          workerPhone: existing.contract_data.workerPhone || wu.data?.phone || "",
+          workerAddr: existing.contract_data.workerAddr || wu.data?.address || "",
+          workerAddrDetail: existing.contract_data.workerAddrDetail || wu.data?.address_detail || "",
+        };
+        setF(mergedData);
+        setCt(mergedData.contractType || "parttime");
         setExistingContract(existing);
         setStep("edit");
       }
     }
 
+    setLoading(false);
+  };
+
+  const handleSelectMatch = async (m: any) => {
+    setLoading(true);
+    setSelMatch(m);
+    const [euRes, wuRes] = await Promise.all([
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", m.employer_id).single(),
+      supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", m.worker_id).single(),
+    ]);
+    let epData = null;
+    if (m.employer_profile_id) {
+      const { data } = await supabase.from("employer_profiles")
+        .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
+        .eq("id", m.employer_profile_id).maybeSingle();
+      epData = data;
+    }
+    const updatedMatch = { ...m, ep: epData };
+    setSelMatch(updatedMatch);
+    initF(updatedMatch, euRes.data, wuRes.data);
+
+    const { data: existing } = await supabase.from("contracts")
+      .select("*").eq("match_id", m.id)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (existing?.contract_data) {
+      const mergedData = {
+        ...existing.contract_data,
+        bizAddr: existing.contract_data.bizAddr || epData?.region || epData?.address || "",
+        bizAddrDetail: existing.contract_data.bizAddrDetail || epData?.address_detail || "",
+        worker: existing.contract_data.worker || wuRes.data?.real_name || wuRes.data?.nickname || "",
+        workerBirth: existing.contract_data.workerBirth || (wuRes.data?.birth_date ? wuRes.data.birth_date.replace(/-/g, ". ") : ""),
+        workerPhone: existing.contract_data.workerPhone || wuRes.data?.phone || "",
+        workerAddr: existing.contract_data.workerAddr || wuRes.data?.address || "",
+        workerAddrDetail: existing.contract_data.workerAddrDetail || wuRes.data?.address_detail || "",
+      };
+      setF(mergedData);
+      setCt(mergedData.contractType || "parttime");
+      setExistingContract(existing);
+      setStep("edit");
+    }
     setLoading(false);
   };
 
@@ -549,8 +667,8 @@ function ContractContent() {
       worker: wu?.real_name || wu?.nickname || "",
       workerBirth: wu?.birth_date ? wu.birth_date.replace(/-/g, ". ") : "",
       workerPhone: wu?.phone || "",
-      workerAddr: "",
-      workerAddrDetail: "",
+      workerAddr: wu?.address || "",
+      workerAddrDetail: wu?.address_detail || "",
       startDate: `${md.getFullYear()}. ${String(md.getMonth() + 1).padStart(2, "0")}. ${String(md.getDate()).padStart(2, "0")}.`,
       ...dayFlags,
       ...dayHours,
@@ -628,7 +746,6 @@ function ContractContent() {
       case 1: // 근로자
         if (!f.worker.trim()) return "근로자 성명을 입력해주세요.";
         if (!f.workerBirth.trim()) return "근로자 생년월일을 입력해주세요.";
-        if (!f.startDate.trim()) return "계약 시작일을 입력해주세요.";
         if (!f.workerPhone.trim()) return "근로자 연락처를 입력해주세요.";
         const workerPhoneRegex = /^01[016789]-\d{3,4}-\d{4}$/;
         if (!workerPhoneRegex.test(f.workerPhone.trim())) {
@@ -636,19 +753,27 @@ function ContractContent() {
         }
         return null;
       case 2: // 근무
+        if (!f.startDate.trim()) return "계약 시작일을 입력해주세요.";
         if (!f.jobDesc.trim()) return "담당업무를 입력해주세요.";
         if (f.workDaysMode === "check" && selectedDays.length === 0) return "근무 요일을 선택해주세요.";
         if (!f.workStart || !f.workEnd) return "출퇴근 시각을 입력해주세요.";
         return null;
-      case 3: // 임금
-        if (!f.wage.trim()) return "시급(임금)을 입력해주세요.";
+      case 3: { // 임금
+        const wageLabel = f.wageType === "day" ? "일급" : f.wageType === "month" ? "월급" : "시급";
+        if (!f.wage.trim()) return `${wageLabel}(임금)을 입력해주세요.`;
         if (!f.payDay.trim()) return "임금 지급일을 선택해주세요.";
-        const wageNum = parseInt(f.wage.replace(/,/g, ""));
-        const minWage = getMinWageForDate(f.startDate);
-        if (isNaN(wageNum) || isUnderMinWage(wageNum, f.startDate)) {
-          return `시급이 최저임금(${minWage.toLocaleString()}원)보다 낮아요. 현재 입력: ${f.wage}원`;
+        const wageNum3 = parseInt(f.wage.replace(/,/g, ""));
+        const dailyH3 = parseFloat(String(f.dailyHours || "0")) || 0;
+        const weekDays3 = selectedDays.length;
+        const minWage3 = getMinWageForDate(f.startDate);
+        let hourlyRate3 = wageNum3;
+        if (f.wageType === "day" && dailyH3 > 0) hourlyRate3 = wageNum3 / dailyH3;
+        else if (f.wageType === "month" && dailyH3 > 0 && weekDays3 > 0) hourlyRate3 = wageNum3 / ((dailyH3 * weekDays3) * 4.345);
+        if (isNaN(hourlyRate3) || isUnderMinWage(hourlyRate3, f.startDate)) {
+          return `${wageLabel}이 최저임금 기준(시급 ${minWage3.toLocaleString()}원)보다 낮아요.`;
         }
         return null;
+      }
       default:
         return null;
     }
@@ -669,6 +794,7 @@ function ContractContent() {
     end_date: f.contractType !== "unlimited" && f.endDate
       ? f.endDate.replace(/\.\s*/g, "-").replace(/-$/, "").trim() : null,
     wage: f.wage ? parseInt(f.wage.replace(/,/g, "")) : null,
+    wage_type: f.wageType === "day" ? "daily" : f.wageType === "month" ? "monthly" : "hourly",
     work_days: workDaysStr,
     work_hours: f.dailyHours || null,
     contract_data: { ...f, contractType: ct },
@@ -712,9 +838,18 @@ function ContractContent() {
     }
 
     if (!error) {
-      // 1. 대표자 프로필 및 근로자 연락처 동기화
+      // 1. 대표자 프로필 및 근로자 정보 users 테이블 동기화
       if (selMatch?.employer_id) {
         await supabase.from("users").update({ phone: f.ceoPhone }).eq("id", selMatch.employer_id);
+      }
+      if (selMatch?.worker_id && (f.worker || f.workerBirth || f.workerPhone || f.workerAddr)) {
+        const workerUpdate: Record<string, string | null> = {};
+        if (f.worker) workerUpdate.real_name = f.worker;
+        if (f.workerBirth) workerUpdate.birth_date = f.workerBirth.replace(/\.\s*/g, "-").replace(/-$/, "").trim();
+        if (f.workerPhone) workerUpdate.phone = f.workerPhone;
+        if (f.workerAddr) workerUpdate.address = f.workerAddr;
+        if (f.workerAddrDetail) workerUpdate.address_detail = f.workerAddrDetail;
+        await supabase.from("users").update(workerUpdate).eq("id", selMatch.worker_id);
       }
       if (selEp?.id) {
         await supabase.from("employer_profiles").update({
@@ -843,26 +978,33 @@ function ContractContent() {
   };
 
   const saveContract = async () => {
-    if (!selMatch) return;
-    const { data: existing } = await supabase.from("contracts")
-      .select("id, created_at, contract_data, worker_signed, status")
-      .eq("team_member_id", selMatch.id)
-      .neq("status", "superseded")
-      .neq("status", "cancelled")
-      .order("created_at", { ascending: false })
-      .limit(1).maybeSingle();
+    if (!selMatch) {
+      showToast("⚠️ 팀원 정보가 없어요. 페이지를 새로고침해주세요.", "error");
+      return;
+    }
+    try {
+      const { data: existing } = await supabase.from("contracts")
+        .select("id, created_at, contract_data, worker_signed, status")
+        .eq("team_member_id", selMatch.id)
+        .neq("status", "superseded")
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false })
+        .limit(1).maybeSingle();
 
-    if (existing) {
-      if (existing.worker_signed) {
-        setExistingContract(existing);
-        setShowResignModal(true);
-        return;
+      if (existing) {
+        if (existing.worker_signed) {
+          setExistingContract(existing);
+          setShowResignModal(true);
+          return;
+        } else {
+          setExistingContract(existing);
+          setShowSaveModal(true);
+        }
       } else {
-        setExistingContract(existing);
-        setShowSaveModal(true);
+        setShowConfirmModal(true);
       }
-    } else {
-      setShowConfirmModal(true);
+    } catch (e) {
+      showToast("⚠️ 계약서 확인 중 오류가 발생했어요.", "error");
     }
   };
 
@@ -1365,7 +1507,7 @@ function ContractContent() {
           {matches.length > 1 && <>
             <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", margin: "16px 0 10px" }}>연결된 계약 선택</p>
             {matches.map(m => (
-              <div key={m.id} onClick={() => { setSelMatch(m); initF(m, null, null); }}
+              <div key={m.id} onClick={() => handleSelectMatch(m)}
                 style={{ background: selMatch?.id === m.id ? "var(--surface2)" : "var(--surface)", border: "1.5px solid " + (selMatch?.id === m.id ? "#7c3aed" : "var(--border)"), borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}>
                 <span style={{ fontSize: 13, color: "var(--text)" }}>계약 #{m.idx} — {m.ep?.business_name || "매장"}</span>
               </div>
@@ -1878,21 +2020,30 @@ function ContractContent() {
                   {/* 임금액 */}
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
-                      임금액 (원) — {new Date().getFullYear()}년 최저시급 {getMinWageForDate(f.startDate).toLocaleString()}원
+                      {f.wageType === "hour" ? `시간급 (원/시간) — 최저시급 ${getMinWageForDate(f.startDate).toLocaleString()}원`
+                        : f.wageType === "day" ? "일급 (원/일)"
+                        : "월급 (원/월)"}
                     </label>
                     <input type="tel" inputMode="numeric" style={errStyle(!f.wage.trim())} value={f.wage}
                       onChange={e => {
                         const n = e.target.value.replace(/[^0-9]/g, "");
                         updateField("wage", n ? Number(n).toLocaleString() : "");
-                      }} placeholder={getMinWageForDate(f.startDate).toLocaleString()} />
-                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                      {[getMinWageForDate(f.startDate).toLocaleString(), "11,000", "12,000", "13,000"].map(v => (
-                        <button key={v} onClick={() => updateField("wage", v)}
-                          style={{ flex: 1, background: f.wage === v ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)", border: "none", borderRadius: 8, padding: "8px 0", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                          {v}
-                        </button>
-                      ))}
-                    </div>
+                      }}
+                      placeholder={
+                        f.wageType === "hour" ? getMinWageForDate(f.startDate).toLocaleString()
+                          : f.wageType === "day" ? "예) 80,000"
+                          : "예) 2,000,000"
+                      } />
+                    {f.wageType === "hour" && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        {[getMinWageForDate(f.startDate).toLocaleString(), "11,000", "12,000", "13,000"].map(v => (
+                          <button key={v} onClick={() => updateField("wage", v)}
+                            style={{ flex: 1, background: f.wage === v ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)", border: "none", borderRadius: 8, padding: "8px 0", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* 상여금 토글 */}
@@ -1960,7 +2111,9 @@ function ContractContent() {
                     <div style={{ background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 16, padding: "16px" }}>
                       <p style={{ fontSize: 13, fontWeight: 800, color: "var(--purple-text)", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
                         🧮 예상 급여 자동계산
-                        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--text-muted)" }}>시급 {payCalc.hourlyRate.toLocaleString()}원 기준</span>
+                        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--text-muted)" }}>
+                          {f.wageType !== "hour" ? `환산 시급 ${payCalc.hourlyRate.toLocaleString()}원 기준` : `시급 ${payCalc.hourlyRate.toLocaleString()}원 기준`}
+                        </span>
                       </p>
                       {isUnderMinWage(payCalc.hourlyRate, f.startDate) && (
                         <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "8px 12px", marginBottom: 10 }}>

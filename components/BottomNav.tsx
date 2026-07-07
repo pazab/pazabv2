@@ -30,7 +30,7 @@ export default function BottomNav() {
 
       // 초기 상태 로드 (처음엔 알림 안 띄움)
       const { data: existing } = await supabase
-        .from("matches").select("id, status")
+        .from("matches").select("id, progress_status")
         .or(`worker_id.eq.${uid},employer_id.eq.${uid}`);
       (existing || []).forEach((m: { id: string }) => {
         shownMatches.current.add(m.id);
@@ -42,8 +42,8 @@ export default function BottomNav() {
 
         // 새 러브콜 받은 것 (pending)
         const { data: newPending } = await supabase
-          .from("matches").select("id, status, worker_id, employer_id, initiated_by")
-          .eq("status", "pending")
+          .from("matches").select("id, progress_status, worker_id, employer_id, initiated_by")
+          .eq("progress_status", "pending")
           .or(`worker_id.eq.${uid},employer_id.eq.${uid}`)
           .gte("created_at", since);
 
@@ -61,8 +61,8 @@ export default function BottomNav() {
 
         // 새 매칭 성사 (accepted)
         const { data: newAccepted } = await supabase
-          .from("matches").select("id, status, worker_id, employer_id")
-          .eq("status", "accepted")
+          .from("matches").select("id, progress_status, worker_id, employer_id")
+          .eq("progress_status", "accepted")
           .or(`worker_id.eq.${uid},employer_id.eq.${uid}`)
           .gte("matched_at", since);
 
@@ -81,23 +81,18 @@ export default function BottomNav() {
   }, []);
 
   useEffect(() => {
-    const check = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const uid = session.user.id;
+    let chatChannel: ReturnType<typeof supabase.channel> | null = null;
 
-      // 내가 나가지 않은 채팅방의 match_id 목록
+    const checkUnread = async (uid: string) => {
       const [workerRes, employerRes] = await Promise.all([
-        supabase.from("matches").select("id").eq("worker_id", uid).eq("worker_left", false).in("status", ["accepted", "interviewing", "hired"]),
-        supabase.from("matches").select("id").eq("employer_id", uid).eq("employer_left", false).in("status", ["accepted", "interviewing", "hired"]),
+        supabase.from("matches").select("id").eq("worker_id", uid).eq("worker_left", false).in("progress_status", ["accepted", "interviewing", "hired"]),
+        supabase.from("matches").select("id").eq("employer_id", uid).eq("employer_left", false).in("progress_status", ["accepted", "interviewing", "hired"]),
       ]);
       const activeMatchIds = [
-        ...(workerRes.data || []).map(m => m.id),
-        ...(employerRes.data || []).map(m => m.id),
+        ...(workerRes.data || []).map((m: { id: string }) => m.id),
+        ...(employerRes.data || []).map((m: { id: string }) => m.id),
       ];
-
       if (activeMatchIds.length === 0) { setUnreadCount(0); return; }
-
       const { count } = await supabase
         .from("chats")
         .select("*", { count: "exact", head: true })
@@ -106,7 +101,32 @@ export default function BottomNav() {
         .in("match_id", activeMatchIds);
       setUnreadCount(count || 0);
     };
-    check();
+
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const uid = session.user.id;
+
+      await checkUnread(uid);
+
+      // 새 채팅 실시간 감지
+      chatChannel = supabase
+        .channel(`chat-badge-${uid}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "chats", filter: `receiver_id=eq.${uid}` },
+          () => { checkUnread(uid); }
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "chats", filter: `receiver_id=eq.${uid}` },
+          () => { checkUnread(uid); }
+        )
+        .subscribe();
+    };
+
+    init();
+    return () => { chatChannel?.unsubscribe(); };
   }, [pathname]);
 
   useEffect(() => {
@@ -175,7 +195,7 @@ export default function BottomNav() {
   const tabs = [
     { icon: "ti-compass", label: "탐색", path: "/explore", active: pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
     { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta") },
-    { icon: "ti-calendar-event", label: "근태", path: userType === "worker" ? "/worker/mywork" : "/myteam", active: pathname.startsWith("/myteam") || pathname.startsWith("/worker/mywork"), center: true },
+    { icon: "ti-calendar-event", label: "근태", path: "/myteam", active: pathname.startsWith("/myteam"), center: true },
     { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat") && !pathname.includes("/paz"), badge: unreadCount },
     { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];

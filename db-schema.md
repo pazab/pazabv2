@@ -91,8 +91,7 @@
 | created_at/updated_at | timestamptz | NO | now() | |
 | geo_radius_meters | integer | YES | 200 | |
 | biz_reg_number/ceo_name/biz_tel | text | YES | | 사업자 정보 |
-| business_image_url | text | YES | | 🟡 image_url과 중복 |
-| image_url | text | YES | | 🟡 |
+| image_url | text | YES | | ✅ 대표 이미지 (business_image_url DROP 완료) |
 | image_urls | text[] | YES | '{}' | |
 | video_url | text | YES | | |
 | category_id | uuid | YES | | |
@@ -147,13 +146,12 @@
 | id | uuid | NO | gen_random_uuid() | |
 | employer_id | uuid | NO | | |
 | worker_id | uuid | NO | | |
-| job_posting_id | uuid | YES | | 레거시 |
-| daeta_posting_id | uuid | YES | | |
+| ~~job_posting_id~~ | uuid | YES | | 🗑️ DROP 예정 (레거시) |
+| daeta_posting_id | uuid | YES | | 대타 공고 연결 |
+| ~~worker_tier~~ | uuid | YES | | 🗑️ DROP 예정 (레거시) |
 | job_id | uuid | YES | | ✅ jobs.id FK |
 | match_score | integer | YES | 0 | |
-| worker_tier | text | YES | | |
-| status | text | YES | 'pending' | 🔴 progress_status와 중복 |
-| progress_status | text | YES | 'pending' | ✅ SOT |
+| progress_status | text | YES | 'pending' | ✅ SOT (status DROP 완료) |
 | matched_at | timestamptz | YES | now() | |
 | interview_at | timestamptz | YES | | |
 | interview_memo | text | YES | | |
@@ -163,7 +161,8 @@
 | created_at/updated_at | timestamptz | NO | now() | |
 
 > ⚠️ `employer_profile_id` 컬럼 없음  
-> ⚠️ `status` 레거시 — 코드에서 `progress_status` 사용
+> ~~status~~ 레거시 — DROP 완료 (progress_status SOT)
+> ~~job_posting_id, worker_tier~~ — DROP 예정 (참조 코드 없음)
 
 ---
 
@@ -204,15 +203,14 @@
 | id | uuid | NO | | auth.users PK |
 | email | text | YES | | |
 | nickname | text | YES | | ✅ 표시용 이름 SOT |
-| nickname_lower | text | YES | | 검색 인덱스 |
+| nickname_lower | text | YES | | 검색 인덱스 (선택 사항) |
 | real_name | text | YES | | ✅ 법적 이름 (계약서) |
-| profile_image_url | text | YES | | 🟡 avatar_url과 중복 |
-| avatar_url | text | YES | | 🟡 |
+| avatar_url | text | YES | | ✅ 프로필 이미지 |
 | phone | text | YES | | |
 | user_type | text | YES | | ✅ 'employer'\|'worker'\|'both' SOT |
-| role_inferred | text | YES | | 행동 기반 추론 |
+| ~~role_inferred~~ | text | YES | | 🗑️ DROP 예정 (레거시) |
 | onboarded | boolean | YES | false | |
-| onboarding_data | jsonb | YES | | |
+| ~~onboarding_data~~ | jsonb | YES | | 🗑️ DROP 예정 (레거시) |
 | bank_verified | boolean | YES | false | |
 | bank_verified_at | timestamptz | YES | | |
 | hexaco_done | boolean | YES | false | |
@@ -223,8 +221,8 @@
 | grade | text | YES | 'bronze' | ✅ SOT |
 | is_active | boolean | YES | true | |
 | profile_completed | boolean | YES | false | |
-| push_token | text | YES | | |
-| kakao_id | text | YES | | |
+| ~~push_token~~ | text | YES | | 🗑️ DROP 예정 (레거시) |
+| ~~kakao_id~~ | text | YES | | 🗑️ DROP 예정 (레거시) |
 | region | text | YES | | |
 | address | text | YES | | |
 | address_detail | text | YES | | |
@@ -233,8 +231,9 @@
 | created_at/updated_at | timestamptz | NO | now() | |
 
 > ~~name~~ 컬럼 DROP 완료 → `nickname` SOT  
-> ⚠️ `role` 없음 — `user_type` 사용  
-> ⚠️ `paz_name`, `paz_avatar` 등 paz_* 컬럼 없음
+> ~~profile_image_url~~ 컬럼 DROP 완료 → `avatar_url` SOT  
+> ~~role_inferred, onboarding_data, push_token, kakao_id~~ — DROP 예정 (참조 코드 없음)  
+> ⚠️ `role` 없음 — `user_type` 사용
 
 ---
 
@@ -246,8 +245,7 @@
 | birth_year | integer | YES | | |
 | gender | text | YES | | |
 | bio | text | YES | | |
-| image_url | text | YES | | 🟡 profile_image_url과 중복 |
-| profile_image_url | text | YES | | 🟡 |
+| image_url | text | YES | | ✅ 대표 이미지 (profile_image_url DROP 완료) |
 | image_urls | text[] | YES | '{}' | |
 | video_url | text | YES | | |
 | job_categories | text[] | YES | '{}' | |
@@ -264,7 +262,6 @@
 | desired_region | text | YES | | 🔴 region과 중복 |
 | is_verified | boolean | YES | false | |
 | verified_reason | text | YES | | |
-| hexaco_data | jsonb | YES | | 🔴 users.worker_result.hexaco와 중복 |
 | bio5_data | jsonb | YES | | |
 | analyzed_mbti | text | YES | | |
 | best_matches/worst_matches | text[] | YES | '{}' | |
@@ -276,7 +273,8 @@
 | created_at/updated_at | timestamptz | NO | now() | |
 
 > ~~trust_score / grade~~ DROP 완료 → `users.trust_score / grade` SOT  
-> ~~name~~ DROP 완료 → `users.nickname` SOT
+> ~~name~~ DROP 완료 → `users.nickname` SOT  
+> ~~profile_image_url / hexaco_data~~ DROP 완료 → `users.worker_result.hexaco` SOT
 
 ---
 
@@ -375,22 +373,10 @@
 
 ---
 
-## 3. 중복/레거시 필드 현황
+## 3. 중복/레거시 필드 현황 (모두 해결됨)
 
-### 🟡 이미지 컬럼 중복 (미해결)
-| 테이블 | 중복 컬럼 |
-|--------|----------|
-| users | profile_image_url, avatar_url |
-| worker_profiles | profile_image_url, image_url, image_urls |
-| employer_profiles | business_image_url, image_url, image_urls |
-
-### 🟡 matches.status vs progress_status (미해결)
-- `progress_status` ✅ SOT — 코드에서 사용
-- `status` 🔴 레거시 — DROP 가능 (코드 전수 확인 후)
-
-### 🔴 worker_profiles.hexaco_data (미해결)
-- `users.worker_result.hexaco` ✅ SOT
-- `worker_profiles.hexaco_data` 🔴 중복, DROP 가능
+> [!NOTE]
+> 2026-07-08 마이그레이션을 통해 중복 이미지 컬럼, matches.status 레거시 컬럼, worker_profiles.hexaco_data 레거시 컬럼이 모두 완전하게 DROP 및 정리 완료되었습니다.
 
 ---
 
@@ -401,7 +387,9 @@
 | 공고 조건 (wage/work_days/work_hours) | **jobs** | employer_profiles 레거시 DROP 완료 |
 | 팀원별 근무조건 | **team_members** | 계약 후 contracts에서 덮어씀 |
 | 계약 내용 (PDF 기준) | **contracts.contract_data** | |
-| 사용자 성향/HEXACO | **users.worker_result / employer_result** | worker_profiles.hexaco_data 레거시 |
+| 근로자 개인정보 (계약서용) | **users** | real_name / birth_date / phone / address / address_detail — 계약서 저장 시 역sync |
+| 계약 임금 타입 | **contracts.wage_type** | 'hourly'\|'daily'\|'monthly' (contract_data.wageType에서 변환) |
+| 사용자 성향/HEXACO | **users.worker_result / employer_result** | worker_profiles.hexaco_data 레거시 (DROP 완료) |
 | 신뢰도/등급 | **users.trust_score / grade** | worker_profiles DROP 완료 |
 | 이름 (표시) | **users.nickname** | users.name DROP 완료 |
 | 이름 (법적/계약서) | **users.real_name** | |
@@ -416,18 +404,26 @@
 | AI 호출 비용 | **ai_usage_logs** | |
 | 신뢰도 변동 이력 | **trust_score_logs** | |
 | 인터뷰/사전미팅 | **interviews** | |
-| 매칭 진행상태 | **matches.progress_status** | matches.status 레거시 (미해결) |
+| 매칭 진행상태 | **matches.progress_status** | matches.status 레거시 (DROP 완료) |
 
 ---
 
 ## 5. 남은 정리 대상
 
-### 🟡 중기 (데이터 확인 후 DROP)
-- [ ] `matches.status` — `progress_status`로 완전 교체 후 DROP
-- [ ] `worker_profiles.hexaco_data` — users.worker_result.hexaco SOT 확인 후 DROP
-- [ ] 이미지 컬럼 통일 (profile_image_url / avatar_url / image_url → 하나로)
+### 🟡 중기 (코드 미참조 유령 필드 DROP 필요)
+- [ ] `matches` 테이블 레거시 필드 DROP
+  - `job_posting_id` (jobs.id가 FK인 job_id로 단일화 완료)
+  - `worker_tier` (grade/trust_score로 단일화 완료)
+- [ ] `users` 테이블 레거시 필드 DROP
+  - `push_token` (`push_subscriptions`에서 별도로 관리)
+  - `kakao_id` (로그인 토큰 기반 소셜 정보 미사용)
+  - `role_inferred` (users.user_type 기반 처리)
+  - `onboarding_data` (users.onboarded 여부만 확인)
 
 ### ✅ 완료된 정리
+- [x] `matches.status` DROP (progress_status SOT로 완전 교체 완료)
+- [x] `worker_profiles.hexaco_data` DROP (users.worker_result.hexaco SOT로 완전 교체 완료)
+- [x] 이미지 중복 컬럼 정리 (profile_image_url / business_image_url DROP 완료)
 - [x] `attendance.clock_in / clock_out` DROP
 - [x] `worker_profiles.trust_score / grade` DROP
 - [x] `worker_profiles.name` DROP
@@ -441,3 +437,4 @@
 - [x] `matches.employer_profile_id` 코드 참조 제거
 - [x] `lib/supabase.ts` TypeScript strict 정합 (Proxy → 직접 export)
 - [x] codebase 전체 `tsc --noEmit` 0 errors
+- [x] `worker_profiles.hexaco_data`와 관련된 코드 내 fallback 체인(match/route.ts, worker/[id]/page.tsx, api/lovecall/route.ts) 최종 정리 완료

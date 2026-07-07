@@ -1,5 +1,5 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-06 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-08 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
 
@@ -228,6 +228,39 @@
 **`team_members` 단일 진실 원천 확립**
 - contract_status 컬럼이 실질적 계약 상태 단일 source of truth로 확립
 - 모든 저장/서명/취소 경로에서 team_members.contract_status 동시 업데이트 보장
+
+**구현 완료 (2026-07-08)**
+
+**계약서 발행 버튼 무반응 수정**
+- `/employer/team/[id]` "새 계약서 작성" 버튼이 `matchId` 기반 라우팅이라 `load()`에서 `progress_status:"hired"` 필터에 걸려 `selMatch`가 null → 발행 눌러도 아무 반응 없는 버그 수정
+- `memberId` 파라미터 기반 라우팅 (`/contract?memberId=${member.id}`)으로 통일
+- `saveContract()`에 `!selMatch` 시 토스트 + `try-catch` 에러 처리 추가
+
+**계약서 근로자 정보 미로딩 수정**
+- `loadByMember()` / `load()` / `handleSelectMatch()` 세 경로 모두 users 쿼리에 `address_detail` 누락 → 추가
+- `initF()`에서 `workerAddr: ""` / `workerAddrDetail: ""` 하드코딩 → `wu?.address || ""` / `wu?.address_detail || ""`로 수정
+- 계약서 저장(`doSave`) 시 근로자 정보(이름/생년월일/연락처/주소)를 `users` 테이블에 역sync → 이후 계약서 작성 시 자동 채움
+
+**계약서 임금 타입 저장 수정**
+- `buildPayload()`에서 `wage_type` 컬럼 누락 → `wageType`(hour/day/month) → DB 포맷(hourly/daily/monthly) 변환 추가
+- `validateStep` case 3: `const` in switch 스코프 오류 → 블록 `{}` 래핑, 시급/일급/월급 각각 시급 환산 후 최저임금 비교
+
+**알림·채팅 배지 실시간 반영 수정**
+- `NotificationBell`: Realtime `postgres_changes` 구독에 `filter: user_id=eq.${uid}` 누락 → 추가
+- `BottomNav`: 채팅 배지가 폴링만 하고 Realtime 없던 구조 → `chats` 테이블 INSERT/UPDATE Realtime 구독 추가
+- `notifications` 테이블 `REPLICA IDENTITY FULL` 적용 완료 (patch_notifications_realtime.sql)
+
+**월별 소급 등록 버튼 위치 이동**
+- 계약서 섹션에 있던 "📅 월별 소급" 버튼을 근태 관리 월 선택 행 우측으로 이동 ("📅 이달 소급")
+- 서명 완료된 계약이 없으면 버튼 미노출, 있을 때만 표시
+
+**팀원 상세 예상 급여 계산 타입별 분기**
+- 기존: 항상 `총시간 × 시급` 계산 → 월급 설정인 경우 8,640,000원 같은 엉뚱한 값 표시
+- `loadMember()`에서 `contract_data.wageType` 읽어 `member.wage_type`으로 저장
+- **시급(hourly)**: 기존 `총시간 × 시급 + 초과 × 1.5` 유지
+- **일급(daily)**: `출근일수 × 일급 + 초과시간 × (일급/contractHours) × 1.5`
+- **월급(monthly)**: `월급 × (출근일/예정출근일)` 일할 계산 + 초과분은 209시간 기준 시급환산 × 1.5
+- 급여 카드 상단 설명도 wageType에 맞게 동적 표시 (출근일/일수/시간)
 
 **근태 관리 및 감사 로그 고도화 (2026-07-05 2차)**
 - **근태 삭제 RLS 정책 누락 보완**: 사장님이 소속 팀원의 근태 데이터를 안전하게 제거할 수 있도록 `attendance` 테이블의 DELETE RLS 정책 추가 (`supabase/patch_delete_policy.sql` 실행 완료).

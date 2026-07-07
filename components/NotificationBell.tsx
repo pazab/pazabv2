@@ -26,10 +26,15 @@ export default function NotificationBell() {
 
       // Realtime 구독으로 실시간 업데이트
       channel = supabase
-        .channel(`notif-bell-${user.id}-${Date.now()}`)
+        .channel(`notif-bell-${user.id}`)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "notifications" },
+          {
+            event: "*",
+            schema: "public",
+            table: "notifications",
+            filter: `user_id=eq.${user.id}`,
+          },
           async (payload: any) => {
             if (payload.eventType === "INSERT") {
               setUnread(prev => prev + 1);
