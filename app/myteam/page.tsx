@@ -1066,12 +1066,13 @@ function MyTeamPageContent() {
       };
     });
 
-    // 매장별로 팀원 그룹핑 (employer_profile_id 없으면 첫 매장에 배치)
-    const firstStoreId = storeList[0]?.id;
+    // 매장별로 팀원 그룹핑
+    // employer_profile_id null인 팀원은 가장 오래된 매장(DESC 정렬의 마지막)에 배치
+    const oldestStoreId = storeList[storeList.length - 1]?.id;
     const grouped: Record<string, any[]> = {};
     for (const s of storeList) grouped[s.id] = [];
     for (const m of enriched) {
-      const storeId = m.employer_profile_id && grouped[m.employer_profile_id] ? m.employer_profile_id : firstStoreId;
+      const storeId = m.employer_profile_id && grouped[m.employer_profile_id] ? m.employer_profile_id : oldestStoreId;
       if (storeId) grouped[storeId] = [...(grouped[storeId] || []), m];
     }
     setMembersByStore(grouped);
@@ -1372,8 +1373,8 @@ function MyTeamPageContent() {
                             <p style={{ fontSize:10, color:"rgba(255,255,255,0.65)", margin:0 }}>{activeStore.business_type||"업종미정"}{activeStore.address ? " · "+activeStore.address.slice(0,12) : ""}</p>
                           </div>
                           <button onClick={() => { setEditingStore(activeStore); setStoreModalOpen(true); }}
-                            style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, padding:"5px 10px", color:"rgba(255,255,255,0.9)", fontSize:11, cursor:"pointer", flexShrink:0 }}>
-                            ✏️ 수정
+                            style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, padding:"5px 10px", color:"rgba(255,255,255,0.9)", fontSize:11, cursor:"pointer", flexShrink:0, whiteSpace:"nowrap" }}>
+                            ✏️ 매장 정보 수정
                           </button>
                           <button onClick={() => openDeleteModal(activeStore)}
                             style={{ background:"rgba(239,68,68,0.25)", border:"none", borderRadius:"50%", width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.8)", fontSize:13, cursor:"pointer", flexShrink:0 }}>

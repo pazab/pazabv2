@@ -16,14 +16,15 @@ export default function SudokuLayout({ children }: { children: React.ReactNode }
   const pathname = usePathname()
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then((res) => {
+      const session = res.data.session;
       if (!session) {
         localStorage.setItem("login_redirect", pathname || "/sudoku")
         router.push("/login")
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session) => {
       if (event === "SIGNED_OUT" || (event === "TOKEN_REFRESHED" && !session)) {
         router.push("/login")
       }

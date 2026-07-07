@@ -79,7 +79,8 @@ export default function SudokuBattle({ code, onClose }: SudokuBattleProps) {
   const startTimeRef = useRef<number>(0)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then((res) => {
+      const session = res.data.session;
       if (session) setMyUid(session.user.id)
     })
   }, [])
@@ -183,7 +184,7 @@ export default function SudokuBattle({ code, onClose }: SudokuBattleProps) {
     // Realtime
     const channel = supabase
       .channel(`sudoku_room_${code}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sudoku_rooms', filter: `code=eq.${code}` }, (payload) => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sudoku_rooms', filter: `code=eq.${code}` }, (payload: { new: Record<string, unknown> }) => {
         applyRoom(payload.new as Room)
       })
       .subscribe()

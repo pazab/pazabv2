@@ -32,7 +32,8 @@ export default function SudokuGame({ difficulty, onClose }: SudokuGameProps) {
   const completeRef = useRef(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then((res) => {
+      const session = res.data.session;
       if (session) setUserId(session.user.id)
     })
   }, [])

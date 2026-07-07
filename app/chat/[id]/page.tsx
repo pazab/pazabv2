@@ -164,7 +164,7 @@ export default function ChatRoomPage() {
         schema: "public",
         table: "chats",
         filter: `match_id=eq.${matchId}`,
-      }, (payload) => {
+      }, (payload: { new: Record<string, unknown> }) => {
         setMessages(prev => {
           if (prev.find(m => m.id === payload.new.id)) return prev;
           return [...prev, payload.new];
@@ -172,7 +172,7 @@ export default function ChatRoomPage() {
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
         if (payload.new.receiver_id === uid) {
           setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, is_read: true } : m));
-          if (payload.new.message_type === "system" && payload.new.message?.includes("채용이 확정됐어요")) {
+          if (payload.new.message_type === "system" && (payload.new.message as string | null)?.includes("채용이 확정됐어요")) {
             setShowReviewModal(true);
           }
         }
@@ -183,7 +183,7 @@ export default function ChatRoomPage() {
         schema: "public",
         table: "chats",
         filter: `match_id=eq.${matchId}`,
-      }, (payload) => {
+      }, (payload: { new: Record<string, unknown> }) => {
         if (payload.new.is_read && payload.new.sender_id === uid) {
           setMessages(prev => prev.map(m =>
             m.id === payload.new.id ? { ...m, is_read: true } : m
@@ -378,10 +378,8 @@ export default function ChatRoomPage() {
           .update({ hire_confirmed_by_worker: true })
           .eq("id", matchId);
 
-        // team_members 자동 생성
-        const empProfile = match?.employer_profile_id
-          ? (await supabase.from("employer_profiles").select("wage, work_days, work_hours").eq("id", match.employer_profile_id).maybeSingle()).data
-          : null;
+        // team_members 자동 생성 (matches에 employer_profile_id 없음 → team_members 기본값 사용)
+        const empProfile = null;
 
         const { data: existingTm } = await supabase.from("team_members")
           .select("id")
@@ -395,9 +393,9 @@ export default function ChatRoomPage() {
             match_id: matchId,
             hire_date: new Date().toISOString().split("T")[0],
             status: "active",
-            wage: empProfile?.wage || null,
-            work_days: empProfile?.work_days || null,
-            work_hours: empProfile?.work_hours || null,
+            wage: null,
+            work_days: null,
+            work_hours: null,
           });
         }
 
@@ -464,8 +462,8 @@ export default function ChatRoomPage() {
       });
       const { data: reviews } = await supabase.from("reviews").select("score").eq("reviewee_id", revieweeId);
       if (reviews?.length) {
-        const avg = reviews.reduce((s, r) => s + r.score, 0) / reviews.length;
-        await supabase.from("users").update({ trust_score: Math.round(avg * 10) / 10, review_count: reviews.length }).eq("id", revieweeId);
+        const avg = (reviews as { score: number }[]).reduce((s, r) => s + r.score, 0) / reviews.length;
+        await supabase.from("users").update({ trust_score: Math.round(avg * 10) / 10 }).eq("id", revieweeId);
       }
       setShowReviewModal(false);
       setReviewScore(0);
@@ -489,8 +487,8 @@ export default function ChatRoomPage() {
         });
         const { data: reviews } = await supabase.from("reviews").select("score").eq("reviewee_id", revieweeId);
         if (reviews?.length) {
-          const avg = reviews.reduce((s, r) => s + r.score, 0) / reviews.length;
-          await supabase.from("users").update({ trust_score: Math.round(avg * 10) / 10, review_count: reviews.length }).eq("id", revieweeId);
+          const avg = (reviews as { score: number }[]).reduce((s, r) => s + r.score, 0) / reviews.length;
+          await supabase.from("users").update({ trust_score: Math.round(avg * 10) / 10 }).eq("id", revieweeId);
         }
       } catch {}
     }

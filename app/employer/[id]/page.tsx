@@ -39,8 +39,8 @@ export default function EmployerProfilePage() {
 
     // 같은 이름 중복 제거 (활성 우선)
     const seen = new Set<string>();
-    const uniqueProfiles = (profileData || []).filter(p => {
-      const key = p.business_name;
+    const uniqueProfiles = (profileData || []).filter((p: { business_name: string | null }) => {
+      const key = p.business_name ?? "";
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

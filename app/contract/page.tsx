@@ -426,7 +426,7 @@ function ContractContent() {
   const loadByMember = async () => {
     const { data: tm } = await supabase
       .from("team_members")
-      .select("id, match_id, employer_id, worker_id, employer_profile_id, wage, work_days, work_hours, member_role, status")
+      .select("id, match_id, employer_id, worker_id, employer_profile_id, wage, work_days, work_hours, member_role, status, hire_date")
       .eq("id", memberId)
       .single();
     if (!tm) { setLoading(false); return; }
@@ -464,13 +464,19 @@ function ContractContent() {
       }
     }
 
+    // team_members 근무조건이 있으면 공고 데이터보다 우선 적용
+    if (tm.wage) ep = { ...ep, wage: tm.wage };
+    if (tm.work_days) ep = { ...ep, work_days: tm.work_days };
+    // work_hours가 "HH:mm ~ HH:mm" 형식일 때만 반영 (숫자 dailyHours는 initF에서 파싱 안 됨)
+    if (tm.work_hours && tm.work_hours.includes("~")) ep = { ...ep, work_hours: tm.work_hours };
+
     const memberAsMatch = {
       id: tm.id,
       employer_id: tm.employer_id,
       worker_id: tm.worker_id,
       employer_profile_id: tm.employer_profile_id,
       ep,
-      matched_at: null,
+      matched_at: tm.hire_date || null,   // 입사일을 계약 시작일 기본값으로
       created_at: new Date().toISOString(),
       _isMember: true,
     };
@@ -534,10 +540,10 @@ function ContractContent() {
       bizRegNo: ep?.biz_reg_number || "",
       ceo: ep?.ceo_name || eu?.real_name || eu?.nickname || "",
       ceoPhone: ep?.biz_tel || eu?.phone || "",
-      bizAddr: ep?.address || ep?.region || "",
+      bizAddr: ep?.region || ep?.address || "",
       bizAddrDetail: ep?.address_detail || "",
-      samePlace: !ep?.address || ep?.address === ep?.region,
-      workPlace: ep?.region || "",
+      samePlace: true,
+      workPlace: ep?.region || ep?.address || "",
       bizType: ep?.business_type || "",
       jobDesc: ep?.business_type ? `${ep.business_type} 관련 업무` : "",
       worker: wu?.real_name || wu?.nickname || "",

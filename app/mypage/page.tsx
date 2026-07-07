@@ -605,7 +605,7 @@ function MyPageContent() {
 
       // 구직 및 매장 공고 최신본 가져오기 (미리보기용)
       const { data: wps } = await supabase.from("worker_profiles").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
-      const { data: eps } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id).or("is_deleted.is.null,is_deleted.eq.false").neq("job_type", "urgent").not("business_name", "is", null).order("created_at", { ascending: false });
+      const { data: eps } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null).order("created_at", { ascending: false });
       setMyWorkerProfile(wps?.[0] || null);
       setMyEmployerProfile(eps?.[0] || null);
     } catch (err) { console.error(err); }

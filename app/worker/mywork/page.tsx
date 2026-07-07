@@ -19,10 +19,11 @@ export default function MyWorkPage() {
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.push("/login"); return; }
-      setUserId(data.user.id);
-      loadMyWork(data.user.id);
+    supabase.auth.getUser().then((res) => {
+      const user = res.data.user;
+      if (!user) { router.push("/login"); return; }
+      setUserId(user.id);
+      loadMyWork(user.id);
     });
   }, []);
 
@@ -39,7 +40,8 @@ export default function MyWorkPage() {
       .order("hire_date", { ascending: false });
 
     // employer_profiles 별도 조회
-    const employerIds = (activeData || []).map(d => d.employer_id);
+    type TmRow = { id: string; employer_id: string; [key: string]: unknown };
+    const employerIds = (activeData || []).map((d: TmRow) => d.employer_id);
     const { data: profileData } = employerIds.length > 0
       ? await supabase.from("employer_profiles").select("user_id, business_name, business_type, region").in("user_id", employerIds)
       : { data: [] };
@@ -53,14 +55,14 @@ export default function MyWorkPage() {
       .neq("status", "active")
       .order("hire_date", { ascending: false });
 
-    const histEmployerIds = (historyData || []).map(d => d.employer_id);
+    const histEmployerIds = (historyData || []).map((d: TmRow) => d.employer_id);
     const { data: histProfileData } = histEmployerIds.length > 0
       ? await supabase.from("employer_profiles").select("user_id, business_name, business_type, region").in("user_id", histEmployerIds)
       : { data: [] };
 
 
     // 계약서 상태 조회 — match_id 또는 team_member_id 기반
-    const activeMemberIds = (activeData || []).map(d => d.id).filter(Boolean);
+    const activeMemberIds = (activeData || []).map((d: TmRow) => d.id).filter(Boolean);
     const { data: contractsData } = activeMemberIds.length > 0
       ? await supabase.from("contracts")
           .select("id, match_id, team_member_id, worker_signed, employer_signed")
@@ -69,7 +71,7 @@ export default function MyWorkPage() {
           .order("created_at", { ascending: false })
       : { data: [] };
 
-    setCurrent((activeData || []).map(d => {
+    setCurrent((activeData || []).map((d: TmRow) => {
       const contract = (contractsData || []).find((c: any) => c.team_member_id === d.id);
       const contractStatus = !contract ? "none" : contract.worker_signed ? "done" : "pending";
       return {
@@ -81,7 +83,7 @@ export default function MyWorkPage() {
         contractId: contract?.id || null,
       };
     }));
-    setHistory((historyData || []).map(d => ({
+    setHistory((historyData || []).map((d: TmRow) => ({
       ...d,
       employer: (d as any).users,
       profile: (histProfileData || []).find((p: any) => p.user_id === d.employer_id),
@@ -97,7 +99,7 @@ export default function MyWorkPage() {
       .select("status")
       .eq("team_member_id", teamMemberId)
       .gte("work_date", monthStart);
-    return data?.filter(a => a.status === "normal" || a.status === "late").length || 0;
+    return data?.filter((a: { status: string }) => a.status === "normal" || a.status === "late").length || 0;
   }
 
   async function handleContractBtn(m: any) {
@@ -146,7 +148,7 @@ export default function MyWorkPage() {
   };
 
   return (
-    <main style={{ minHeight:"100vh", background:"var(--bg)", maxWidth:480, margin:"0 auto", paddingBottom:40 }}>
+    <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:40 }}>
       {ToastUI}
       <AppHeader title="내 근무" showBack />
 
@@ -184,7 +186,7 @@ export default function MyWorkPage() {
         </div>
       )}
 
-      <div style={{ padding:"16px" }}>
+      <div style={{ padding:"16px", maxWidth:600, margin:"0 auto" }}>
         {/* 탭 */}
         <div style={{ display:"flex", background:"var(--surface2)", borderRadius:12, padding:3, marginBottom:16, gap:2 }}>
           {([

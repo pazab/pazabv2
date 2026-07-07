@@ -36,10 +36,11 @@ export default function PazSettingsPage() {
   };
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.push("/login"); return; }
-      setUser(data.user);
-      loadSettings(data.user.id);
+    supabase.auth.getUser().then((res) => {
+      const user = res.data.user;
+      if (!user) { router.push("/login"); return; }
+      setUser(user);
+      loadSettings(user.id);
     });
   }, []);
 

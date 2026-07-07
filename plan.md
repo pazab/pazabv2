@@ -1,6 +1,6 @@
 # PAZAB v2 Plan
 
-_최종 업데이트: 2026-07-07 (2)_
+_최종 업데이트: 2026-07-08_
 
 ---
 
@@ -83,9 +83,31 @@ _최종 업데이트: 2026-07-07 (2)_
 - 중복 방지: realtime이 먼저 도착한 경우 temp 메시지만 제거
 - RLS 정책 SQL + `REPLICA IDENTITY FULL` + publication 등록으로 실시간 수신 정상화
 
+### 2026-07-08 — DB 정리 완료 + TypeScript strict 정합
+
+#### DB 구조 정리 (Supabase information_schema 실측 기준)
+- Supabase SQL Editor로 27개 테이블 전체 컬럼 실측 — `db-schema.md` 확정판 작성
+- 레거시 컬럼 DROP 완료:
+  - `attendance.clock_in / clock_out` (check_in/check_out SOT)
+  - `worker_profiles.trust_score / grade` (users SOT)
+  - `worker_profiles.name` (users.nickname SOT)
+  - `employer_profiles.employer_bot_knowledge`
+  - `employer_profiles` 공고 레거시 컬럼 26개 (jobs 테이블로 분리 완료)
+  - `payslips.base_wage / total_amount / net_amount` (wage/total_pay/net_pay SOT)
+- 레거시 테이블 DROP: `chatrooms`, `messages`, `job_postings`
+- `users.name` → `users.nickname` 마이그레이션 후 DROP
+- 신규 테이블 생성: `paz_chats`, `ai_usage_logs`, `interviews`, `trust_score_logs`
+
+#### TypeScript strict 정합 (`tsc --noEmit` 0 errors)
+- `lib/supabase.ts` — Proxy 패턴 → `createBrowserClient()` 직접 export로 교체  
+  (Proxy가 `.then()` 콜백 타입 추론 막아 전 파일 TS7006 유발하던 근본 원인 제거)
+- 코드 참조 오류 수정: `users.role` → `user_type`, `team_members.hired_at` → `hire_date`, `matches.employer_profile_id` 제거
+- 전체 implicit any 제거: 15개 파일, 40+ 오류 → 0
+
 ---
 
 ## 다음 작업 후보
 
 - [ ] 채팅창 UX/UI 개선 (현재 매칭 기반 구조에서 DM 포함 일반 메신저 수준으로)
+- [ ] `matches.status` 레거시 제거 (`progress_status` 완전 교체 후 DROP)
 

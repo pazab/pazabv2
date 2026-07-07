@@ -694,15 +694,22 @@ export default function TeamMemberPage() {
                 </div>
               ))}
             </div>
-            <button onClick={() => {
-              setEditWage(member.wage ? String(member.wage) : "");
-              setEditWorkDays(member.work_days || "");
-              setEditWorkHours(member.work_hours ? String(member.work_hours) : "");
-              setShowWorkModal(true);
-            }}
-              style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
-              ✏️ 근무조건 수정
-            </button>
+            {member.contract_status === "none" ? (
+              <button onClick={() => {
+                setEditWage(member.wage ? String(member.wage) : "");
+                setEditWorkDays(member.work_days || "");
+                setEditWorkHours(member.work_hours ? String(member.work_hours) : "");
+                setShowWorkModal(true);
+              }}
+                style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+                ✏️ 근무조건 수정
+              </button>
+            ) : (
+              <button onClick={() => router.push(`/contract?memberId=${member.id}&mode=update`)}
+                style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+                📄 계약서 수정
+              </button>
+            )}
           </div>
 
           {/* 하단 액션 버튼 */}
@@ -1087,11 +1094,12 @@ export default function TeamMemberPage() {
                           <div style={{ display: "flex", gap: 6, width: "100%", marginTop: 6 }}>
                             <button onClick={async () => {
                               const chatMsg = `⚠️ **근로계약서 서명 요청**\n아직 근로계약서에 서명하지 않으셨습니다. 아래 링크를 눌러 계약서를 확인하고 서명해 주세요!\n👉 [근로계약서 확인 및 서명하기](file:///contract/view?memberId=${c.team_member_id})`;
-                              const { error } = await supabase.from("messages").insert({
+                              const { error } = await supabase.from("chats").insert({
                                 match_id: member.match_id,
                                 sender_id: member.employer_id,
+                                receiver_id: member.worker_id,
                                 message: chatMsg,
-                                is_system: true,
+                                message_type: "system",
                               });
                               if (!error) {
                                 showToast("🔔 알바생에게 서명 독촉 알림을 보냈습니다!");
@@ -1281,7 +1289,11 @@ export default function TeamMemberPage() {
       {showWorkModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 480 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 20px", color: "var(--text)" }}>근무조건 수정</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 10px", color: "var(--text)" }}>근무조건 수정</h3>
+            <div style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 10, padding: "10px 12px", marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7 }}>
+              📄 계약서 작성 전 임시로 조건을 기록해두는 용도예요.<br />
+              근로계약서를 작성하면 계약서 내용이 자동으로 적용되며, 여기서 입력한 값은 대체됩니다.
+            </div>
 
             <div style={{ marginBottom: 14 }}>
               <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>시급 (원)</p>

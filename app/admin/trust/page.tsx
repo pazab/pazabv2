@@ -11,11 +11,13 @@ export default function AdminTrustPage() {
 
   useEffect(() => { init(); }, []);
 
+  const ADMIN_EMAIL = "hellopazab@gmail.com";
+
   const init = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.replace("/login"); return; }
-    const { data: me } = await supabase.from("users").select("role").eq("id", session.user.id).single();
-    if (me?.role !== "admin") { router.replace("/"); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.email !== ADMIN_EMAIL) { router.replace("/"); return; }
 
     const res = await fetch("/api/admin/trust", {
       headers: { authorization: `Bearer ${session.access_token}` }

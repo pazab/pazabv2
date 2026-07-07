@@ -161,8 +161,8 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const loadCredentials = async () => {
     const { data: cats } = await supabase.from("job_categories").select("*").order("sort_order");
     if (cats) {
-      setParentCategories(cats.filter(c => !c.parent_id));
-      setChildCategories(cats.filter(c => c.parent_id));
+      setParentCategories(cats.filter((c: { parent_id: string | null }) => !c.parent_id));
+      setChildCategories(cats.filter((c: { parent_id: string | null }) => c.parent_id));
     }
     const { data } = await supabase.from("job_credentials").select("*").order("is_mandatory_by_law", { ascending: false });
     if (data) setCredentialsMaster(data);

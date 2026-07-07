@@ -1,66 +1,23 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 
 export default function SignupPage() {
-  const router = useRouter();
   const [userType, setUserType] = useState<"employer" | "worker" | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // 가입 페이지 진입 시 기존 브라우저 롤 캐시 전면 초기화
     localStorage.removeItem("pending_user_type");
     localStorage.removeItem("current_mode");
     localStorage.removeItem("login_redirect");
   }, []);
 
-  // 구글 로그인
-  const handleGoogleLogin = async (type: "employer" | "worker") => {
+  const handleOAuthLogin = (provider: "google" | "kakao", type: "employer" | "worker") => {
     setLoading(true);
     setError("");
-
-    try {
-      // 유저 타입을 localStorage에 저장 (로그인 후 사용)
-      localStorage.setItem("pending_user_type", type);
-
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) throw error;
-    } catch (err: any) {
-      setError("구글 로그인 중 오류가 발생했어요");
-      setLoading(false);
-    }
-  };
-
-  // 카카오 로그인
-  const handleKakaoLogin = async (type: "employer" | "worker") => {
-    setLoading(true);
-    setError("");
-
-    try {
-      // 유저 타입을 localStorage에 저장 (로그인 후 사용)
-      localStorage.setItem("pending_user_type", type);
-
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "kakao",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) throw error;
-    } catch (err: any) {
-      setError("카카오 로그인 중 오류가 발생했어요");
-      setLoading(false);
-    }
+    localStorage.setItem("pending_user_type", type);
+    window.location.href = `/api/auth/login?provider=${provider}`;
   };
 
   return (
@@ -140,7 +97,7 @@ export default function SignupPage() {
 
             {/* 구글 로그인 버튼 */}
             <button
-              onClick={() => handleGoogleLogin(userType)}
+              onClick={() => handleOAuthLogin("google", userType)}
               disabled={loading}
               className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-bold py-4 rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-50 mb-3"
             >
@@ -167,7 +124,7 @@ export default function SignupPage() {
 
             {/* 카카오 로그인 버튼 */}
             <button
-              onClick={() => handleKakaoLogin(userType)}
+              onClick={() => handleOAuthLogin("kakao", userType)}
               disabled={loading}
               className="w-full flex items-center justify-center gap-3 bg-[#FEE500] text-[#191919] font-bold py-4 rounded-xl hover:bg-[#FDD835] transition-colors disabled:opacity-50 mb-4"
             >

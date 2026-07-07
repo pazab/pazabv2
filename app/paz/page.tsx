@@ -54,10 +54,11 @@ function PazContent() {
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.push("/login"); return; }
-      setUser(data.user);
-      loadProfile(data.user.id).then(() => setProfileLoaded(true));
+    supabase.auth.getUser().then((res) => {
+      const user = res.data.user;
+      if (!user) { router.push("/login"); return; }
+      setUser(user);
+      loadProfile(user.id).then(() => setProfileLoaded(true));
     });
   }, []);
 
@@ -313,9 +314,10 @@ function PazContent() {
         .select("work_date, status, actual_hours").eq("worker_id", userId)
         .gte("work_date", `${monthStr}-01`).order("work_date");
       if (!att || att.length === 0) return `이번달(${monthStr}) 근태 기록이 없어요.`;
-      const normal = att.filter(a => a.status==="normal").length;
-      const late = att.filter(a => a.status==="late").length;
-      const totalH = att.reduce((s, a) => s+(parseFloat(a.actual_hours)||0), 0);
+      type AttRow = { status: string; actual_hours: string | number | null };
+      const normal = (att as AttRow[]).filter(a => a.status==="normal").length;
+      const late = (att as AttRow[]).filter(a => a.status==="late").length;
+      const totalH = (att as AttRow[]).reduce((s, a) => s+(parseFloat(String(a.actual_hours ?? 0))||0), 0);
       return `📊 이번달(${monthStr}) 내 근태\n출근 ${normal}일 / 지각 ${late}회\n총 근무 ${totalH.toFixed(1)}시간`;
     }
 
@@ -631,9 +633,9 @@ ${dbContext ? `\n실시간 현황:${dbContext}` : ""}
       if (daysSinceReport >= 7) {
         const { data: weekChats } = await supabase.from("paz_chats").select("emotion, content, role").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
         if (weekChats && weekChats.length >= 5) {
-          const emotions = weekChats.filter(c => c.emotion).map(c => c.emotion);
+          const emotions = weekChats.filter((c: { emotion: string | null }) => c.emotion).map((c: { emotion: string | null }) => c.emotion as string);
           const emotionCount: Record<string, number> = {};
-          emotions.forEach(e => { emotionCount[e] = (emotionCount[e] || 0) + 1; });
+          emotions.forEach((e: string) => { emotionCount[e] = (emotionCount[e] || 0) + 1; });
           const topEmotion = Object.entries(emotionCount).sort((a,b) => b[1]-a[1])[0]?.[0] || "중립";
           const negativeCount = (emotionCount["부정"] || 0) + (emotionCount["스트레스"] || 0) + (emotionCount["불안"] || 0);
           const positiveCount = (emotionCount["긍정"] || 0) + (emotionCount["만족"] || 0) + (emotionCount["기대"] || 0);
@@ -657,7 +659,7 @@ ${dbContext ? `\n실시간 현황:${dbContext}` : ""}
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              messages: [{ role: "user", content: `다음 대화를 3~5문장으로 요약해줘. 사용자의 주요 고민, 상황, 성향이 드러나도록:\n\n${recent.reverse().map(m => `${m.role}: ${m.content}`).join("\n")}` }],
+              messages: [{ role: "user", content: `다음 대화를 3~5문장으로 요약해줘. 사용자의 주요 고민, 상황, 성향이 드러나도록:\n\n${recent.reverse().map((m: { role: string; content: string }) => `${m.role}: ${m.content}`).join("\n")}` }],
               systemPrompt: "대화 요약 전문가. 핵심만 간결하게.",
             }),
           });

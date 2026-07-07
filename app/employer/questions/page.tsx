@@ -29,9 +29,9 @@ function QuestionsContent() {
 
     // 새 질문 표시 (last_checked 이후)
     const lastChecked = profRes.data?.bot_last_checked_at;
-    const logsWithNew = (logsRes.data || []).map(log => ({
+    const logsWithNew = (logsRes.data || []).map((log: { created_at: string; [key: string]: unknown }) => ({
       ...log,
-      isNew: lastChecked ? new Date(log.created_at) > new Date(lastChecked) : true,
+      isNew: lastChecked ? new Date(log.created_at) > new Date(lastChecked as string) : true,
     }));
     setLogs(logsWithNew);
 

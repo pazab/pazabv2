@@ -32,7 +32,7 @@ export default function BottomNav() {
       const { data: existing } = await supabase
         .from("matches").select("id, status")
         .or(`worker_id.eq.${uid},employer_id.eq.${uid}`);
-      (existing || []).forEach(m => {
+      (existing || []).forEach((m: { id: string }) => {
         shownMatches.current.add(m.id);
         shownPending.current.add(m.id);
       });
@@ -47,10 +47,10 @@ export default function BottomNav() {
           .or(`worker_id.eq.${uid},employer_id.eq.${uid}`)
           .gte("created_at", since);
 
-        (newPending || []).forEach(m => {
+        type MatchRow = { id: string; initiated_by: string };
+        (newPending || []).forEach((m: MatchRow) => {
           if (!shownPending.current.has(m.id)) {
             shownPending.current.add(m.id);
-            // 받은 사람에게 알림
             if (m.initiated_by !== uid) {
               showToast("💌 새 러브콜이 왔어요! MY에서 확인해보세요");
             } else {
@@ -66,7 +66,7 @@ export default function BottomNav() {
           .or(`worker_id.eq.${uid},employer_id.eq.${uid}`)
           .gte("matched_at", since);
 
-        (newAccepted || []).forEach(m => {
+        (newAccepted || []).forEach((m: { id: string }) => {
           if (!shownMatches.current.has(m.id)) {
             shownMatches.current.add(m.id);
             setMatchModal({ matchId: m.id });
@@ -136,7 +136,8 @@ export default function BottomNav() {
   const [userType, setUserType] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(async (res) => {
+      const session = res.data.session;
       setIsLoggedIn(!!session);
       if (session) {
         const { data } = await supabase.from("users").select("user_type").eq("id", session.user.id).single();
@@ -150,7 +151,8 @@ export default function BottomNav() {
     const isProtected = protectedPaths.some(p => path.startsWith(p));
     // null이면 아직 세션 확인 중 - 잠깐 기다렸다 재시도
     if (isProtected && isLoggedIn === null) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      supabase.auth.getSession().then((res) => {
+        const session = res.data.session;
         setIsLoggedIn(!!session);
         if (!session) {
           localStorage.setItem("login_redirect", path);

@@ -8,14 +8,15 @@ export default function AuthGuard() {
   const router = useRouter();
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session) => {
       if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED" && !session) {
         router.push("/login");
       }
     });
 
     // Refresh Token 에러 감지
-    supabase.auth.getSession().then(({ error }) => {
+    supabase.auth.getSession().then((res) => {
+      const { error } = res;
       if (error?.message?.includes("Refresh Token Not Found") ||
           error?.message?.includes("Invalid Refresh Token")) {
         supabase.auth.signOut().then(() => router.push("/login"));

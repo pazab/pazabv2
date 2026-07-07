@@ -13,9 +13,10 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.push("/login"); return; }
-      loadTeam(data.user.id);
+    supabase.auth.getUser().then((res) => {
+      const user = res.data.user;
+      if (!user) { router.push("/login"); return; }
+      loadTeam(user.id);
     });
   }, []);
 
@@ -33,18 +34,18 @@ export default function TeamPage() {
 
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-    const ids = data.map(m => m.id);
+    const ids = data.map((m: Record<string, unknown>) => m.id as string);
 
     const { data: att } = await supabase.from("attendance")
       .select("team_member_id, status")
       .in("team_member_id", ids)
       .gte("work_date", monthStart);
 
-    setMembers(data.map(m => ({
+    setMembers(data.map((m: Record<string, unknown>) => ({
       ...m,
-      worker: (m as any).users,
-      this_month: att?.filter(a => a.team_member_id === m.id && (a.status === "normal" || a.status === "late")).length || 0,
-      late: att?.filter(a => a.team_member_id === m.id && a.status === "late").length || 0,
+      worker: m.users,
+      this_month: att?.filter((a: { team_member_id: string; status: string }) => a.team_member_id === m.id && (a.status === "normal" || a.status === "late")).length || 0,
+      late: att?.filter((a: { team_member_id: string; status: string }) => a.team_member_id === m.id && a.status === "late").length || 0,
       contractStatus: (m as any).contract_status === "active" ? "done"
         : (m as any).contract_status === "pending" ? "pending" : "none",
     })));

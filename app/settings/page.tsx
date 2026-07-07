@@ -26,24 +26,25 @@ export default function SettingsPage() {
   const APP_VERSION = "1.0.0";
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.push("/login"); return; }
-      setUser(data.user);
-      loadSettings(data.user.id);
+    supabase.auth.getUser().then((res) => {
+      const user = res.data.user;
+      if (!user) { router.push("/login"); return; }
+      setUser(user);
+      loadSettings(user.id);
     });
   }, []);
 
   async function loadSettings(userId: string) {
-    type UserSettings = { notify_lovecall: boolean; notify_chat: boolean; notify_paz: boolean; name: string; phone: string; birth_date: string; region: string };
+    type UserSettings = { notify_lovecall: boolean; notify_chat: boolean; notify_paz: boolean; nickname: string; phone: string; birth_date: string; region: string };
     const result = await supabase.from("users")
-      .select("notify_lovecall, notify_chat, notify_paz, name, phone, birth_date, region")
+      .select("notify_lovecall, notify_chat, notify_paz, nickname, phone, birth_date, region")
       .eq("id", userId).maybeSingle();
     const data = result.data as UserSettings | null;
     if (data) {
       setNotifyLovecall(data.notify_lovecall ?? true);
       setNotifyChat(data.notify_chat ?? true);
       setNotifyPaz(data.notify_paz ?? true);
-      setName(data.name || "");
+      setName(data.nickname || "");
       setPhone(data.phone || "");
       setBirthDate(data.birth_date || "");
       const { sido: s, gugun: g } = parseRegion(data.region || "");

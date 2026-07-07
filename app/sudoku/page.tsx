@@ -73,14 +73,15 @@ function SudokuMain() {
 
       const now = Date.now()
       const myGrade = 레이팅to스도쿠등급(profile.rating)
-      const available = (rooms || []).filter(r => {
+      type Room = { created_at: number; participants: Record<string, unknown>; max_players: number; host_id: string; code: string };
+      const available = (rooms || []).filter((r: Room) => {
         if (now - r.created_at > 10 * 60 * 1000) return false
         const count = Object.keys(r.participants || {}).length
         return r.participants?.[profile.uid] || count < r.max_players
       })
 
-      const sameGrade = available.find(r => r.participants?.[r.host_id]?.grade === myGrade && !r.participants?.[profile.uid])
-      const target = sameGrade || available.find(r => !r.participants?.[profile.uid]) || available[0]
+      const sameGrade = available.find((r: Room) => (r.participants?.[r.host_id] as Record<string, unknown>)?.grade === myGrade && !r.participants?.[profile.uid])
+      const target = sameGrade || available.find((r: Room) => !r.participants?.[profile.uid]) || available[0]
 
       if (target) {
         if (target.participants?.[profile.uid]) { router.push(`/sudoku?code=${target.code}`); return }

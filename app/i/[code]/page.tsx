@@ -43,7 +43,7 @@ export default function InviteAcceptPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setIsLoggedIn(!!data.user))
+    supabase.auth.getUser().then((res) => setIsLoggedIn(!!res.data.user))
   }, [])
 
   useEffect(() => {

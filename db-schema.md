@@ -1,0 +1,443 @@
+# PAZAB v2 — DB 스키마 실측 기록
+> 2026-07-08 Supabase information_schema 직접 조회 기준 | clrjxxkgceluvzvrkvyl  
+> 2026-07-08 DB 정리 + TypeScript strict 정합 완료
+
+---
+
+## 목차
+1. [테이블 목록](#1-테이블-목록)
+2. [테이블별 실제 컬럼](#2-테이블별-실제-컬럼)
+3. [중복/레거시 필드 현황](#3-중복레거시-필드-현황)
+4. [SOURCE OF TRUTH 정의](#4-source-of-truth-정의)
+5. [남은 정리 대상](#5-남은-정리-대상)
+
+---
+
+## 1. 테이블 목록
+
+| 테이블 | 상태 | 비고 |
+|--------|------|------|
+| attendance | ✅ 사용 중 | clock_in/out DROP 완료, check_in/out SOT |
+| attendance_logs | ✅ 사용 중 | 감사 로그 |
+| bot_chat_logs | ✅ 사용 중 | AI 상담 로그 |
+| chats | ✅ 사용 중 | 실제 채팅 테이블 |
+| contracts | ✅ 사용 중 | |
+| daeta_postings | ✅ 사용 중 | 긴급 대타 공고 |
+| employer_profiles | ✅ 사용 중 | 공고 레거시 컬럼 DROP 완료 |
+| invite_codes | ✅ 사용 중 | |
+| job_categories | ✅ 사용 중 | 마스터 테이블 |
+| job_credentials | ✅ 사용 중 | 마스터 테이블 |
+| jobs | ✅ 사용 중 | |
+| matches | ✅ 사용 중 | |
+| min_wages | ✅ 사용 중 | 최저임금 연도별 |
+| notifications | ✅ 사용 중 | |
+| paz_chats | ✅ 신규 생성 | PAZ AI 채팅 히스토리 |
+| paz_memory | ✅ 사용 중 | PAZ AI 사용자 메모리 |
+| payslips | ✅ 사용 중 | 중복 컬럼 DROP 완료 |
+| push_subscriptions | ✅ 사용 중 | VAPID |
+| ai_usage_logs | ✅ 신규 생성 | AI 호출 비용 추적 |
+| interviews | ✅ 신규 생성 | 사전미팅/인터뷰 기록 |
+| trust_score_logs | ✅ 신규 생성 | 신뢰도 변동 이력 |
+| sudoku_ratings | ✅ 사용 중 | |
+| sudoku_records | ✅ 사용 중 | |
+| tax_rates | ✅ 사용 중 | 세율 |
+| team_members | ✅ 사용 중 | |
+| user_badges | ✅ 사용 중 | |
+| users | ✅ 사용 중 | name 컬럼 DROP 완료 |
+| worker_profiles | ✅ 사용 중 | trust_score/grade DROP 완료 |
+| ~~chatrooms~~ | 🗑️ DROP 완료 | messages와 쌍, 레거시 |
+| ~~messages~~ | 🗑️ DROP 완료 | chatrooms 쌍, 레거시 |
+| ~~job_postings~~ | 🗑️ DROP 완료 | jobs로 대체 |
+
+---
+
+## 2. 테이블별 실제 컬럼
+
+### attendance
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | gen_random_uuid() | |
+| team_member_id | uuid | NO | | |
+| employer_id | uuid | NO | | |
+| worker_id | uuid | YES | | |
+| work_date | date | NO | | |
+| status | text | YES | 'absent' | |
+| memo | text | YES | | |
+| actual_hours | float8 | YES | 0 | |
+| check_in | timestamptz | YES | | ✅ SOT |
+| check_out | timestamptz | YES | | ✅ SOT |
+| created_at | timestamptz | NO | now() | |
+
+> ~~clock_in / clock_out~~ — DROP 완료 (check_in/check_out SOT)
+
+---
+
+### employer_profiles
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | gen_random_uuid() | |
+| user_id | uuid | YES | | |
+| business_name | text | YES | | |
+| business_type | text | YES | | |
+| description | text | YES | | |
+| region | text | YES | | ✅ 도로명 주소 SOT |
+| sido/sigungu/eupmyeondong | text | YES | | 지역 필터용 |
+| address | text | YES | | ✅ region과 동일 (신규 저장 기준) |
+| address_detail | text | YES | | ✅ 세부주소 SOT |
+| lat/lng | float8 | YES | | |
+| hr_only | boolean | YES | true | |
+| is_active | boolean | YES | true | |
+| is_deleted | boolean | NO | false | |
+| created_at/updated_at | timestamptz | NO | now() | |
+| geo_radius_meters | integer | YES | 200 | |
+| biz_reg_number/ceo_name/biz_tel | text | YES | | 사업자 정보 |
+| business_image_url | text | YES | | 🟡 image_url과 중복 |
+| image_url | text | YES | | 🟡 |
+| image_urls | text[] | YES | '{}' | |
+| video_url | text | YES | | |
+| category_id | uuid | YES | | |
+| category_ids | uuid[] | YES | '{}' | |
+| custom_category | text | YES | | |
+| view_count/like_count | integer | YES | 0 | |
+| employer_type | text | YES | | |
+| bot_knowledge | text | YES | | |
+| bot_interview_done | boolean | YES | false | |
+| bot_last_checked_at | timestamptz | YES | | |
+
+> 공고 레거시 컬럼 DROP 완료: `job_status`, `job_type`, `wage`, `wage_negotiable`, `work_days`, `days_negotiable`, `work_hours`, `work_start_hour`, `work_end_hour`, `work_start_date`, `work_end_date`, `expires_at`, `is_urgent`, `is_long_term`, `meal_provided`, `parking`, `staff_count`, `tags`, `required_credentials`, `hexaco_data`, `bio5_data`, `analyzed_mbti`, `tagline`, `best_matches`, `worst_matches`, `caution`, `employer_bot_knowledge`
+
+---
+
+### jobs
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | gen_random_uuid() | |
+| employer_profile_id | uuid | NO | | |
+| user_id | uuid | NO | | |
+| wage/wage_negotiable | integer/bool | YES | | ✅ |
+| work_days/days_negotiable | text/bool | YES | | ✅ |
+| work_hours | text | YES | | ✅ |
+| work_start_hour/work_end_hour | integer | YES | | |
+| work_start_date/work_end_date | date | YES | | |
+| job_type | text | YES | 'parttime' | |
+| staff_count | integer | YES | 1 | |
+| tags | text[] | YES | | |
+| required_credentials | jsonb | YES | | |
+| category_id/category_ids | uuid/uuid[] | YES | | |
+| custom_category | text | YES | | |
+| meal_provided/parking/is_urgent | boolean | YES | false | |
+| tagline | text | YES | | |
+| employer_type | text | YES | | |
+| best_matches/worst_matches | text[] | YES | | |
+| caution | text | YES | | |
+| analyzed_mbti | text | YES | | |
+| bio5_data/hexaco_data | jsonb | YES | | 🔴 users 중복 |
+| bot_knowledge | text | YES | | |
+| bot_interview_done | boolean | YES | false | |
+| is_active | boolean | YES | false | |
+| expires_at | timestamptz | YES | | |
+| created_at/updated_at | timestamptz | YES | now() | |
+| like_count/view_count | integer | YES | 0 | |
+
+---
+
+### matches
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | gen_random_uuid() | |
+| employer_id | uuid | NO | | |
+| worker_id | uuid | NO | | |
+| job_posting_id | uuid | YES | | 레거시 |
+| daeta_posting_id | uuid | YES | | |
+| job_id | uuid | YES | | ✅ jobs.id FK |
+| match_score | integer | YES | 0 | |
+| worker_tier | text | YES | | |
+| status | text | YES | 'pending' | 🔴 progress_status와 중복 |
+| progress_status | text | YES | 'pending' | ✅ SOT |
+| matched_at | timestamptz | YES | now() | |
+| interview_at | timestamptz | YES | | |
+| interview_memo | text | YES | | |
+| employer_left/worker_left | boolean | YES | false | |
+| hire_confirmed_by_employer/worker | boolean | YES | false | |
+| initiated_by | uuid | YES | | |
+| created_at/updated_at | timestamptz | NO | now() | |
+
+> ⚠️ `employer_profile_id` 컬럼 없음  
+> ⚠️ `status` 레거시 — 코드에서 `progress_status` 사용
+
+---
+
+### team_members
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | gen_random_uuid() | |
+| employer_id | uuid | NO | | |
+| worker_id | uuid | YES | | NULL = 초대 미수락 |
+| employer_profile_id | uuid | YES | | 소속 매장 |
+| match_id | uuid | YES | | |
+| nickname | text | YES | | 팀 내 별명 |
+| role_desc | text | YES | | 직책 설명 |
+| member_role | text | YES | 'staff' | 'staff'\|'manager' |
+| status | text | YES | 'active' | 'active'\|'inactive'\|'left' |
+| contract_status | text | YES | 'none' | 'none'\|'pending'\|'active' |
+| invite_status | text | YES | 'none' | 'none'\|'invited'\|'joined' |
+| invited_at | timestamptz | YES | | |
+| hire_date | date | YES | | ✅ DATE 타입 |
+| wage | integer | YES | | |
+| work_days | text | YES | | |
+| work_hours | text | YES | | |
+| geo_checkin | boolean | YES | true | |
+| docs_submitted | jsonb | YES | '{}' | |
+| payslip_auto_issue | boolean | YES | false | |
+| payslip_auto_issue_offset | integer | YES | 0 | |
+| payslip_payday_fallback | integer | YES | 10 | |
+| created_at/updated_at | timestamptz | NO | now() | |
+
+> ⚠️ `hired_at` 없음 — `hire_date`(DATE) 사용  
+> ⚠️ `user_id` 없음 — `worker_id` / `employer_id` 직접 사용
+
+---
+
+### users
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | | auth.users PK |
+| email | text | YES | | |
+| nickname | text | YES | | ✅ 표시용 이름 SOT |
+| nickname_lower | text | YES | | 검색 인덱스 |
+| real_name | text | YES | | ✅ 법적 이름 (계약서) |
+| profile_image_url | text | YES | | 🟡 avatar_url과 중복 |
+| avatar_url | text | YES | | 🟡 |
+| phone | text | YES | | |
+| user_type | text | YES | | ✅ 'employer'\|'worker'\|'both' SOT |
+| role_inferred | text | YES | | 행동 기반 추론 |
+| onboarded | boolean | YES | false | |
+| onboarding_data | jsonb | YES | | |
+| bank_verified | boolean | YES | false | |
+| bank_verified_at | timestamptz | YES | | |
+| hexaco_done | boolean | YES | false | |
+| hexaco_version | text | YES | '5turn' | |
+| worker_result | jsonb | YES | | ✅ HEXACO 분석 결과 SOT |
+| employer_result | jsonb | YES | | ✅ |
+| trust_score | integer | YES | 50 | ✅ SOT |
+| grade | text | YES | 'bronze' | ✅ SOT |
+| is_active | boolean | YES | true | |
+| profile_completed | boolean | YES | false | |
+| push_token | text | YES | | |
+| kakao_id | text | YES | | |
+| region | text | YES | | |
+| address | text | YES | | |
+| address_detail | text | YES | | |
+| birth_date | date | YES | | |
+| employer_bot_knowledge | text | YES | | |
+| created_at/updated_at | timestamptz | NO | now() | |
+
+> ~~name~~ 컬럼 DROP 완료 → `nickname` SOT  
+> ⚠️ `role` 없음 — `user_type` 사용  
+> ⚠️ `paz_name`, `paz_avatar` 등 paz_* 컬럼 없음
+
+---
+
+### worker_profiles
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | gen_random_uuid() | |
+| user_id | uuid | YES | | |
+| birth_year | integer | YES | | |
+| gender | text | YES | | |
+| bio | text | YES | | |
+| image_url | text | YES | | 🟡 profile_image_url과 중복 |
+| profile_image_url | text | YES | | 🟡 |
+| image_urls | text[] | YES | '{}' | |
+| video_url | text | YES | | |
+| job_categories | text[] | YES | '{}' | |
+| desired_type | text | YES | | |
+| worker_type | text | YES | | |
+| available_days | text[] | YES | '{}' | |
+| available_hours | text | YES | | |
+| available_now | boolean | YES | false | |
+| desired_wage | integer | YES | | |
+| region | text | YES | | |
+| sido/sigungu/eupmyeondong | text | YES | | |
+| lat/lng | float8 | YES | | |
+| address | text | YES | | |
+| desired_region | text | YES | | 🔴 region과 중복 |
+| is_verified | boolean | YES | false | |
+| verified_reason | text | YES | | |
+| hexaco_data | jsonb | YES | | 🔴 users.worker_result.hexaco와 중복 |
+| bio5_data | jsonb | YES | | |
+| analyzed_mbti | text | YES | | |
+| best_matches/worst_matches | text[] | YES | '{}' | |
+| experience | text | YES | | |
+| experience_months | integer | YES | 0 | |
+| is_active/is_public | boolean | YES | true | |
+| tagline | text | YES | | |
+| view_count/like_count/work_count | integer | YES | 0 | |
+| created_at/updated_at | timestamptz | NO | now() | |
+
+> ~~trust_score / grade~~ DROP 완료 → `users.trust_score / grade` SOT  
+> ~~name~~ DROP 완료 → `users.nickname` SOT
+
+---
+
+### contracts
+| 컬럼 | 타입 | Null | 기본값 |
+|------|------|------|--------|
+| id | uuid | NO | gen_random_uuid() |
+| employer_id/worker_id | uuid | NO | |
+| team_member_id/match_id | uuid | YES | |
+| contract_type | text | YES | 'parttime' |
+| start_date/end_date | date | YES | |
+| wage | integer | YES | |
+| wage_type | text | YES | 'hourly' |
+| work_hours/work_days | text | YES | |
+| duties | text | YES | |
+| workplace_address | text | YES | |
+| employer_signed/worker_signed | boolean | YES | false |
+| employer_signed_at/worker_signed_at | timestamptz | YES | |
+| pdf_url | text | YES | |
+| status | text | YES | 'draft' |
+| contract_data | jsonb | YES | |
+| created_at | timestamptz | NO | now() |
+
+---
+
+### payslips
+| 컬럼 | 타입 | Null | 기본값 | 비고 |
+|------|------|------|--------|------|
+| id | uuid | NO | gen_random_uuid() | |
+| employer_id | uuid | NO | | |
+| worker_id/team_member_id/match_id | uuid | YES | | |
+| pay_period_start/end | date | YES | | |
+| year/month | integer | YES | | |
+| wage | integer | YES | | ✅ SOT |
+| total_hours | numeric | YES | | |
+| work_days | integer | YES | | |
+| overtime_hours | numeric | YES | | |
+| base_pay/overtime_pay | integer | YES | | |
+| total_pay | integer | YES | | ✅ SOT |
+| deductions | integer | YES | 0 | |
+| income_tax/local_tax | integer | YES | 0 | |
+| health_insurance/employment_insurance/national_pension | integer | YES | 0 | |
+| total_deductions | integer | YES | 0 | |
+| net_pay | integer | YES | | ✅ SOT |
+| attendance_data | jsonb | YES | | |
+| status | text | YES | 'issued' | |
+| memo/correction_reason | text | YES | | |
+| issued_at/confirmed_at/created_at | timestamptz | NO/YES | now() | |
+
+> ~~base_wage / total_amount / net_amount~~ DROP 완료 → `wage / total_pay / net_pay` SOT
+
+---
+
+### invite_codes
+| 컬럼 | 타입 | 비고 |
+|------|------|------|
+| id | uuid | |
+| code | text | |
+| employer_id | uuid | |
+| employer_profile_id | uuid | |
+| team_member_id | uuid | |
+| role | text | 'worker' |
+| biz_name | text | |
+| wage/work_days/work_hours | integer/text | 초대 시 조건 미리 설정 |
+| used_at/expires_at/created_at | timestamptz | |
+| created_by | uuid | |
+
+---
+
+### 신규 생성 테이블
+| 테이블 | 주요 컬럼 |
+|--------|----------|
+| paz_chats | user_id, role, content, created_at |
+| ai_usage_logs | user_id, model, input_tokens, output_tokens, cost_usd, endpoint, created_at |
+| interviews | match_id, employer_id, worker_id, type, transcript, result, created_at |
+| trust_score_logs | user_id, delta, reason, before_score, after_score, ref_id, created_at |
+
+---
+
+### 기타 테이블 (간략)
+| 테이블 | 주요 컬럼 |
+|--------|----------|
+| chats | match_id, sender_id, receiver_id, message, message_type, is_read |
+| notifications | user_id, type, title, body, data, is_read |
+| paz_memory | user_id, memory_type, content |
+| min_wages | year, hourly_wage, note |
+| tax_rates | year, health_insurance_rate, employment_insurance_rate, national_pension_rate, industrial_accident_rate |
+| push_subscriptions | user_id, subscription(jsonb) |
+| user_badges | user_id, badge_key |
+| job_categories | name, parent_id, sort_order |
+| job_credentials | category_name, duty_name, name, is_mandatory_by_law |
+| sudoku_ratings | user_id, rating |
+| sudoku_records | user_id, difficulty, time_seconds, solved, rating_delta |
+| bot_chat_logs | employer_profile_id, worker_profile_id, question, answer, bot_uncertain |
+| attendance_logs | team_member_id, attendance_id, action, actor_id, before_data, after_data |
+
+---
+
+## 3. 중복/레거시 필드 현황
+
+### 🟡 이미지 컬럼 중복 (미해결)
+| 테이블 | 중복 컬럼 |
+|--------|----------|
+| users | profile_image_url, avatar_url |
+| worker_profiles | profile_image_url, image_url, image_urls |
+| employer_profiles | business_image_url, image_url, image_urls |
+
+### 🟡 matches.status vs progress_status (미해결)
+- `progress_status` ✅ SOT — 코드에서 사용
+- `status` 🔴 레거시 — DROP 가능 (코드 전수 확인 후)
+
+### 🔴 worker_profiles.hexaco_data (미해결)
+- `users.worker_result.hexaco` ✅ SOT
+- `worker_profiles.hexaco_data` 🔴 중복, DROP 가능
+
+---
+
+## 4. SOURCE OF TRUTH 정의
+
+| 데이터 | SOT | 설명 |
+|--------|-----|------|
+| 공고 조건 (wage/work_days/work_hours) | **jobs** | employer_profiles 레거시 DROP 완료 |
+| 팀원별 근무조건 | **team_members** | 계약 후 contracts에서 덮어씀 |
+| 계약 내용 (PDF 기준) | **contracts.contract_data** | |
+| 사용자 성향/HEXACO | **users.worker_result / employer_result** | worker_profiles.hexaco_data 레거시 |
+| 신뢰도/등급 | **users.trust_score / grade** | worker_profiles DROP 완료 |
+| 이름 (표시) | **users.nickname** | users.name DROP 완료 |
+| 이름 (법적/계약서) | **users.real_name** | |
+| 역할 | **users.user_type** | 'employer'\|'worker'\|'both' |
+| 매장 도로명 주소 | **employer_profiles.region** | |
+| 매장 세부주소 | **employer_profiles.address_detail** | |
+| 출근 기록 | **attendance.check_in / check_out** | clock_* DROP 완료 |
+| 세율 | **tax_rates** | 연도별 |
+| 최저임금 | **min_wages** | year, hourly_wage |
+| 채팅 | **chats** | chatrooms/messages DROP 완료 |
+| PAZ AI 채팅 히스토리 | **paz_chats** | |
+| AI 호출 비용 | **ai_usage_logs** | |
+| 신뢰도 변동 이력 | **trust_score_logs** | |
+| 인터뷰/사전미팅 | **interviews** | |
+| 매칭 진행상태 | **matches.progress_status** | matches.status 레거시 (미해결) |
+
+---
+
+## 5. 남은 정리 대상
+
+### 🟡 중기 (데이터 확인 후 DROP)
+- [ ] `matches.status` — `progress_status`로 완전 교체 후 DROP
+- [ ] `worker_profiles.hexaco_data` — users.worker_result.hexaco SOT 확인 후 DROP
+- [ ] 이미지 컬럼 통일 (profile_image_url / avatar_url / image_url → 하나로)
+
+### ✅ 완료된 정리
+- [x] `attendance.clock_in / clock_out` DROP
+- [x] `worker_profiles.trust_score / grade` DROP
+- [x] `worker_profiles.name` DROP
+- [x] `employer_profiles.employer_bot_knowledge` DROP
+- [x] `employer_profiles` 공고 레거시 컬럼 26개 DROP
+- [x] `payslips.base_wage / total_amount / net_amount` DROP
+- [x] `users.name` → `nickname` 마이그레이션 후 DROP
+- [x] `chatrooms`, `messages`, `job_postings` 테이블 DROP
+- [x] `paz_chats`, `ai_usage_logs`, `interviews`, `trust_score_logs` 테이블 생성
+- [x] 코드 참조 정합: `users.role` → `user_type`, `team_members.hired_at` → `hire_date`
+- [x] `matches.employer_profile_id` 코드 참조 제거
+- [x] `lib/supabase.ts` TypeScript strict 정합 (Proxy → 직접 export)
+- [x] codebase 전체 `tsc --noEmit` 0 errors

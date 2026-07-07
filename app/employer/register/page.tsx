@@ -203,8 +203,8 @@ function EmployerRegisterContent() {
   const loadCategories = async () => {
     const { data } = await supabase.from("job_categories").select("*").order("sort_order");
     if (data) {
-      setParentCategories(data.filter(c => !c.parent_id));
-      setChildCategories(data.filter(c => c.parent_id));
+      setParentCategories(data.filter((c: { parent_id: string | null }) => !c.parent_id));
+      setChildCategories(data.filter((c: { parent_id: string | null }) => c.parent_id));
     }
     const { data: creds } = await supabase.from("job_credentials").select("*").order("is_mandatory_by_law", { ascending: false });
     if (creds) setCredentialsMaster(creds);
@@ -309,10 +309,11 @@ function EmployerRegisterContent() {
     const catId = job.category_id;
     if (catId) {
       supabase.from("job_categories").select("*").eq("id", catId).single()
-        .then(({ data: cat }) => {
+        .then((res) => {
+          const cat = res.data;
           if (cat?.parent_id) {
             supabase.from("job_categories").select("*").eq("id", cat.parent_id).single()
-              .then(({ data: parent }) => { if (parent) setSelectedParent(parent); });
+              .then((r2) => { if (r2.data) setSelectedParent(r2.data); });
           } else if (cat) setSelectedParent(cat);
         });
     }

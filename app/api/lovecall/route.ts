@@ -463,7 +463,7 @@ export async function PATCH(req: NextRequest) {
           const [wp, ep] = await Promise.all([
             supabase.from("worker_profiles").select("worker_type, hexaco_data, desired_region")
               .eq("user_id", m.worker_id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-            supabase.from("employer_profiles").select("employer_type, hexaco_data, business_type, region")
+            supabase.from("employer_profiles").select("employer_type, business_type, region")
               .eq("id", m.employer_profile_id).maybeSingle(),
           ]);
           await supabase.from("match_analytics").insert({
@@ -474,7 +474,7 @@ export async function PATCH(req: NextRequest) {
             region_sido: (ep.data?.region || "").split(" ")[0] || null,
             outcome: action === "hire" ? "hired" : action === "cancel" ? "cancelled" : "failed",
             worker_hexaco: wp.data?.hexaco_data || null,
-            employer_hexaco: ep.data?.hexaco_data || null,
+            employer_hexaco: null,
           });
         }
       } catch {} // 통계 저장 실패해도 메인 로직에 영향 없음

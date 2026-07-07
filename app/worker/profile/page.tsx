@@ -172,8 +172,8 @@ function WorkerProfileContent() {
   const loadCategories = async () => {
     const { data } = await supabase.from("job_categories").select("*").order("sort_order");
     if (data) {
-      setParentCategories(data.filter(c => !c.parent_id));
-      setChildCategories(data.filter(c => c.parent_id));
+      setParentCategories(data.filter((c: { parent_id: string | null }) => !c.parent_id));
+      setChildCategories(data.filter((c: { parent_id: string | null }) => c.parent_id));
     }
   };
 

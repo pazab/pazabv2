@@ -49,7 +49,8 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
   const isEdit = !!existingStore;
   const [bizName, setBizName] = useState(existingStore?.business_name || "");
   const [bizType, setBizType] = useState(existingStore?.business_type || "");
-  const [address, setAddress] = useState(existingStore?.address || existingStore?.region || "");
+  // region은 항상 도로명만 저장 — address는 구버전에서 상세 합쳐진 경우 있어 region 우선
+  const [address, setAddress] = useState(existingStore?.region || existingStore?.address || "");
   const [addressDetail, setAddressDetail] = useState(existingStore?.address_detail || "");
   const [lat, setLat] = useState<number | null>(existingStore?.lat || null);
   const [lng, setLng] = useState<number | null>(existingStore?.lng || null);
@@ -60,6 +61,7 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
   const [directInput, setDirectInput] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -131,7 +133,7 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
       business_name: bizName.trim(),
       business_type: bizType,
       region: address,
-      address: [address, addressDetail].filter(Boolean).join(" "),
+      address: address,
       address_detail: addressDetail,
       lat, lng,
       biz_tel: bizTel,
@@ -147,7 +149,27 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
     } else {
       payload.user_id = userId;
       payload.is_active = false;
+
+      // 신규 매장 등록 전, 기존 매장 중 가장 오래된 것 파악
+      const { data: existingStores } = await supabase
+        .from("employer_profiles")
+        .select("id")
+        .eq("user_id", userId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .not("business_name", "is", null)
+        .order("created_at", { ascending: true })
+        .limit(1);
+      const oldestStoreId = existingStores?.[0]?.id ?? null;
+
       ({ error: err } = await supabase.from("employer_profiles").insert(payload));
+
+      // 기존 팀원 중 employer_profile_id가 null인 경우 가장 오래된 매장으로 연결
+      if (!err && oldestStoreId) {
+        await supabase.from("team_members")
+          .update({ employer_profile_id: oldestStoreId })
+          .eq("employer_id", userId)
+          .is("employer_profile_id", null);
+      }
     }
     setSaving(false);
     if (err) { setError("저장 실패: " + err.message); return; }
@@ -275,12 +297,35 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
 
           {error && <p style={{ color: "#f87171", fontSize: 13, textAlign: "center", margin: 0 }}>{error}</p>}
 
-          <button onClick={handleSave} disabled={saving}
+          <button onClick={() => isEdit ? setShowConfirm(true) : handleSave()} disabled={saving}
             style={{ ...btnPrimary, fontSize: 15, opacity: saving ? 0.7 : 1 }}>
             {saving ? "저장 중..." : isEdit ? "수정 완료 ✓" : "매장 등록하기 🎉"}
           </button>
         </div>
       </div>
+
+      {/* 수정 확인 모달 */}
+      {showConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "var(--surface)", borderRadius: 20, padding: 28, width: "100%", maxWidth: 340, textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🏪</div>
+            <p style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", margin: "0 0 8px" }}>매장 정보를 수정할까요?</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 24px", lineHeight: 1.6 }}>
+              변경된 내용이 저장되며<br />계약서 작성 시 자동으로 반영됩니다.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowConfirm(false)}
+                style={{ flex: 1, padding: 13, borderRadius: 12, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 14, cursor: "pointer" }}>
+                취소
+              </button>
+              <button onClick={() => { setShowConfirm(false); handleSave(); }}
+                style={{ flex: 1, padding: 13, borderRadius: 12, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                수정 완료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -85,22 +85,23 @@ export default function PazFloatingButton() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setLoggedIn(!!data.user);
-      if (data.user) {
-        userRef.current = data.user;
-        loadPazSettings(data.user.id);
+    supabase.auth.getUser().then((res) => {
+      const user = res.data.user;
+      setLoggedIn(!!user);
+      if (user) {
+        userRef.current = user;
+        loadPazSettings(user.id);
         // 푸시 구독 (이미 구독된 경우 스킵)
         if (typeof window !== "undefined" && "Notification" in window) {
           if (Notification.permission === "default") {
-            setTimeout(() => subscribePush(data.user!.id), 3000);
+            setTimeout(() => subscribePush(user.id), 3000);
           } else if (Notification.permission === "granted") {
-            subscribePush(data.user.id);
+            subscribePush(user.id);
           }
         }
       }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session) => {
       setLoggedIn(!!session);
       if (session) {
         userRef.current = session.user;

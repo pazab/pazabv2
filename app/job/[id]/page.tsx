@@ -179,8 +179,8 @@ export default function JobDetailPage() {
     if (session) {
       setIsLoggedIn(true);
       setUserId(session.user.id);
-      const { data: u } = await supabase.from("users").select("role").eq("id", session.user.id).maybeSingle();
-      if (u) role = u.role;
+      const { data: u } = await supabase.from("users").select("user_type").eq("id", session.user.id).maybeSingle();
+      if (u) role = u.user_type;
     }
     await fetchJob(session?.user.id, role);
   };

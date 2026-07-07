@@ -137,15 +137,15 @@ export default function WorkerDetailPage() {
     if (session) {
       setIsLoggedIn(true);
       setUserId(session.user.id);
-      const { data: u } = await supabase.from("users").select("role").eq("id", session.user.id).maybeSingle();
-      if (u) role = u.role;
+      const { data: u } = await supabase.from("users").select("user_type").eq("id", session.user.id).maybeSingle();
+      if (u) role = u.user_type;
     }
     await fetchWorker(session?.user.id, role);
   };
 
   const fetchWorker = async (uid?: string, role?: string | null) => {
     const { data: profile } = await supabase.from("worker_profiles").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    const { data: user } = await supabase.from("users").select("name, nickname, grade, trust_score, review_count, mbti, worker_result").eq("id", id).single();
+    const { data: user } = await supabase.from("users").select("nickname, grade, trust_score, worker_result").eq("id", id).single();
     if (profile) {
       setWorker(profile as Record<string, unknown>);
       setWorkerUser(user as Record<string, unknown>);
@@ -158,7 +158,7 @@ export default function WorkerDetailPage() {
         const { data: likeData } = await supabase.from("job_likes").select("id").eq("user_id", uid).eq("target_id", id).eq("target_type", "worker").maybeSingle();
         setIsLiked(!!likeData);
 
-        const { data: empProfile } = await supabase.from("employer_profiles").select("id").eq("user_id", uid).eq("is_active", true).neq("job_status", "completed").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        const { data: empProfile } = await supabase.from("employer_profiles").select("id").eq("user_id", uid).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (empProfile) setEmployerProfileId(empProfile.id);
 
         try {
