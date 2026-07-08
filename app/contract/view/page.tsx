@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +22,9 @@ function ContractViewContent() {
   const [showReviseModal, setShowReviseModal] = useState(false);
   const [reviseMsg, setReviseMsg] = useState("");
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [previewScale, setPreviewScale] = useState(1);
+  const previewWrapRef = useRef<HTMLDivElement>(null);
+  const pinchRef = useRef<{ dist: number; scale: number } | null>(null);
 
   useEffect(() => {
     loadContract();
@@ -111,7 +114,34 @@ function ContractViewContent() {
   }
 
   const doPrint = () => window.print();
-  const openPrintPreview = () => setShowPrintPreview(true);
+  const openPrintPreview = () => {
+    setShowPrintPreview(true);
+    // 열릴 때 화면 너비에 맞게 초기 스케일 계산 (setTimeout으로 DOM 렌더 후)
+    setTimeout(() => {
+      const w = window.innerWidth - 32;
+      setPreviewScale(Math.min(1, w / 794));
+    }, 50);
+  };
+
+  const onPinchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 2) return;
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY,
+    );
+    pinchRef.current = { dist, scale: previewScale };
+  };
+  const onPinchMove = (e: React.TouchEvent) => {
+    if (e.touches.length !== 2 || !pinchRef.current) return;
+    e.preventDefault();
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY,
+    );
+    const next = Math.min(2.5, Math.max(0.3, pinchRef.current.scale * (dist / pinchRef.current.dist)));
+    setPreviewScale(next);
+  };
+  const onPinchEnd = () => { pinchRef.current = null; };
   const downloadPDF = openPrintPreview;
 
   if (loading) return (
@@ -563,8 +593,24 @@ function ContractViewContent() {
             </button>
           </div>
           {/* 계약서 스크롤 영역 */}
-          <div className="print-preview-scroll" style={{ flex:1, overflowY:"auto", padding:"20px 0", display:"flex", justifyContent:"center" }}>
-            <div style={{ background:"#fff", width:"210mm", minWidth:320, boxShadow:"0 4px 32px rgba(0,0,0,0.5)" }}>
+          <div
+            ref={previewWrapRef}
+            className="print-preview-scroll"
+            onTouchStart={onPinchStart}
+            onTouchMove={onPinchMove}
+            onTouchEnd={onPinchEnd}
+            style={{ flex:1, overflow:"auto", padding:"16px", display:"flex", justifyContent:"center", alignItems:"flex-start", touchAction:"pan-x pan-y" }}
+          >
+            <div style={{
+              background:"#fff",
+              width:"794px",
+              transformOrigin:"top center",
+              transform:`scale(${previewScale})`,
+              // scale 줄었을 때 컨테이너 높이도 같이 줄도록
+              marginBottom: `calc((${previewScale} - 1) * 100%)`,
+              boxShadow:"0 4px 32px rgba(0,0,0,0.5)",
+              flexShrink: 0,
+            }}>
               <ContractOfficialForm data={f} contractType={ct} />
             </div>
           </div>
