@@ -39,10 +39,10 @@ const STYLES = `
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap');
 
 * { margin:0; padding:0; box-sizing:border-box; }
+html, body { height: auto !important; }
 
 .of {
   width: 210mm;
-  min-height: 297mm;
   padding: 12mm 15mm 10mm;
   font-family: 'Noto Serif KR', '바탕', 'Batang', serif;
   font-size: 9.5pt;
@@ -58,10 +58,10 @@ const STYLES = `
 .of-title span {
   display: inline-block;
   border: 2.5px solid #000;
-  font-size: 14pt;
+  font-size: 13pt;
   font-weight: 900;
-  padding: 3px 20px;
-  letter-spacing: 4px;
+  padding: 3px 16px;
+  letter-spacing: 2px;
 }
 
 .of-party {
@@ -139,9 +139,9 @@ const STYLES = `
 }
 
 @media print {
-  @page { size: A4; margin: 0; }
-  html, body { width: 210mm; }
-  .of { padding: 12mm 15mm 10mm; }
+  @page { size: A4; margin: 18mm 15mm 15mm; }
+  html, body { width: 100%; margin: 0; padding: 0; height: auto !important; }
+  .of { width: 100%; padding: 0; }
 }
 `;
 

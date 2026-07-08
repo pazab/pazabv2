@@ -3,7 +3,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
-import ContractOfficialForm, { getOfficialFormHTML } from "@/components/ContractOfficialForm";
+import ContractOfficialForm from "@/components/ContractOfficialForm";
 
 function ContractViewContent() {
   const router = useRouter();
@@ -17,11 +17,11 @@ function ContractViewContent() {
   const [contract, setContract] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [agreeing, setAgreeing] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [userRole, setUserRole] = useState<"employer"|"worker"|null>(null);
   const [showAgreeModal, setShowAgreeModal] = useState(false);
   const [showReviseModal, setShowReviseModal] = useState(false);
   const [reviseMsg, setReviseMsg] = useState("");
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
   useEffect(() => {
     loadContract();
@@ -110,44 +110,9 @@ function ContractViewContent() {
     setReviseMsg("");
   }
 
-  const downloadPDF = async () => {
-    if (!contract) return;
-    try {
-      setDownloading(true);
-      const res = await fetch("/api/contract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contractId: contract.id }),
-      });
-      if (!res.ok) {
-        throw new Error("서버 PDF 생성 실패");
-      }
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const cd = contract?.contract_data || {};
-      a.download = `근로계약서_${cd.biz || "파잡"}_${cd.worker || "근로자"}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
-      alert("PDF 다운로드 중 오류 발생: " + e.message);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  const print = () => {
-    const el = document.getElementById("official-form-render");
-    if (!el) return;
-    const w = window.open("", "_blank", "width=900,height=1200");
-    if (!w) return;
-    w.document.write(getOfficialFormHTML(el.innerHTML));
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  };
+  const doPrint = () => window.print();
+  const openPrintPreview = () => setShowPrintPreview(true);
+  const downloadPDF = openPrintPreview;
 
   if (loading) return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -196,6 +161,17 @@ function ContractViewContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", color:"var(--text)", maxWidth:480, margin:"0 auto", paddingBottom:100 }}>
+      <style>{`
+        @media print {
+          @page { size: A4; margin: 18mm 15mm 15mm; }
+          body * { visibility: hidden; }
+          #official-form-render, #official-form-render * { visibility: visible; }
+          #official-form-render { display: block !important; position: fixed; inset: 0; width: 100%; height: auto; }
+        }
+        #official-form-render { display: none; }
+        .print-preview-scroll::-webkit-scrollbar { width: 4px; }
+        .print-preview-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+      `}</style>
       {/* 헤더 */}
       <div style={{ position:"sticky", top:0, zIndex:20, background:"rgba(24,24,27,0.97)", backdropFilter:"blur(12px)", borderBottom:"1px solid var(--border)", padding:"12px 16px", display:"flex", alignItems:"center", gap:10 }}>
         <button onClick={() => router.back()}
@@ -474,8 +450,8 @@ function ContractViewContent() {
               ※ 본 계약서는 파잡(PAZAB) AI 매칭 플랫폼을 통해 작성되었습니다.
             </p>
           </div>
-          {/* 공식 양식 숨김 렌더 (인쇄/PDF용) */}
-          <div id="official-form-render" style={{position:"absolute",left:"-9999px",top:0,zIndex:-1,background:"#fff",width:"794px"}}>
+          {/* 인쇄 전용 숨김 레이어 */}
+          <div id="official-form-render">
             <ContractOfficialForm data={f} contractType={ct} />
           </div>
         </div>
@@ -496,24 +472,24 @@ function ContractViewContent() {
           </div>
         ) : userRole === "employer" ? (
           <div style={{ display:"flex", gap:6 }}>
-            <button onClick={print}
+            <button onClick={openPrintPreview}
               style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
               📄 화면인쇄
             </button>
-            <button onClick={downloadPDF} disabled={downloading}
+            <button onClick={downloadPDF}
               style={{ flex:1.8, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", color:"#fff", fontWeight:700, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
-              {downloading ? "생성 중..." : "📥 공식 양식 PDF"}
+              📥 PDF 저장
             </button>
           </div>
         ) : (
           <div style={{ display:"flex", gap:8 }}>
-            <button onClick={print}
+            <button onClick={openPrintPreview}
               style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
               📄 화면인쇄
             </button>
-            <button onClick={downloadPDF} disabled={downloading}
+            <button onClick={downloadPDF}
               style={{ flex:1, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
-              {downloading ? "생성 중..." : "📥 공식 양식 PDF"}
+              📥 PDF 저장
             </button>
           </div>
         )}
@@ -568,6 +544,28 @@ function ContractViewContent() {
                 style={{ flex:1, background: reviseMsg.trim() ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)", border:"none", borderRadius:12, padding:12, fontSize:14, fontWeight:700, color: reviseMsg.trim() ? "#fff" : "var(--text-muted)", cursor: reviseMsg.trim() ? "pointer" : "default" }}>
                 전달하기
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 인쇄 미리보기 모달 */}
+      {showPrintPreview && (
+        <div style={{ position:"fixed", inset:0, zIndex:400, background:"rgba(0,0,0,0.85)", display:"flex", flexDirection:"column" }}>
+          {/* 상단 툴바 */}
+          <div style={{ flexShrink:0, display:"flex", alignItems:"center", gap:10, padding:"10px 16px", background:"#18181b", borderBottom:"1px solid #333" }}>
+            <button onClick={() => setShowPrintPreview(false)}
+              style={{ background:"none", border:"none", color:"#aaa", fontSize:22, cursor:"pointer", lineHeight:1 }}>✕</button>
+            <span style={{ flex:1, color:"#fff", fontWeight:700, fontSize:15 }}>계약서 미리보기</span>
+            <button onClick={doPrint}
+              style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:10, padding:"8px 20px", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+              🖨️ 인쇄 / PDF 저장
+            </button>
+          </div>
+          {/* 계약서 스크롤 영역 */}
+          <div className="print-preview-scroll" style={{ flex:1, overflowY:"auto", padding:"20px 0", display:"flex", justifyContent:"center" }}>
+            <div style={{ background:"#fff", width:"210mm", minWidth:320, boxShadow:"0 4px 32px rgba(0,0,0,0.5)" }}>
+              <ContractOfficialForm data={f} contractType={ct} />
             </div>
           </div>
         </div>
