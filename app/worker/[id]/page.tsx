@@ -168,12 +168,12 @@ export default function WorkerDetailPage() {
         } catch {}
 
         const { data: matches } = await supabase.from("matches")
-          .select("id, status, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score")
+          .select("id, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score")
           .or(`and(employer_id.eq.${uid},worker_id.eq.${id}),and(employer_id.eq.${id},worker_id.eq.${uid})`)
           .order("created_at", { ascending: false });
 
         if (matches && matches.length > 0) {
-          const activeMatch = matches.find((m: Record<string, unknown>) => ["accepted", "interviewing", "hired", "pending"].includes(String(m.status || m.progress_status)));
+          const activeMatch = matches.find((m: Record<string, unknown>) => ["accepted", "interviewing", "hired", "pending"].includes(String(m.progress_status)));
           const bestMatch = (activeMatch || matches[0]) as Record<string, unknown>;
           setExistingMatch({ ...bestMatch, isReceived: bestMatch.worker_id === uid });
           if (bestMatch.match_score) setMatchScore(Number(bestMatch.match_score));
@@ -204,7 +204,7 @@ export default function WorkerDetailPage() {
 
   const handleLoveCall = async () => {
     if (!isLoggedIn || !userId) { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); return; }
-    if (existingMatch && (existingMatch.status === "cancelled" || existingMatch.status === "rejected")) { setShowConfirm(true); return; }
+    if (existingMatch && (existingMatch.progress_status === "cancelled" || existingMatch.progress_status === "rejected")) { setShowConfirm(true); return; }
     await sendLoveCall();
   };
 
@@ -233,7 +233,7 @@ export default function WorkerDetailPage() {
   const typeData = WORKER_TYPE_INFO[String(worker.worker_type || "")];
   const emoji = typeData?.emoji || "⚡";
   const grade = getGrade(Number(workerUser?.trust_score || 50));
-  const hexaco = worker.hexaco_data as Record<string, number> | null;
+  const hexaco = ((workerUser as any)?.worker_result?.hexaco) as Record<string, number> | null;
   const desiredTypes = worker.desired_type ? String(worker.desired_type).split(",").map((t: string) => t.trim()) : [];
   const imageUrl = worker.image_url as string | null;
   const imageUrls = worker.image_urls as string[] | null;
@@ -252,7 +252,7 @@ export default function WorkerDetailPage() {
   const hasMedia = mediaItems.length > 0;
   const activeMedia = mediaItems[activeMediaIndex];
 
-  const status = sent ? "sent" : String(existingMatch?.status || "");
+  const status = sent ? "sent" : String(existingMatch?.progress_status || "");
   const isReceived = existingMatch?.isReceived === true;
 
   return (
@@ -494,7 +494,7 @@ export default function WorkerDetailPage() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
           <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 480, margin: "0 auto" }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>러브콜 다시 보내기</h3>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.status === "rejected" ? "거절한 이력이 있어요. 다시 보낼까요?" : "이전에 취소했어요. 다시 보낼까요?"}</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.progress_status === "rejected" ? "거절한 이력이 있어요. 다시 보낼까요?" : "이전에 취소했어요. 다시 보낼까요?"}</p>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={sendLoveCall} disabled={sending} style={{ flex: 1, background: "linear-gradient(135deg, #ec4899, #be185d)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer" }}>{sending ? "전송 중..." : "보내기 →"}</button>
               <button onClick={() => setShowConfirm(false)} style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 14, borderRadius: 12, cursor: "pointer" }}>취소</button>

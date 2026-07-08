@@ -13,13 +13,13 @@ export async function GET(req: NextRequest) {
     if (!userId) return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
 
     const [workerRes, employerRes] = await Promise.all([
-      supabase.from("matches").select("id, employer_id, worker_id, status, progress_status, worker_left, updated_at")
+      supabase.from("matches").select("id, employer_id, worker_id, progress_status, worker_left, created_at, updated_at")
         .eq("worker_id", userId)
-        .in("status", ["accepted", "interviewing", "hired"])
+        .in("progress_status", ["accepted", "interviewing", "hired"])
         .eq("worker_left", false),
-      supabase.from("matches").select("id, employer_id, worker_id, status, progress_status, employer_left, updated_at")
+      supabase.from("matches").select("id, employer_id, worker_id, progress_status, employer_left, created_at, updated_at")
         .eq("employer_id", userId)
-        .in("status", ["accepted", "interviewing", "hired"])
+        .in("progress_status", ["accepted", "interviewing", "hired"])
         .eq("employer_left", false),
     ]);
 
@@ -57,24 +57,40 @@ export async function GET(req: NextRequest) {
     // 상대방 정보 조회
     const counterpartIds = deduped.map(m => m.myRole === "worker" ? m.employer_id : m.worker_id);
     const { data: users } = await supabase.from("users")
-      .select("id, nickname, name, user_type, avatar_url")
+      .select("id, nickname, user_type, avatar_url")
       .in("id", counterpartIds);
 
     const employerIds = (users || []).filter(u => u.user_type === "employer").map(u => u.id);
-    const { data: empProfiles } = employerIds.length > 0
-      ? await supabase.from("employer_profiles").select("user_id, business_name").in("user_id", employerIds)
-      : { data: [] };
+    const workerIds = (users || []).filter(u => u.user_type === "worker").map(u => u.id);
+
+    const [empProfilesRes, workerProfilesRes] = await Promise.all([
+      employerIds.length > 0
+        ? supabase.from("employer_profiles").select("user_id, business_name, image_url").in("user_id", employerIds)
+        : Promise.resolve({ data: [] }),
+      workerIds.length > 0
+        ? supabase.from("worker_profiles").select("user_id, image_url").in("user_id", workerIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const empProfiles = empProfilesRes.data || [];
+    const workerProfiles = workerProfilesRes.data || [];
 
     const enriched = deduped.map(match => {
       const cpId = match.myRole === "worker" ? match.employer_id : match.worker_id;
       const user = (users || []).find(u => u.id === cpId);
       const emp = (empProfiles || []).find(e => e.user_id === cpId);
+      const worker = (workerProfiles || []).find(w => w.user_id === cpId);
       const lastMsg = lastMsgMap[match.id];
+      
+      const avatar = user?.user_type === "employer"
+        ? (emp?.image_url || user?.avatar_url || null)
+        : (worker?.image_url || user?.avatar_url || null);
+
       return {
         ...match,
-        counterpartName: emp?.business_name ? emp.business_name + " 사장님" : (user?.nickname || user?.name || "알 수 없음"),
+        counterpartName: emp?.business_name ? emp.business_name + " 사장님" : (user?.nickname || "알 수 없음"),
         counterpartType: user?.user_type,
-        counterpartAvatar: user?.avatar_url || null,
+        counterpartAvatar: avatar,
         last_message: lastMsg?.message || "채팅을 시작해보세요 👋",
         last_message_at: lastMsg?.created_at || match.updated_at,
         unreadCount: unreadMap[match.id] || 0,

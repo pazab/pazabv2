@@ -870,12 +870,17 @@ function MyPageContent() {
                   setUser(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev);
                 }
               }} />
-              {(user as any).avatar_url ? (
+               {(user as any).avatar_url ? (
                 <img src={(user as any).avatar_url} alt="avatar"
                   style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--primary-border)" }} />
               ) : (
-                <div style={{ width: 52, height: 52, borderRadius: "50%", background: "var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, border: "2px dashed var(--primary-border)" }}>
-                  {user.user_type === "employer" ? "🏪" : "⚡"}
+                <div style={{
+                  width: 52, height: 52, borderRadius: "50%",
+                  background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24,
+                  border: "2px dashed var(--primary-border)"
+                }}>
+                  {user.user_type === "employer" ? "🏪" : "👤"}
                 </div>
               )}
               <div style={{ position: "absolute", bottom: 0, right: 0, background: "#8b5cf6", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>

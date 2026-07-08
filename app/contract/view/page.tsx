@@ -111,42 +111,29 @@ function ContractViewContent() {
   }
 
   const downloadPDF = async () => {
-    const el = document.getElementById("official-form-render");
-    if (!el) return;
+    if (!contract) return;
     try {
       setDownloading(true);
-      const { default: jsPDF } = await import("jspdf");
-      const { default: html2canvas } = await import("html2canvas");
-
-      const canvas = await html2canvas(el, {
-        scale: 2.5,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        width: 794,
+      const res = await fetch("/api/contract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contractId: contract.id }),
       });
-
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const imgWidth = 210;
-      const pageHeight = 295;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+      if (!res.ok) {
+        throw new Error("서버 PDF 생성 실패");
       }
-
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
       const cd = contract?.contract_data || {};
-      pdf.save(`근로계약서_${cd.biz || "파잡"}_${cd.worker || "근로자"}.pdf`);
+      a.download = `근로계약서_${cd.biz || "파잡"}_${cd.worker || "근로자"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
     } catch (e: any) {
-      alert("PDF 생성 중 오류 발생: " + e.message);
+      alert("PDF 다운로드 중 오류 발생: " + e.message);
     } finally {
       setDownloading(false);
     }
@@ -488,7 +475,7 @@ function ContractViewContent() {
             </p>
           </div>
           {/* 공식 양식 숨김 렌더 (인쇄/PDF용) */}
-          <div id="official-form-render" style={{position:"absolute",left:"-9999px",top:0,zIndex:-1,background:"#fff"}}>
+          <div id="official-form-render" style={{position:"absolute",left:"-9999px",top:0,zIndex:-1,background:"#fff",width:"794px"}}>
             <ContractOfficialForm data={f} contractType={ct} />
           </div>
         </div>

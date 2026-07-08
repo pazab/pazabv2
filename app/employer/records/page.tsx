@@ -11,6 +11,7 @@ type Member = {
   hire_date: string | null;
   work_days: string | null;
   wage: number | null;
+  wage_type?: string;
   work_hours: string | null;
   member_role: string;
   match_id: string | null;
@@ -76,8 +77,8 @@ export default function EmployerRecordsPage() {
     const { data } = await supabase.from("payslips")
       .select("*")
       .eq("team_member_id", tmId)
-      .order("year", { ascending: false })
-      .order("month", { ascending: false });
+      .order("year", { ascending: false, nullsFirst: false })
+      .order("month", { ascending: false, nullsFirst: false });
     setMemberPayslips(data || []);
     setPayslipLoading(false);
   }
@@ -104,8 +105,9 @@ export default function EmployerRecordsPage() {
     // 계약서 일괄 조회
     const { data: contracts } = workerIds.length > 0
       ? await supabase.from("contracts")
-          .select("id, created_at, start_date, end_date, worker_signed, employer_signed, status, contract_data, worker_id")
+          .select("id, created_at, start_date, end_date, worker_signed, employer_signed, status, contract_data, worker_id, wage, wage_type, work_days, work_hours")
           .eq("employer_id", user.id).in("worker_id", workerIds)
+          .neq("status", "cancelled")
           .order("created_at", { ascending: false })
       : { data: [] };
 
@@ -123,9 +125,45 @@ export default function EmployerRecordsPage() {
 
     const enriched: Member[] = tm.map((m: any) => {
       const mContracts = (contracts || []).filter((c: any) => c.worker_id === m.worker_id);
+      
+      let wage = m.wage;
+      let wage_type = "hourly";
+      let work_days = m.work_days;
+      let work_hours = m.work_hours;
+
+      const contract = mContracts.find((c: any) => c.status === "active") || mContracts[0];
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wageType) wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        else if (contract.wage_type) wage_type = contract.wage_type;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        if (cd) {
+          if (cd.workDaysMode === "text" && cd.workDaysText) work_days = cd.workDaysText;
+          else {
+            const days = ["월", "화", "수", "목", "금", "토", "일"]
+              .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+              .join("·");
+            if (days) work_days = days;
+          }
+          if (cd.workStart && cd.workEnd) {
+            work_hours = `${cd.workStart} ~ ${cd.workEnd}`;
+          } else if (cd.dailyHours) {
+            work_hours = cd.dailyHours;
+          }
+        } else {
+          if (contract.work_days) work_days = contract.work_days;
+          if (contract.work_hours) work_hours = contract.work_hours;
+        }
+      }
+
       const hireDate = m.hire_date || m.created_at?.slice(0, 10);
       return {
         ...m,
+        wage,
+        wage_type,
+        work_days,
+        work_hours,
         worker: m.users || null,
         contracts: mContracts,
         attendance_count: countMap[m.id] || 0,
@@ -292,7 +330,7 @@ export default function EmployerRecordsPage() {
                   <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", margin: "0 0 8px" }}>근무 조건</p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {[
-                      { label: "시급", value: m.wage ? m.wage.toLocaleString() + "원" : "-" },
+                      { label: m.wage_type === "monthly" ? "월급" : m.wage_type === "daily" ? "일급" : m.wage_type === "weekly" ? "주급" : "시급", value: m.wage ? m.wage.toLocaleString() + "원" : "-" },
                       { label: "근무요일", value: m.work_days || "-" },
                       { label: "근무시간", value: m.work_hours || "-" },
                       { label: "직책", value: m.member_role === "manager" ? "매니저" : "스태프" },

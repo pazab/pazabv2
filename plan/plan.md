@@ -272,6 +272,34 @@
 - **감사 로그 컬럼 누락 해결 및 요약 로깅**: `attendance_logs` 테이블의 `attendance_id` 누락 컬럼 보완 패치 생성 (`supabase/patch_attendance_logs_column.sql`) 및 일괄 등록 시 timeline을 해치지 않고 `batch_register` 액션 단일 감사로그 1건으로 요약 등록되도록 구현.
 - **커스텀 토스트 알림 표준화**: 모달 내의 브라우저 기본 `alert` 경고들을 모두 파잡 전용 커스텀 토스트 알림(`showToast`)으로 통일.
 
+**구현 완료 (2026-07-09)**
+
+**임금 타입별 예상 급여 & 세후 실수령액 표시**
+- `app/myteam/page.tsx`: `loadMyWork()`에서 최신 활성 계약의 `contract_data.wageType` 읽어 `wage_type` 저장. useEffect에서 taxRates 로드 후 시급/일급/월급 각 계산 방식으로 `estPay`(세전) + `netPay`(세후) 산출
+- 알바생 카드에 "💰 예상 실수령액 (세후)" 표시 추가. 임금 유형 접두어 동적 표시 ("시급"/"일급"/"월급"/"주급")
+- `app/employer/records/page.tsx`: `Member` 타입에 `wage_type` 추가, member 초기화 시 contract 기반 동적 속성 반영
+- `app/employer/team/page.tsx`: 팀원 목록 로드 시 contracts 조회 후 wage_type 동적 반영, 임금 접두어 카드에 표시
+
+**화면인쇄(📄) 출력 1장 레이아웃 압축**
+- `components/ContractOfficialForm.tsx` 인쇄 CSS: padding `18mm→12mm 15mm 10mm`, line-height `1.9→1.65`, font-size `10pt→9.5pt`
+- 제목/소제목/서명블록/날짜 여백 압축 → 표준근로계약서 1장, 단시간근로계약서 1장, 연소자 2장 이내 출력 확보
+
+**공식 양식 PDF 다운로드 백엔드 라우팅**
+- `app/contract/view/page.tsx` `downloadPDF()`: html2canvas/jsPDF 클라이언트 렌더링 제거 → `/api/contract` POST `{ contractId }` 호출로 교체. 반환된 PDF 바이너리 Blob을 `<a>` 트리거로 저장
+- `app/api/contract/route.ts`: 기존 POST 핸들러 전체를 `generatePdfResponse(supabase, matchId, contractId, extraData)` 공통 함수로 추출. `contractId`만으로도 contracts 테이블 직접 조회 → employer/worker/team_member 연결 정보 동적 로드 가능
+- GET 핸들러 신규: `/api/contract?matchId=...` 또는 `/api/contract?contractId=...` — 대타 히스토리 탭 "📄 체결된 표준근로계약서 확인" 링크 연동
+- `users` SELECT에서 실제 없는 `name` 컬럼 제거, `employer_profiles` SELECT에서 없는 `wage/work_days/work_hours` 컬럼 제거 (Supabase 오류 수정)
+- `#official-form-render` 래퍼에 `width:"794px"` 고정 (html2canvas off-screen 렌더 왜곡 방지 — 화면인쇄 용)
+
+**공식 양식 PDF 미작동 근본 원인 확인**
+- `docs/standard_contract_form.pdf` 파일 누락 확인 (Python 스크립트가 이 파일에 overlay를 merge함)
+- 해결: 고용노동부 공식 다중 페이지 PDF를 `c:\pazabv2\docs\standard_contract_form.pdf`에 배치 필요
+  - Page 0: 기간 정함 없는 표준근로계약서
+  - Page 1: 기간 정함 있는 표준근로계약서
+  - Page 2: 연소근로자 근로계약서
+  - Page 3: 연소근로자 친권자 동의서
+  - Page 5: 단시간 표준근로계약서
+
 **P2**
 - [x] HEXACO 5턴 압축 CTA화 — app/interview/page.tsx 신규 구현 (5턴 채팅 UI, /api/analyze interview+analyze 모드 연동, 결과 localStorage+DB 저장, /result로 이동)
 - [ ] employer_profiles.geo_radius_meters (GPS 반경 200m 고정 → 사장님 설정 가능하게)

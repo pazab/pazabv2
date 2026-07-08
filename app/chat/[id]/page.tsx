@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getTrustGrade } from "@/lib/utils";
+import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
 export default function ChatRoomPage() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function ChatRoomPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const [counterpart, setCounterpart] = useState<any>(null);
   const [counterpartProfile, setCounterpartProfile] = useState<any>(null);
+  const [counterpartWorkerProfile, setCounterpartWorkerProfile] = useState<any>(null);
   const [match, setMatch] = useState<any>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -22,6 +24,7 @@ export default function ChatRoomPage() {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showHireProposalModal, setShowHireProposalModal] = useState(false);
   const [showContractModal, setShowContractModal] = useState(false);
+  const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const [contractData, setContractData] = useState<any>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
@@ -121,6 +124,7 @@ export default function ChatRoomPage() {
         setMessages(data.data || []);
         setCounterpart(data.counterpart);
         setCounterpartProfile(data.counterpartProfile);
+        setCounterpartWorkerProfile(data.counterpartWorkerProfile);
         setMatch(data.match);
         const ps = data.match?.progress_status || "accepted";
         setProgressStatus(ps);
@@ -497,10 +501,9 @@ export default function ChatRoomPage() {
 
   const handleLeaveRoom = async () => {
     try {
-      // DB에서 최신 status 재확인
       const { data: currentMatch } = await supabase
-        .from("matches").select("status, progress_status").eq("id", matchId).single();
-      const currentStatus = currentMatch?.progress_status || currentMatch?.status || "accepted";
+        .from("matches").select("progress_status").eq("id", matchId).single();
+      const currentStatus = currentMatch?.progress_status || "accepted";
 
       // 면접 예약 중에 나가면 신뢰점수 감소
       if (currentStatus === "interviewing") {
@@ -579,7 +582,11 @@ export default function ChatRoomPage() {
 
   const counterpartName = counterpartProfile?.business_name
     ? `${counterpartProfile.business_name} 사장님`
-    : counterpart?.nickname || counterpart?.name || "상대방";
+    : counterpart?.nickname || "상대방";
+
+  const counterpartAvatar = counterpart?.user_type === "employer"
+    ? (counterpartProfile?.image_url || counterpart?.avatar_url || null)
+    : (counterpartWorkerProfile?.image_url || counterpart?.avatar_url || null);
 
   const isEmployer = match?.employer_id === userId;
   isEmployerRef.current = isEmployer;
@@ -612,16 +619,24 @@ export default function ChatRoomPage() {
             style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, padding: 4 }}>
             <i className="ti ti-arrow-left" style={{ fontSize: 20, display: "block" }} aria-hidden="true" />
           </button>
-          <button onClick={() => {
-            const profilePath = counterpart?.user_type === "employer"
-              ? `/job/${match?.employer_id}`
-              : `/worker/${match?.worker_id}`;
-            router.push(profilePath);
-          }} style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: "pointer", flex: 1, minWidth: 0, textAlign: "left" }}>
-            <div style={{ width: 38, height: 38, borderRadius: 12, background: counterpart?.user_type === "employer" ? "linear-gradient(135deg, rgba(236,72,153,0.2), rgba(190,24,93,0.1))" : "linear-gradient(135deg, rgba(139,92,246,0.2), rgba(124,58,237,0.1))", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <i className={`ti ${counterpart?.user_type === "employer" ? "ti-building-store" : "ti-bolt"}`} style={{ fontSize: 18, color: counterpart?.user_type === "employer" ? "#f9a8d4" : "#c4b5fd" }} aria-hidden="true" />
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+            {/* 아바타 영역: 퀵 프로필 팝업 */}
+            <div onClick={() => {
+              if (counterpart?.id) setActiveQuickProfile(counterpart.id);
+            }} style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", fontSize: 18, cursor: "pointer" }}>
+              {counterpartAvatar ? (
+                <img src={counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
+              )}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {/* 이름 텍스트 영역: 상세 프로필 이동 */}
+            <div onClick={() => {
+              const profilePath = counterpart?.user_type === "employer"
+                ? `/job/${match?.employer_id}`
+                : `/worker/${match?.worker_id}`;
+              router.push(profilePath);
+            }} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <p style={{ fontSize: 15, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{counterpartName}</p>
                 <span style={{ fontSize: 10, fontWeight: 700, color: badge.color, background: `${badge.color}20`, padding: "2px 7px", borderRadius: 20, flexShrink: 0 }}>
@@ -634,7 +649,7 @@ export default function ChatRoomPage() {
               </div>
               <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>궁합 {match?.match_score}점 · 탭하면 프로필 보기</p>
             </div>
-          </button>
+          </div>
           {/* AI 사전미팅 버튼 */}
           <button onClick={() => router.push(`/pre-meet/${params.id}`)}
             style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 20, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
@@ -798,14 +813,15 @@ export default function ChatRoomPage() {
                 /* 상대방 메시지 - 왼쪽 + 아바타 + 닉네임 */
                 <div style={{ display: "flex", gap: 8, marginBottom: 4, alignItems: "flex-start" }}>
                   {/* 아바타 */}
-                  <button onClick={() => router.push(`/profile/${counterpart?.id}`)}
-                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
-                    {counterpart?.avatar_url ? (
-                      <img src={counterpart.avatar_url} alt="avatar"
-                        style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
+                  <button onClick={() => {
+                    if (counterpart?.id) setActiveQuickProfile(counterpart.id);
+                  }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
+                    {counterpartAvatar ? (
+                       <img src={counterpartAvatar} alt="avatar"
+                         style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
                     ) : (
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: counterpart?.user_type === "employer" ? "linear-gradient(135deg, rgba(236,72,153,0.3), rgba(190,24,93,0.2))" : "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(124,58,237,0.2))", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <i className={`ti ${counterpart?.user_type === "employer" ? "ti-building-store" : "ti-bolt"}`} style={{ fontSize: 18, color: counterpart?.user_type === "employer" ? "#f9a8d4" : "#c4b5fd" }} aria-hidden="true" />
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                        <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
                       </div>
                     )}
                   </button>
@@ -1427,6 +1443,12 @@ export default function ChatRoomPage() {
             )}
           </div>
         </div>
+      )}
+      {activeQuickProfile && (
+        <UserProfileBottomSheet
+          userId={activeQuickProfile}
+          onClose={() => setActiveQuickProfile(null)}
+        />
       )}
     </main>
   );

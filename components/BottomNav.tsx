@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
 export default function BottomNav() {
@@ -14,6 +14,33 @@ export default function BottomNav() {
   const shownMatches = useRef<Set<string>>(new Set());
   const shownPending = useRef<Set<string>>(new Set());
   const [toast, setToast] = useState<string>("");
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const checkUnread = useCallback(async (uid: string) => {
+    try {
+      const [workerRes, employerRes] = await Promise.all([
+        supabase.from("matches").select("id").eq("worker_id", uid).eq("worker_left", false).in("progress_status", ["accepted", "interviewing", "hired"]),
+        supabase.from("matches").select("id").eq("employer_id", uid).eq("employer_left", false).in("progress_status", ["accepted", "interviewing", "hired"]),
+      ]);
+      const activeMatchIds = [
+        ...(workerRes.data || []).map((m: { id: string }) => m.id),
+        ...(employerRes.data || []).map((m: { id: string }) => m.id),
+      ];
+      if (activeMatchIds.length === 0) {
+        setUnreadCount(0);
+        return;
+      }
+      const { count } = await supabase
+        .from("chats")
+        .select("*", { count: "exact", head: true })
+        .eq("receiver_id", uid)
+        .eq("is_read", false)
+        .in("match_id", activeMatchIds);
+      setUnreadCount(count || 0);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -81,53 +108,47 @@ export default function BottomNav() {
   }, []);
 
   useEffect(() => {
+    if (!userId) {
+      setUnreadCount(0);
+      return;
+    }
+
+    let active = true;
     let chatChannel: ReturnType<typeof supabase.channel> | null = null;
 
-    const checkUnread = async (uid: string) => {
-      const [workerRes, employerRes] = await Promise.all([
-        supabase.from("matches").select("id").eq("worker_id", uid).eq("worker_left", false).in("progress_status", ["accepted", "interviewing", "hired"]),
-        supabase.from("matches").select("id").eq("employer_id", uid).eq("employer_left", false).in("progress_status", ["accepted", "interviewing", "hired"]),
-      ]);
-      const activeMatchIds = [
-        ...(workerRes.data || []).map((m: { id: string }) => m.id),
-        ...(employerRes.data || []).map((m: { id: string }) => m.id),
-      ];
-      if (activeMatchIds.length === 0) { setUnreadCount(0); return; }
-      const { count } = await supabase
-        .from("chats")
-        .select("*", { count: "exact", head: true })
-        .eq("receiver_id", uid)
-        .eq("is_read", false)
-        .in("match_id", activeMatchIds);
-      setUnreadCount(count || 0);
-    };
-
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const uid = session.user.id;
-
-      await checkUnread(uid);
-
+    const initRealtime = async () => {
       // 새 채팅 실시간 감지
-      chatChannel = supabase
-        .channel(`chat-badge-${uid}`)
+      const channelName = `chat-badge-${userId}-${Math.random().toString(36).substring(2, 9)}`;
+      const newChannel = supabase
+        .channel(channelName)
         .on(
           "postgres_changes",
-          { event: "INSERT", schema: "public", table: "chats", filter: `receiver_id=eq.${uid}` },
-          () => { checkUnread(uid); }
+          { event: "INSERT", schema: "public", table: "chats", filter: `receiver_id=eq.${userId}` },
+          () => {
+            if (active) checkUnread(userId);
+          }
         )
         .on(
           "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "chats", filter: `receiver_id=eq.${uid}` },
-          () => { checkUnread(uid); }
-        )
-        .subscribe();
+          { event: "UPDATE", schema: "public", table: "chats", filter: `receiver_id=eq.${userId}` },
+          () => {
+            if (active) checkUnread(userId);
+          }
+        );
+
+      newChannel.subscribe();
+      chatChannel = newChannel;
     };
 
-    init();
-    return () => { chatChannel?.unsubscribe(); };
-  }, [pathname]);
+    initRealtime();
+
+    return () => {
+      active = false;
+      if (chatChannel) {
+        supabase.removeChannel(chatChannel);
+      }
+    };
+  }, [userId, checkUnread]);
 
   useEffect(() => {
     let lastY = 0;
@@ -160,11 +181,16 @@ export default function BottomNav() {
       const session = res.data.session;
       setIsLoggedIn(!!session);
       if (session) {
-        const { data } = await supabase.from("users").select("user_type").eq("id", session.user.id).single();
+        const uid = session.user.id;
+        setUserId(uid);
+        const { data } = await supabase.from("users").select("user_type").eq("id", uid).single();
         setUserType(data?.user_type || null);
+        await checkUnread(uid);
+      } else {
+        setUserId(null);
       }
     });
-  }, [pathname]);
+  }, [pathname, checkUnread]);
 
   const handleTabClick = (path: string) => {
     const protectedPaths = ["/chat", "/mypage", "/personality", "/interview", "/myteam", "/daeta"];

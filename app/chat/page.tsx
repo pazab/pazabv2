@@ -16,29 +16,42 @@ export default function ChatListPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        localStorage.setItem("login_redirect", window.location.pathname);
-        router.push("/login");
+        if (active) {
+          localStorage.setItem("login_redirect", window.location.pathname);
+          router.push("/login");
+        }
         return;
       }
+      if (!active) return;
       const uid = session.user.id;
       setUserId(uid);
       await fetchChatrooms(uid);
+      if (!active) return;
 
-      channel = supabase.channel(`chat-list-${Date.now()}`)
+      const channelName = `chat-list-${uid}-${Math.random().toString(36).substring(2, 9)}`;
+      const newChannel = supabase.channel(channelName)
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "matches" }, () => {
-          fetchChatrooms(uid);
+          if (active) fetchChatrooms(uid);
         })
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "chats" }, () => {
-          fetchChatrooms(uid);
-        })
-        .subscribe();
+          if (active) fetchChatrooms(uid);
+        });
+
+      newChannel.subscribe();
+      channel = newChannel;
     };
     init();
-    return () => { if (channel) supabase.removeChannel(channel); };
+    return () => {
+      active = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   const fetchChatrooms = async (uid: string) => {
@@ -214,11 +227,11 @@ export default function ChatListPage() {
                   onMouseEnter={e => (e.currentTarget.style.background = "rgba(139,92,246,0.06)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "none")}>
                   {/* 아바타 */}
-                  <div style={{ width: 48, height: 48, borderRadius: "50%", background: room.counterpartType === "employer" ? "linear-gradient(135deg, rgba(236,72,153,0.2), rgba(190,24,93,0.1))" : "linear-gradient(135deg, rgba(139,92,246,0.2), rgba(124,58,237,0.1))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, overflow: "hidden" }}>
+                  <div style={{ width: 48, height: 48, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, overflow: "hidden" }}>
                     {room.counterpartAvatar ? (
-                      <img src={room.counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                       <img src={room.counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
-                      <i className={`ti ${room.counterpartType === "employer" ? "ti-building-store" : "ti-bolt"}`} style={{ fontSize: 22, color: room.counterpartType === "employer" ? "#f9a8d4" : "#c4b5fd" }} aria-hidden="true" />
+                      <span>{room.counterpartType === "employer" ? "🏪" : "👤"}</span>
                     )}
                   </div>
                   {/* 내용 */}

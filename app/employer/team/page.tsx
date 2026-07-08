@@ -35,20 +35,68 @@ export default function TeamPage() {
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
     const ids = data.map((m: Record<string, unknown>) => m.id as string);
+    const workerIds = data.map((m: any) => m.worker_id).filter(Boolean);
+
+    const { data: contracts } = workerIds.length > 0
+      ? await supabase.from("contracts")
+          .select("id, created_at, start_date, end_date, worker_signed, employer_signed, status, contract_data, worker_id, wage, wage_type, work_days, work_hours")
+          .eq("employer_id", employerId).in("worker_id", workerIds)
+          .neq("status", "cancelled")
+          .order("created_at", { ascending: false })
+      : { data: [] };
 
     const { data: att } = await supabase.from("attendance")
       .select("team_member_id, status")
       .in("team_member_id", ids)
       .gte("work_date", monthStart);
 
-    setMembers(data.map((m: Record<string, unknown>) => ({
-      ...m,
-      worker: m.users,
-      this_month: att?.filter((a: { team_member_id: string; status: string }) => a.team_member_id === m.id && (a.status === "normal" || a.status === "late")).length || 0,
-      late: att?.filter((a: { team_member_id: string; status: string }) => a.team_member_id === m.id && a.status === "late").length || 0,
-      contractStatus: (m as any).contract_status === "active" ? "done"
-        : (m as any).contract_status === "pending" ? "pending" : "none",
-    })));
+    setMembers(data.map((m: any) => {
+      const mContracts = (contracts || []).filter((c: any) => c.worker_id === m.worker_id);
+      
+      let wage = m.wage;
+      let wage_type = "hourly";
+      let work_days = m.work_days;
+      let work_hours = m.work_hours;
+
+      const contract = mContracts.find((c: any) => c.status === "active") || mContracts[0];
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wageType) wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        else if (contract.wage_type) wage_type = contract.wage_type;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        if (cd) {
+          if (cd.workDaysMode === "text" && cd.workDaysText) work_days = cd.workDaysText;
+          else {
+            const days = ["월", "화", "수", "목", "금", "토", "일"]
+              .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+              .join("·");
+            if (days) work_days = days;
+          }
+          if (cd.workStart && cd.workEnd) {
+            work_hours = `${cd.workStart} ~ ${cd.workEnd}`;
+          } else if (cd.dailyHours) {
+            work_hours = cd.dailyHours;
+          }
+        } else {
+          if (contract.work_days) work_days = contract.work_days;
+          if (contract.work_hours) work_hours = contract.work_hours;
+        }
+      }
+
+      return {
+        ...m,
+        wage,
+        wage_type,
+        work_days,
+        work_hours,
+        worker: m.users,
+        this_month: att?.filter((a: { team_member_id: string; status: string }) => a.team_member_id === m.id && (a.status === "normal" || a.status === "late")).length || 0,
+        late: att?.filter((a: { team_member_id: string; status: string }) => a.team_member_id === m.id && a.status === "late").length || 0,
+        contractStatus: m.contract_status === "active" ? "done"
+          : m.contract_status === "pending" ? "pending" : "none",
+      };
+    }));
     setLoading(false);
   }
 
@@ -108,7 +156,7 @@ export default function TeamPage() {
                       {trustGrade && <span style={{ fontSize:11, color:trustGrade.color, fontWeight:700 }}>{trustGrade.emoji}</span>}
                     </div>
                     <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 6px" }}>
-                      {m.work_days || "요일 미정"} · {m.wage ? m.wage.toLocaleString()+"원" : "시급 미정"}
+                      {m.work_days || "요일 미정"} · {m.wage ? `${m.wage_type === "monthly" ? "월급" : m.wage_type === "daily" ? "일급" : m.wage_type === "weekly" ? "주급" : "시급"} ${m.wage.toLocaleString()}원` : "급여 미정"}
                     </p>
                     <div style={{ display:"flex", gap:6, flexWrap:"wrap" as const }}>
                       <span style={{ fontSize:11, background:"#7c3aed20", color:"#7c3aed", borderRadius:6, padding:"2px 7px" }}>이번달 {m.this_month}일</span>

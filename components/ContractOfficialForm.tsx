@@ -43,63 +43,63 @@ const STYLES = `
 .of {
   width: 210mm;
   min-height: 297mm;
-  padding: 18mm 18mm 15mm;
+  padding: 12mm 15mm 10mm;
   font-family: 'Noto Serif KR', '바탕', 'Batang', serif;
-  font-size: 10pt;
+  font-size: 9.5pt;
   color: #000;
   background: #fff;
-  line-height: 1.9;
+  line-height: 1.65;
 }
 
 .of-title {
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .of-title span {
   display: inline-block;
   border: 2.5px solid #000;
-  font-size: 15pt;
+  font-size: 14pt;
   font-weight: 900;
-  padding: 5px 24px;
-  letter-spacing: 5px;
+  padding: 3px 20px;
+  letter-spacing: 4px;
 }
 
 .of-party {
   text-indent: 40px;
-  margin-bottom: 6px;
-  font-size: 10pt;
+  margin-bottom: 4px;
+  font-size: 9.5pt;
 }
 
 .of-h {
   font-weight: 700;
-  margin-top: 6px;
+  margin-top: 4px;
   margin-bottom: 1px;
-  font-size: 10pt;
+  font-size: 9.5pt;
 }
 
 .of-sub {
   padding-left: 18px;
-  font-size: 9.5pt;
+  font-size: 9pt;
 }
 
 .of-note {
   padding-left: 24px;
-  font-size: 8pt;
+  font-size: 7.5pt;
   color: #333;
 }
 
 .of-tbl {
   width: 100%;
   border-collapse: collapse;
-  margin: 4px 0;
-  font-size: 8.5pt;
+  margin: 2px 0;
+  font-size: 8pt;
 }
 .of-tbl td, .of-tbl th {
   border: 1px solid #000;
   padding: 2px 4px;
   text-align: center;
   vertical-align: middle;
-  height: 18px;
+  height: 16px;
 }
 .of-tbl th {
   background: none;
@@ -107,9 +107,9 @@ const STYLES = `
 }
 
 .of-sign {
-  margin-top: 14px;
-  font-size: 10pt;
-  line-height: 2.0;
+  margin-top: 8px;
+  font-size: 9.5pt;
+  line-height: 1.7;
 }
 
 .of-sign-label {
@@ -130,8 +130,8 @@ const STYLES = `
 
 .of-date-center {
   text-align: center;
-  margin-top: 12px;
-  font-size: 10pt;
+  margin-top: 8px;
+  font-size: 9.5pt;
 }
 
 .of-page2 {
@@ -141,7 +141,7 @@ const STYLES = `
 @media print {
   @page { size: A4; margin: 0; }
   html, body { width: 210mm; }
-  .of { padding: 18mm 18mm 15mm; }
+  .of { padding: 12mm 15mm 10mm; }
 }
 `;
 

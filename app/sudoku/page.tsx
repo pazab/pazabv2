@@ -38,11 +38,11 @@ function SudokuMain() {
       if (!session) return
       const uid = session.user.id
       const [userRes, ratingRes, recordsRes] = await Promise.all([
-        supabase.from('users').select('nickname, name').eq('id', uid).single(),
+        supabase.from('users').select('nickname').eq('id', uid).single(),
         supabase.from('sudoku_ratings').select('rating, wins, losses').eq('user_id', uid).single(),
         supabase.from('sudoku_records').select('difficulty, time_seconds').eq('user_id', uid).order('time_seconds', { ascending: true }),
       ])
-      const nickname = userRes.data?.nickname || userRes.data?.name || session.user.email?.split('@')[0] || '유저'
+      const nickname = userRes.data?.nickname || session.user.email?.split('@')[0] || '유저'
       setProfile({ uid, nickname, rating: ratingRes.data?.rating || 600 })
       if (recordsRes.data) {
         const best: Record<string, number> = {}

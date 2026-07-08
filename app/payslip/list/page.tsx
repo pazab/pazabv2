@@ -30,8 +30,8 @@ function PayslipListContent() {
   async function loadPayslips(uid: string, ut: string) {
     let query = supabase.from("payslips")
       .select("*")
-      .order("year", { ascending: false })
-      .order("month", { ascending: false });
+      .order("year", { ascending: false, nullsFirst: false })
+      .order("month", { ascending: false, nullsFirst: false });
 
     if (tmId) {
       query = query.eq("team_member_id", tmId);

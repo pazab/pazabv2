@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
     if (userType === "worker") {
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
-      if (wp?.hexaco_data) myHexaco = parseHexaco(wp.hexaco_data);
+      if (myUser?.worker_result?.hexaco) myHexaco = parseHexaco(myUser.worker_result.hexaco);
       else if (myUser?.worker_result) myHexaco = parseHexaco(myUser.worker_result);
       myRegion = String(wp?.desired_region || "");
       myProfile = wp || {};
@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
       if (gugun) {
         const { data } = await supabaseAdmin
           .from("worker_profiles")
-          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname)`)
+          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname, worker_result)`)
           .eq("is_active", true)
           .neq("user_id", userId)
           .ilike("desired_region", `%${gugun}%`)
@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
       } else if (sido) {
         const { data } = await supabaseAdmin
           .from("worker_profiles")
-          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname)`)
+          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname, worker_result)`)
           .eq("is_active", true)
           .neq("user_id", userId)
           .ilike("desired_region", `%${sido}%`)
@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
 
       let otherQuery = supabaseAdmin
         .from("worker_profiles")
-        .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname)`)
+        .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname, worker_result)`)
         .eq("is_active", true)
         .neq("user_id", userId);
 
@@ -260,8 +260,10 @@ export async function POST(req: NextRequest) {
       const results = (workers || [])
         .filter((w: Record<string, unknown>) => w.is_public !== false && (!w.job_status || w.job_status === "active" || w.job_status === "open"))
         .map((worker: Record<string, unknown>) => {
-          const wrkHexaco = worker.hexaco_data ? parseHexaco(worker.hexaco_data) : DEFAULT_HEXACO;
           const wrkUser = worker.users as Record<string, unknown> | null;
+          const wrkHexaco = (wrkUser?.worker_result as any)?.hexaco 
+            ? parseHexaco((wrkUser?.worker_result as any).hexaco) 
+            : DEFAULT_HEXACO;
           const trustScore = Number(wrkUser?.trust_score ?? 50);
 
           const hexacoScore = calcHexacoScore(myHexaco, wrkHexaco);

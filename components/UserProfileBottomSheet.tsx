@@ -194,7 +194,7 @@ export default function UserProfileBottomSheet({
             <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
               <div style={{
                 width: 68, height: 68, borderRadius: "50%",
-                background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                background: "linear-gradient(135deg, #f59e0b, #ef4444)",
                 overflow: "hidden", display: "flex", alignItems: "center",
                 justifyContent: "center", fontSize: 28, flexShrink: 0
               }}>

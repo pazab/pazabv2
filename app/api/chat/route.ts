@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     // 현재 match 정보
     const { data: match } = await supabaseAdmin
       .from("matches")
-      .select("employer_id, worker_id, status, progress_status, match_score, interview_at, interview_memo")
+      .select("employer_id, worker_id, progress_status, match_score, interview_at, interview_memo")
       .eq("id", matchId)
       .single();
 
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
     const counterpartId = match?.employer_id === userId ? match?.worker_id : match?.employer_id;
     const { data: counterpart } = await supabaseAdmin
       .from("users")
-      .select("id, nickname, name, user_type, grade, trust_score, avatar_url")
+      .select("id, nickname, user_type, grade, trust_score, avatar_url")
       .eq("id", counterpartId)
       .single();
 
@@ -65,14 +65,26 @@ export async function GET(req: NextRequest) {
     if (counterpart?.user_type === "employer") {
       const { data: emp } = await supabaseAdmin
         .from("employer_profiles")
-        .select("business_name, business_type")
+        .select("business_name, business_type, image_url")
         .eq("user_id", counterpartId)
         .limit(1)
         .maybeSingle();
       counterpartProfile = emp;
     }
 
-    return NextResponse.json({ data: messages, counterpart, counterpartProfile, match, success: true });
+    // 알바생이면 worker_profiles도
+    let workerProfile = null;
+    if (counterpart?.user_type === "worker") {
+      const { data: wrk } = await supabaseAdmin
+        .from("worker_profiles")
+        .select("image_url")
+        .eq("user_id", counterpartId)
+        .limit(1)
+        .maybeSingle();
+      workerProfile = wrk;
+    }
+
+    return NextResponse.json({ data: messages, counterpart, counterpartProfile, counterpartWorkerProfile: workerProfile, match, success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message, success: false }, { status: 500 });
   }

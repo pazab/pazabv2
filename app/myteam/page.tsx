@@ -12,6 +12,7 @@ import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 import { getTrustGrade } from "@/lib/utils";
 import { sendPushNotification } from "@/lib/usePush";
 import { cardStyle, cardInnerStyle, cardGradientStyle, btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
+import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 
 // 거리 계산 헬퍼 함수 (Haversine 공식)
 function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -400,9 +401,43 @@ function WorkerAttendanceTab({ member, userId }: { member: any; userId: string }
   };
   const totalActualHours = monthAtt.reduce((s,a) => s+(parseFloat(a.actual_hours)||0), 0);
   const wage = member?.wage || 0;
+  const wageType = member?.wage_type || "hourly";
   const contractH = parseFloat(member?.work_hours) || 8;
-  const overtimeHours = Math.max(0, totalActualHours - (thisMonthStats.normal + thisMonthStats.late) * contractH);
-  const estimatedPay = wage ? Math.round((totalActualHours - overtimeHours) * wage + overtimeHours * wage * 1.5) : 0;
+  const workedDays = thisMonthStats.normal + thisMonthStats.late + thisMonthStats.early_leave;
+  const expectedHours = workedDays * contractH;
+  const overtimeHours = Math.max(0, totalActualHours - expectedHours);
+  const scheduledDaysInMonth = (() => {
+    if (!member?.work_days) return 0;
+    const WORK_DAY_MAP: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
+    const scheduledDayNums = new Set<number>();
+    for (const [label, num] of Object.entries(WORK_DAY_MAP)) {
+      if (member.work_days.includes(label)) scheduledDayNums.add(num);
+    }
+    if (scheduledDayNums.size === 0) return 0;
+    let count = 0;
+    for (let d = 1; d <= monthDays; d++) {
+      if (scheduledDayNums.has(new Date(viewYear, viewMonth, d).getDay())) count++;
+    }
+    return count;
+  })();
+  const estimatedPay = (() => {
+    if (wageType === "monthly") {
+      const dailyRate = scheduledDaysInMonth > 0 ? wage / scheduledDaysInMonth : 0;
+      const base = Math.round(dailyRate * workedDays);
+      const hourlyEquiv = wage / 209;
+      const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
+      return base + overtime;
+    } else if (wageType === "daily") {
+      const base = workedDays * wage;
+      const hourlyEquiv = contractH > 0 ? wage / contractH : 0;
+      const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
+      return base + overtime;
+    } else {
+      const regularPay = Math.min(totalActualHours, expectedHours) * wage;
+      const overtimePay = overtimeHours * wage * 1.5;
+      return Math.round(regularPay + overtimePay);
+    }
+  })();
 
   return (
     <div>
@@ -550,6 +585,7 @@ function WorkerAttLogs({ memberId, refreshKey = 0 }: { memberId: string; refresh
 function WorkerPayslipTab({ workerId, employerId, router }: { workerId:string; employerId:string; router:any }) {
   const [payslips, setPayslips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandPayslips, setExpandPayslips] = useState(false);
 
   useEffect(() => {
     if (!workerId || !employerId) { setLoading(false); return; }
@@ -557,8 +593,8 @@ function WorkerPayslipTab({ workerId, employerId, router }: { workerId:string; e
       .select("*")
       .eq("worker_id", workerId)
       .eq("employer_id", employerId)
-      .order("year", { ascending: false })
-      .order("month", { ascending: false })
+      .order("year", { ascending: false, nullsFirst: false })
+      .order("month", { ascending: false, nullsFirst: false })
       .then(({ data }: { data: any }) => { setPayslips(data || []); setLoading(false); });
   }, [workerId, employerId]);
 
@@ -571,30 +607,54 @@ function WorkerPayslipTab({ workerId, employerId, router }: { workerId:string; e
           <p style={{ fontSize:13, color:"var(--text-muted)" }}>발행된 급여 명세서가 없어요</p>
           <p style={{ fontSize:11, color:"var(--text-muted)", marginTop:4 }}>사장님이 명세서를 발행하면 여기서 확인할 수 있어요</p>
         </div>
-      ) : payslips.map(p => (
-        <div key={p.id} style={{ background:"var(--surface2)", borderRadius:12, padding:12, border:"1px solid var(--border)" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{p.year}년 {p.month}월</span>
-            <div style={{ display:"flex", gap:4 }}>
-              {p.status === "confirmed" || p.confirmed_at ? (
-                <span style={{ fontSize:11, background:"rgba(16,185,129,0.15)", color:"#10b981", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✅ 확인됨</span>
-              ) : p.status === "correction_requested" ? (
-                <span style={{ fontSize:11, background:"rgba(239,68,68,0.15)", color:"#ef4444", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✏️ 수정요청됨</span>
-              ) : (
-                <span style={{ fontSize:11, background:"rgba(245,158,11,0.15)", color:"#f59e0b", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>⏳ 확인대기</span>
-              )}
+      ) : (
+        <>
+          {(expandPayslips ? payslips : payslips.slice(0, 2)).map(p => (
+            <div key={p.id} style={{ background:"var(--surface2)", borderRadius:12, padding:12, border:"1px solid var(--border)" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{p.year}년 {p.month}월</span>
+                <div style={{ display:"flex", gap:4 }}>
+                  {p.status === "confirmed" || p.confirmed_at ? (
+                    <span style={{ fontSize:11, background:"rgba(16,185,129,0.15)", color:"#10b981", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✅ 확인됨</span>
+                  ) : p.status === "correction_requested" ? (
+                    <span style={{ fontSize:11, background:"rgba(239,68,68,0.15)", color:"#ef4444", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✏️ 수정요청됨</span>
+                  ) : (
+                    <span style={{ fontSize:11, background:"rgba(245,158,11,0.15)", color:"#f59e0b", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>⏳ 확인대기</span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:10, marginBottom:8 }}>
+                <div><p style={{ fontSize:10, color:"var(--text-muted)", margin:"0 0 2px" }}>근무</p><p style={{ fontSize:12, fontWeight:600, margin:0 }}>{p.work_days}일/{p.total_hours}h</p></div>
+                <div><p style={{ fontSize:10, color:"var(--text-muted)", margin:"0 0 2px" }}>지급액</p><p style={{ fontSize:14, fontWeight:700, color:"#7c3aed", margin:0 }}>{Number(p.total_pay).toLocaleString()}원</p></div>
+              </div>
+              <button onClick={() => router.push(`/payslip?id=${p.id}&tab=mywork`)}
+                style={{ width:"100%", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
+                📄 명세서 보기
+              </button>
             </div>
-          </div>
-          <div style={{ display:"flex", gap:10, marginBottom:8 }}>
-            <div><p style={{ fontSize:10, color:"var(--text-muted)", margin:"0 0 2px" }}>근무</p><p style={{ fontSize:12, fontWeight:600, margin:0 }}>{p.work_days}일/{p.total_hours}h</p></div>
-            <div><p style={{ fontSize:10, color:"var(--text-muted)", margin:"0 0 2px" }}>지급액</p><p style={{ fontSize:14, fontWeight:700, color:"#7c3aed", margin:0 }}>{Number(p.total_pay).toLocaleString()}원</p></div>
-          </div>
-          <button onClick={() => router.push(`/payslip?id=${p.id}&tab=mywork`)}
-            style={{ width:"100%", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
-            📄 명세서 보기
-          </button>
-        </div>
-      ))}
+          ))}
+          {payslips.length > 2 && (
+            <button
+              type="button"
+              onClick={() => setExpandPayslips(!expandPayslips)}
+              style={{
+                width: "100%",
+                background: "none",
+                border: "none",
+                padding: "8px 0 0",
+                color: "#8b5cf6",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "pointer",
+                textAlign: "center",
+                outline: "none"
+              }}
+            >
+              {expandPayslips ? "명세서 접기 ▴" : `명세서 더보기 (외 ${payslips.length - 2}건) ▾`}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -605,26 +665,105 @@ const STATUS_COLOR: Record<string,string> = { normal:"#10b981", late:"#f59e0b", 
 
 function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: string; router: any; onRefresh?: () => void }) {
   const [recentAtt, setRecentAtt] = useState<any[]>([]);
-  const [monthStats, setMonthStats] = useState({ days: 0, hours: 0, estPay: 0 });
+  const [monthStats, setMonthStats] = useState({ days: 0, hours: 0, estPay: 0, netPay: 0 });
   const [editHireDate, setEditHireDate] = useState(false);
   const [hireDateInput, setHireDateInput] = useState(m.hire_date || "");
   const [contracts, setContracts] = useState<any[]>([]);
+  const [expandRecentAtt, setExpandRecentAtt] = useState(false);
+  const [expandContracts, setExpandContracts] = useState(false);
 
   useEffect(() => {
     const now = new Date();
-    const ms = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-    supabase.from("attendance")
-      .select("work_date,status,actual_hours,check_in,check_out")
-      .eq("team_member_id", m.id)
-      .gte("work_date", ms)
-      .order("work_date", { ascending: false })
-      .then(({ data }: { data: any }) => {
-        const att = data || [];
-        setRecentAtt(att.slice(0, 5));
-        const workDays = att.filter((a:any) => a.status !== "absent" && a.status !== "off").length;
-        const totalH = att.reduce((s:number, a:any) => s + (parseFloat(a.actual_hours) || 0), 0);
-        setMonthStats({ days: workDays, hours: Math.round(totalH * 10) / 10, estPay: m.wage ? Math.round(totalH * m.wage) : 0 });
+    const y = now.getFullYear();
+    const ms = `${y}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
+    Promise.all([
+      supabase.from("attendance")
+        .select("work_date,status,actual_hours,check_in,check_out")
+        .eq("team_member_id", m.id)
+        .gte("work_date", ms)
+        .order("work_date", { ascending: false }),
+      getTaxRates(y)
+    ]).then(([attRes, rates]) => {
+      const att = attRes.data || [];
+      setRecentAtt(att.slice(0, 10));
+      const contractHours = m.work_hours ? parseFloat(m.work_hours) : 8;
+      const workedDays = att.filter((a:any) => ["normal", "late", "early_leave"].includes(a.status)).length;
+      const totalActualHours = att.filter((a:any) => a.status !== "absent" && a.status !== "off")
+        .reduce((sum: number, a:any) => sum + (parseFloat(a.actual_hours) || contractHours), 0);
+
+      const WORK_DAY_MAP: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
+      const scheduledDayNums = new Set<number>();
+      if (m.work_days) {
+        for (const [label, num] of Object.entries(WORK_DAY_MAP)) {
+          if (m.work_days.includes(label)) scheduledDayNums.add(num);
+        }
+      }
+      const scheduledDaysInMonth = (() => {
+        if (scheduledDayNums.size === 0) return 0;
+        const days = new Date(y, now.getMonth() + 1, 0).getDate();
+        let count = 0;
+        for (let d = 1; d <= days; d++) {
+          if (scheduledDayNums.has(new Date(y, now.getMonth(), d).getDay())) count++;
+        }
+        return count;
+      })();
+
+      const expectedHours = workedDays * contractHours;
+      const overtimeHours = Math.max(0, totalActualHours - expectedHours);
+      const wage = m.wage || 0;
+      const wageType = m.wage_type || "hourly";
+
+      const estPay = (() => {
+        if (wageType === "monthly") {
+          const dailyRate = scheduledDaysInMonth > 0 ? wage / scheduledDaysInMonth : 0;
+          const base = Math.round(dailyRate * workedDays);
+          const hourlyEquiv = wage / 209;
+          const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
+          return base + overtime;
+        } else if (wageType === "daily") {
+          const base = workedDays * wage;
+          const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
+          const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
+          return base + overtime;
+        } else {
+          const regularPay = Math.min(totalActualHours, expectedHours) * wage;
+          const overtimePay = overtimeHours * wage * 1.5;
+          return Math.round(regularPay + overtimePay);
+        }
+      })();
+
+      let deductions = 0;
+      if (estPay > 0 && rates) {
+        if (wageType === "daily") {
+          let incomeTax = 0;
+          let localTax = 0;
+          const workDaysList = att.filter((a:any) => a.status !== "absent" && a.status !== "off");
+          workDaysList.forEach((a:any) => {
+            const dailyHours = parseFloat(a.actual_hours) || contractHours;
+            const dailyPay = Math.round(dailyHours * wage);
+            const tax = calcDailyWorkerTax(dailyPay);
+            incomeTax += tax.incomeTax;
+            localTax += tax.localTax;
+          });
+          deductions = incomeTax + localTax;
+        } else {
+          const eligibility = calcInsuranceEligibility({
+            monthlyHours: totalActualHours,
+            contractMonths: 0,
+            isDailyWorker: false
+          });
+          const ins = calcInsuranceDeduction(estPay, rates, eligibility);
+          deductions = ins.total;
+        }
+      }
+
+      setMonthStats({
+        days: workedDays,
+        hours: Math.round(totalActualHours * 10) / 10,
+        estPay: estPay,
+        netPay: Math.max(0, estPay - deductions)
       });
+    });
     supabase.from("contracts")
       .select("id, start_date, end_date, worker_signed, employer_signed, status, created_at, contract_data")
       .eq("team_member_id", m.id)
@@ -655,7 +794,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
           {/* 근무 조건 */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
             {[
-              { label:"시급", value: m.wage ? `${m.wage.toLocaleString()}원` : "미정" },
+              { label: m.wage_type === "monthly" ? "월급" : m.wage_type === "daily" ? "일급" : m.wage_type === "weekly" ? "주급" : "시급", value: m.wage ? `${m.wage.toLocaleString()}원` : "미정" },
               { label:"근무요일", value: m.work_days || "미정" },
               {
                 label:"근무시간",
@@ -738,6 +877,12 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
             </div>
           ))}
         </div>
+        {monthStats.estPay > 0 && monthStats.netPay > 0 && monthStats.netPay !== monthStats.estPay && (
+          <div style={{ borderTop: "1px dashed rgba(124,58,237,0.3)", marginTop: 12, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>💰 예상 실수령액 (세후)</span>
+            <span style={{ fontSize: 14, fontWeight: 900, color: "#10b981" }}>{monthStats.netPay.toLocaleString()}원</span>
+          </div>
+        )}
       </div>
 
       {/* 최근 근무 */}
@@ -749,24 +894,46 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         {recentAtt.length === 0 ? (
           <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", margin:0 }}>이번달 근무 기록이 없어요</p>
         ) : (
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {recentAtt.map((a:any) => {
-              const cin = a.check_in ? new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
-              const cout = a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
-              return (
-                <div key={a.work_date} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", background:"var(--surface2)", borderRadius:10 }}>
-                  <span style={{ fontSize:14 }}>{STATUS_EMOJI[a.status]||"📅"}</span>
-                  <div style={{ flex:1 }}>
-                    <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
-                    <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>{cin} ~ {cout}</span>
+          <>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {(expandRecentAtt ? recentAtt : recentAtt.slice(0, 3)).map((a:any) => {
+                const cin = a.check_in ? new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
+                const cout = a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
+                return (
+                  <div key={a.work_date} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", background:"var(--surface2)", borderRadius:10 }}>
+                    <span style={{ fontSize:14 }}>{STATUS_EMOJI[a.status]||"📅"}</span>
+                    <div style={{ flex:1 }}>
+                      <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
+                      <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>{cin} ~ {cout}</span>
+                    </div>
+                    <span style={{ fontSize:11, color: STATUS_COLOR[a.status]||"var(--text-muted)", fontWeight:600 }}>
+                      {STATUS_LABEL[a.status]||a.status} {a.actual_hours ? `${a.actual_hours}h` : ""}
+                    </span>
                   </div>
-                  <span style={{ fontSize:11, color: STATUS_COLOR[a.status]||"var(--text-muted)", fontWeight:600 }}>
-                    {STATUS_LABEL[a.status]||a.status} {a.actual_hours ? `${a.actual_hours}h` : ""}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            {recentAtt.length > 3 && (
+              <button
+                type="button"
+                onClick={() => setExpandRecentAtt(!expandRecentAtt)}
+                style={{
+                  width: "100%",
+                  background: "none",
+                  border: "none",
+                  padding: "10px 0 0",
+                  color: "#8b5cf6",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textAlign: "center",
+                  outline: "none"
+                }}
+              >
+                {expandRecentAtt ? "접기 ▴" : `더보기 (외 ${recentAtt.length - 3}건) ▾`}
+              </button>
+            )}
+          </>
         )}
       </div>
       {/* 계약서 */}
@@ -774,45 +941,69 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>📄 근로계약서</p>
         {contracts.length === 0 ? (
           <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", margin:0 }}>아직 계약서가 없어요</p>
-        ) : contracts.map((c: any) => {
-          const isActive = c.status !== "superseded";
-          const isSigned = c.worker_signed && c.employer_signed;
-          const isPending = !c.worker_signed && c.employer_signed;
-          return (
-            <div key={c.id} style={{ background:"var(--surface2)", borderRadius:10, padding:"10px 12px", border:`1px solid ${isActive ? "#7c3aed40" : "var(--border)"}`, marginBottom:6, opacity: isActive ? 1 : 0.6 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                <span style={{ fontSize:12, fontWeight:700, color:"var(--text)" }}>
-                  {isActive ? "📄 현재 계약" : "📋 이전 계약"}
-                </span>
-                <span style={{ fontSize:10, borderRadius:6, padding:"2px 7px", fontWeight:700,
-                  background: isSigned ? "#10b98120" : isPending ? "#f59e0b20" : "var(--surface)",
-                  color: isSigned ? "#10b981" : isPending ? "#f59e0b" : "var(--text-muted)" }}>
-                  {isSigned ? "✅ 서명완료" : isPending ? "⏳ 서명대기" : "미서명"}
-                </span>
-              </div>
-              <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 8px" }}>
-                {c.start_date || "-"} ~ {c.end_date || "기간 미정"}
-                {c.contract_data?.contractType && (
-                  <span style={{ marginLeft:6, fontSize:10, background:"var(--surface)", borderRadius:5, padding:"1px 5px" }}>
-                    {c.contract_data.contractType === "parttime" ? "단시간" : "표준"}
-                  </span>
-                )}
-              </p>
-              <div style={{ display:"flex", gap:6 }}>
-                <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
-                  style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
-                  📄 보기
-                </button>
-                {isPending && (
-                  <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
-                    style={{ flex:2, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:8, padding:"7px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>
-                    ✍️ 서명하기
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        ) : (
+          <>
+            {(expandContracts ? contracts : contracts.slice(0, 1)).map((c: any) => {
+              const isActive = c.status !== "superseded";
+              const isSigned = c.worker_signed && c.employer_signed;
+              const isPending = !c.worker_signed && c.employer_signed;
+              return (
+                <div key={c.id} style={{ background:"var(--surface2)", borderRadius:10, padding:"10px 12px", border:`1px solid ${isActive ? "#7c3aed40" : "var(--border)"}`, marginBottom:6, opacity: isActive ? 1 : 0.6 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                    <span style={{ fontSize:12, fontWeight:700, color:"var(--text)" }}>
+                      {isActive ? "📄 현재 계약" : "📋 이전 계약"}
+                    </span>
+                    <span style={{ fontSize:10, borderRadius:6, padding:"2px 7px", fontWeight:700,
+                      background: isSigned ? "#10b98120" : isPending ? "#f59e0b20" : "var(--surface)",
+                      color: isSigned ? "#10b981" : isPending ? "#f59e0b" : "var(--text-muted)" }}>
+                      {isSigned ? "✅ 서명완료" : isPending ? "⏳ 서명대기" : "미서명"}
+                    </span>
+                  </div>
+                  <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 8px" }}>
+                    {c.start_date || "-"} ~ {c.end_date || "기간 미정"}
+                    {c.contract_data?.contractType && (
+                      <span style={{ marginLeft:6, fontSize:10, background:"var(--surface)", borderRadius:5, padding:"1px 5px" }}>
+                        {c.contract_data.contractType === "parttime" ? "단시간" : "표준"}
+                      </span>
+                    )}
+                  </p>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
+                      style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
+                      📄 보기
+                    </button>
+                    {isPending && (
+                      <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
+                        style={{ flex:2, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:8, padding:"7px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>
+                        ✍️ 서명하기
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {contracts.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setExpandContracts(!expandContracts)}
+                style={{
+                  width: "100%",
+                  background: "none",
+                  border: "none",
+                  padding: "6px 0 0",
+                  color: "#8b5cf6",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textAlign: "center",
+                  outline: "none"
+                }}
+              >
+                {expandContracts ? "이전 계약 접기 ▴" : `이전 계약 보기 (외 ${contracts.length - 1}건) ▾`}
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {/* 급여 명세서 */}
@@ -997,7 +1188,7 @@ function MyTeamPageContent() {
     const teamMemberIds = data.map((m: any) => m.id);
     const { data: memberContracts } = teamMemberIds.length > 0
       ? await supabase.from("contracts")
-          .select("team_member_id, wage, work_days, work_hours, contract_data, status")
+          .select("team_member_id, wage, wage_type, work_days, work_hours, contract_data, status")
           .in("team_member_id", teamMemberIds)
           .neq("status", "cancelled")
           .order("created_at", { ascending: false })
@@ -1025,12 +1216,15 @@ function MyTeamPageContent() {
 
     const enriched = data.map((m: any) => {
       let wage = m.wage;
+      let wage_type = "hourly";
       let work_days = m.work_days;
       let work_hours = m.work_hours;
 
       const contract = contractByMember[m.id];
       if (contract) {
         const cd = contract.contract_data;
+        if (cd?.wageType) wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        else if (contract.wage_type) wage_type = contract.wage_type;
         if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
         else if (contract.wage) wage = contract.wage;
         if (cd) {
@@ -1057,6 +1251,7 @@ function MyTeamPageContent() {
       return {
         ...m,
         wage,
+        wage_type,
         work_days,
         work_hours,
         worker: (m as any).users,
@@ -1102,7 +1297,7 @@ function MyTeamPageContent() {
     const tmIds = (activeData||[]).map((d: any) => d.id);
     const { data: memberContracts } = tmIds.length > 0
       ? await supabase.from("contracts")
-          .select("team_member_id, wage, work_days, work_hours, contract_data, status")
+          .select("team_member_id, wage, wage_type, work_days, work_hours, contract_data, status")
           .in("team_member_id", tmIds)
           .neq("status", "cancelled")
           .order("created_at", { ascending: false })
@@ -1130,12 +1325,15 @@ function MyTeamPageContent() {
 
     const mapped = (activeData||[]).map((d: any) => {
       let wage = d.wage;
+      let wage_type = "hourly";
       let work_days = d.work_days;
       let work_hours = d.work_hours;
 
       const contract = contractByMember[d.id];
       if (contract) {
         const cd = contract.contract_data;
+        if (cd?.wageType) wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        else if (contract.wage_type) wage_type = contract.wage_type;
         if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
         else if (contract.wage) wage = contract.wage;
         if (cd) {
@@ -1163,6 +1361,7 @@ function MyTeamPageContent() {
       return {
         ...d,
         wage,
+        wage_type,
         work_days,
         work_hours,
         employer: d.users,
@@ -1445,7 +1644,7 @@ function MyTeamPageContent() {
                                       }
                                       const num = parseFloat(m.work_hours);
                                       return !isNaN(num) ? `${num}시간` : m.work_hours;
-                                    })()} · {m.wage ? m.wage.toLocaleString()+"원" : "시급미정"} · 이번달 {m.thisMonth}일
+                                    })()} · {m.wage ? `${m.wage_type === "monthly" ? "월급" : m.wage_type === "daily" ? "일급" : m.wage_type === "weekly" ? "주급" : "시급"} ${m.wage.toLocaleString()}원` : "급여미정"} · 이번달 {m.thisMonth}일
                                   </p>
                                   <span onClick={async e => {
                                     e.stopPropagation();

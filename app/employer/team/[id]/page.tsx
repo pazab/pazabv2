@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { getTrustGrade } from "@/lib/utils";
 import DateWheelPicker from "@/components/DateWheelPicker";
+import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 
 // ─────────────────────────────────────────────
 // 근태 이력 타임라인 (아코디언, 기본 접힘)
@@ -257,6 +258,8 @@ export default function TeamMemberPage() {
   const [member, setMember] = useState<any>(null);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
+  const [taxRates, setTaxRates] = useState<any>(null);
+  const [showDeductionDetail, setShowDeductionDetail] = useState(false);
 
   // 아코디언 열림 상태
   const [payslipOpen, setPayslipOpen] = useState(false);
@@ -310,6 +313,10 @@ export default function TeamMemberPage() {
     viewMonthRef.current = viewMonth;
     viewYearRef.current = viewYear;
   }, [viewMonth, viewYear]);
+
+  useEffect(() => {
+    getTaxRates(viewYear).then(rates => setTaxRates(rates));
+  }, [viewYear]);
 
   useEffect(() => {
     if (memberId) loadMember();
@@ -443,8 +450,8 @@ export default function TeamMemberPage() {
     const { data } = await supabase.from("payslips")
       .select("*")
       .eq("team_member_id", tmId)
-      .order("year", { ascending: false })
-      .order("month", { ascending: false });
+      .order("year", { ascending: false, nullsFirst: false })
+      .order("month", { ascending: false, nullsFirst: false });
     setPayslips(data || []);
     setPayslipsLoading(false);
   }
@@ -627,6 +634,49 @@ export default function TeamMemberPage() {
     }
   })();
 
+  const netPayInfo = (() => {
+    if (estimatedPay <= 0) return null;
+    if (!taxRates) return { netPay: estimatedPay, deductions: 0, breakdown: null };
+
+    if (wageType === "daily") {
+      let incomeTax = 0;
+      let localTax = 0;
+      const workDaysList = monthAtt.filter(a => a.status !== "absent" && a.status !== "off");
+      workDaysList.forEach(a => {
+        const dailyHours = parseFloat(a.actual_hours) || contractHours;
+        const dailyPay = Math.round(dailyHours * wage);
+        const tax = calcDailyWorkerTax(dailyPay);
+        incomeTax += tax.incomeTax;
+        localTax += tax.localTax;
+      });
+      const totalDeductions = incomeTax + localTax;
+      return {
+        netPay: estimatedPay - totalDeductions,
+        deductions: totalDeductions,
+        breakdown: {
+          incomeTax,
+          localTax,
+        }
+      };
+    } else {
+      const eligibility = calcInsuranceEligibility({
+        monthlyHours: totalActualHours,
+        contractMonths: 0,
+        isDailyWorker: false
+      });
+      const ins = calcInsuranceDeduction(estimatedPay, taxRates, eligibility);
+      return {
+        netPay: estimatedPay - ins.total,
+        deductions: ins.total,
+        breakdown: {
+          health: ins.health,
+          employment: ins.employment,
+          nationalPension: ins.nationalPension,
+        }
+      };
+    }
+  })();
+
   const todayStr = (() => {
     const d = new Date();
     const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
@@ -691,7 +741,7 @@ export default function TeamMemberPage() {
           <div style={{ padding: "10px 16px 12px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
               {[
-                { label: "시급", value: member.wage ? `${member.wage.toLocaleString()}원` : "미정" },
+                { label: wageType === "monthly" ? "월급" : wageType === "daily" ? "일급" : "시급", value: member.wage ? `${member.wage.toLocaleString()}원` : "미정" },
                 { label: "근무요일", value: member.work_days || "미정" },
                 {
                   label: "근무시간",
@@ -889,6 +939,56 @@ export default function TeamMemberPage() {
               <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>이번달 예상 급여</span>
               <span style={{ fontSize: 15, fontWeight: 900, color: "#7c3aed" }}>{estimatedPay > 0 ? estimatedPay.toLocaleString() + "원" : "-"}</span>
             </div>
+            {netPayInfo && netPayInfo.deductions > 0 && (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed rgba(124,58,237,0.3)", fontSize: 11 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ color: "var(--text-muted)" }}>예상 실수령액 (세후)</span>
+                  <span style={{ fontWeight: 800, color: "var(--success-text)", fontSize: 13 }}>
+                    ~{netPayInfo.netPay.toLocaleString()}원
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", fontSize: 10, marginBottom: 4 }}>
+                  <button 
+                    onClick={() => setShowDeductionDetail(!showDeductionDetail)}
+                    style={{ background: "none", border: "none", padding: 0, color: "#8b5cf6", fontSize: 10, cursor: "pointer", textDecoration: "underline" }}
+                  >
+                    {showDeductionDetail ? "공제 상세 접기 ▴" : "공제 상세 보기 ▾"}
+                  </button>
+                  <span>공제 총액: -{netPayInfo.deductions.toLocaleString()}원</span>
+                </div>
+                {showDeductionDetail && (
+                  <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "8px 10px", fontSize: 10, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+                    {wageType === "daily" ? (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>소득세</span>
+                          <span>{(netPayInfo.breakdown?.incomeTax ?? 0).toLocaleString()}원</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>지방소득세</span>
+                          <span>{(netPayInfo.breakdown?.localTax ?? 0).toLocaleString()}원</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>국민연금 (4.5%)</span>
+                          <span>{(netPayInfo.breakdown?.nationalPension ?? 0).toLocaleString()}원</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>건강보험 (3.545%)</span>
+                          <span>{(netPayInfo.breakdown?.health ?? 0).toLocaleString()}원</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>고용보험 (0.9%)</span>
+                          <span>{(netPayInfo.breakdown?.employment ?? 0).toLocaleString()}원</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 달력 */}
@@ -996,8 +1096,9 @@ export default function TeamMemberPage() {
                   </div>
                   <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
                     <div><p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>근무일수</p><p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{p.work_days}일</p></div>
-                    <div><p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>총 근무시간</p><p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{p.total_hours}h</p></div>
-                    <div><p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>지급액</p><p style={{ fontSize: 14, fontWeight: 700, color: "#7c3aed", margin: 0 }}>{Number(p.total_pay).toLocaleString()}원</p></div>
+                    <div><p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>총 시간</p><p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{p.total_hours}h</p></div>
+                    <div><p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>실수령액 (세후)</p><p style={{ fontSize: 14, fontWeight: 800, color: "var(--success-text)", margin: 0 }}>{Number(p.net_pay ?? p.net_amount ?? p.total_pay).toLocaleString()}원</p></div>
+                    <div><p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>지급액 (세전)</p><p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", margin: "2px 0 0" }}>{Number(p.total_pay).toLocaleString()}원</p></div>
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={() => router.push(`/payslip?id=${p.id}`)}
@@ -1354,7 +1455,7 @@ export default function TeamMemberPage() {
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>시급 (원)</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>임금 ({wageType === "monthly" ? "월급" : wageType === "daily" ? "일급" : "시급"} 기준, 원)</p>
               <input
                 type="number"
                 value={editWage}

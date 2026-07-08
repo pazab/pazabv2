@@ -229,7 +229,7 @@ export default function JobDetailPage() {
             if (tcData.success) setTeamCompat(tcData);
           } catch {}
         }
-        const { data: match } = await supabase.from("matches").select("id, status, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score")
+        const { data: match } = await supabase.from("matches").select("id, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score")
           .or(`job_id.eq.${data.id},employer_profile_id.eq.${data.employer_profile_id ?? data.id}`)
           .eq("worker_id", uid).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (match) setExistingMatch({ ...match, isReceived: match.employer_interest === true });
@@ -260,7 +260,7 @@ export default function JobDetailPage() {
 
   const handleInterest = async () => {
     if (!isLoggedIn || !userId) { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); return; }
-    if (existingMatch && (existingMatch.status === "cancelled" || existingMatch.status === "rejected")) { setShowConfirm(true); return; }
+    if (existingMatch && (existingMatch.progress_status === "cancelled" || existingMatch.progress_status === "rejected")) { setShowConfirm(true); return; }
     await sendLoveCall();
   };
 
@@ -306,7 +306,7 @@ export default function JobDetailPage() {
   const activeMedia = mediaItems[activeMediaIndex];
 
   const grade = getGrade(Number(job.trust_score || 50));
-  const status = sent ? "sent" : String(existingMatch?.status || "");
+  const status = sent ? "sent" : String(existingMatch?.progress_status || "");
   const isReceived = existingMatch?.isReceived === true;
   const hexacoData = job.hexaco_data as Record<string, number> | null;
 
@@ -510,7 +510,7 @@ export default function JobDetailPage() {
         <div style={{ ...modalOverlay }}>
           <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>러브콜 다시 보내기</h3>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.status === "rejected" ? "거절된 공고에 다시 보낼까요?" : "이전에 취소한 공고예요. 다시 보낼까요?"}</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.progress_status === "rejected" ? "거절된 공고에 다시 보낼까요?" : "이전에 취소한 공고예요. 다시 보낼까요?"}</p>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={sendLoveCall} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "보내기 →"}</button>
               <button onClick={() => setShowConfirm(false)} style={{ ...btnSecondary, flex: 1 }}>취소</button>

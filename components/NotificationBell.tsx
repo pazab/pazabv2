@@ -10,11 +10,12 @@ export default function NotificationBell() {
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
+    let active = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user || !active) return;
 
       // 초기 미읽음 수
       const { count } = await supabase
@@ -22,11 +23,14 @@ export default function NotificationBell() {
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
         .eq("is_read", false);
+      
+      if (!active) return;
       setUnread(count ?? 0);
 
       // Realtime 구독으로 실시간 업데이트
-      channel = supabase
-        .channel(`notif-bell-${user.id}`)
+      const channelName = `notif-bell-${user.id}-${Math.random().toString(36).substring(2, 9)}`;
+      const newChannel = supabase
+        .channel(channelName)
         .on(
           "postgres_changes",
           {
@@ -36,6 +40,7 @@ export default function NotificationBell() {
             filter: `user_id=eq.${user.id}`,
           },
           async (payload: any) => {
+            if (!active) return;
             if (payload.eventType === "INSERT") {
               setUnread(prev => prev + 1);
             } else {
@@ -44,15 +49,23 @@ export default function NotificationBell() {
                 .select("*", { count: "exact", head: true })
                 .eq("user_id", user.id)
                 .eq("is_read", false);
+              if (!active) return;
               setUnread(count ?? 0);
             }
           }
-        )
-        .subscribe();
+        );
+
+      newChannel.subscribe();
+      channel = newChannel;
     };
 
     init();
-    return () => { channel?.unsubscribe(); };
+    return () => {
+      active = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   // 알림함 페이지에 있으면 배지 숨김

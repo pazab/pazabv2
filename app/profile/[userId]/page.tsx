@@ -75,7 +75,7 @@ export default function ProfilePage() {
 
       const { data: match } = await supabase
         .from("matches")
-        .select("id, status, progress_status")
+        .select("id, progress_status")
         .or(`and(employer_id.eq.${targetId},worker_id.eq.${session.user.id}),and(employer_id.eq.${session.user.id},worker_id.eq.${targetId})`)
         .maybeSingle();
       if (match) setExistingMatch(match);
@@ -122,12 +122,16 @@ export default function ProfilePage() {
         <div style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(236,72,153,0.06))", backdropFilter: "blur(12px)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 20, padding: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
             {/* 아바타 */}
-            <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "2px solid rgba(255,255,255,0.15)" }}>
+            <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {targetUser.avatar_url ? (
                 <img src={targetUser.avatar_url} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
-                <div style={{ width: "100%", height: "100%", background: "var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30 }}>
-                  {hasEmployer ? "🏪" : "⚡"}
+                <div style={{
+                  width: "100%", height: "100%",
+                  background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30
+                }}>
+                  {hasEmployer ? "🏪" : "👤"}
                 </div>
               )}
             </div>

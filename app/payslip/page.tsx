@@ -49,6 +49,8 @@ function PayslipContent() {
   const [employmentIns, setEmploymentIns] = useState(0);
   const [nationalPension, setNationalPension] = useState(0);
   const [contractInsurances, setContractInsurances] = useState<{ insPension: boolean; insHealth: boolean; insEmp: boolean } | null>(null);
+  const [expandAttendance, setExpandAttendance] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -74,7 +76,10 @@ function PayslipContent() {
   }, []);
 
   useEffect(() => {
-    if (member) loadAttendanceWithMember(member, year, month);
+    if (member) {
+      loadAttendanceWithMember(member, year, month);
+      checkIfPayslipExists(member.id, year, month);
+    }
   }, [year, month, member?.id]);
 
   async function loadExistingPayslip(id: string) {
@@ -87,13 +92,41 @@ function PayslipContent() {
       setMonth(data.month);
       setMemo(data.memo || "");
       const m = { ...data.team_members, worker: data.team_members?.users };
+
+      const { data: contract } = await supabase.from("contracts")
+        .select("wage, wage_type, contract_data")
+        .eq("team_member_id", m.id)
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let wage_type = "hourly";
+      let wage = m.wage;
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        if (contract.wage_type) {
+          wage_type = contract.wage_type === "monthly" ? "monthly" : contract.wage_type === "daily" ? "daily" : "hourly";
+        } else if (cd?.wageType) {
+          wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        }
+        if (cd?.workDaysMode === "text" && cd?.workDaysText) {
+          m.work_days = cd.workDaysText;
+        } else if (cd) {
+          const days = ["월", "화", "수", "목", "금", "토", "일"]
+            .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+            .join("·");
+          if (days) m.work_days = days;
+        }
+      }
+      m.wage = wage;
+      m.wage_type = wage_type;
+
       setMember(m);
       setAttendance(data.attendance_data || []);
-      if (data.health_insurance > 0 || data.national_pension > 0 || (data.income_tax === 0 && data.health_insurance === 0)) {
-        setCalcType("regular");
-      } else {
-        setCalcType("daily");
-      }
+      setCalcType(data.health_insurance > 0 || data.national_pension > 0 || (data.income_tax === 0 && data.health_insurance === 0) ? "regular" : "daily");
     }
   }
 
@@ -103,16 +136,40 @@ function PayslipContent() {
       .eq("id", tmId).single();
     if (data) {
       const m = { ...data, worker: data.users };
-      setMember(m);
 
-      // 계약서에 등록된 사회보험 설정(insEmp, insPension, insHealth)을 불러옵니다.
+      // 계약서 정보 로드
       const { data: contract } = await supabase.from("contracts")
-        .select("contract_data")
+        .select("wage, wage_type, contract_data")
         .eq("team_member_id", tmId)
-        .eq("status", "active")
+        .neq("status", "cancelled")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      let wage_type = "hourly";
+      let wage = m.wage;
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        if (contract.wage_type) {
+          wage_type = contract.wage_type === "monthly" ? "monthly" : contract.wage_type === "daily" ? "daily" : "hourly";
+        } else if (cd?.wageType) {
+          wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        }
+        if (cd?.workDaysMode === "text" && cd?.workDaysText) {
+          m.work_days = cd.workDaysText;
+        } else if (cd) {
+          const days = ["월", "화", "수", "목", "금", "토", "일"]
+            .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+            .join("·");
+          if (days) m.work_days = days;
+        }
+      }
+      m.wage = wage;
+      m.wage_type = wage_type;
+      setMember(m);
+      setCalcType(wage_type === "daily" ? "daily" : "regular");
 
       if (contract?.contract_data) {
         const cd = contract.contract_data;
@@ -139,21 +196,83 @@ function PayslipContent() {
       .eq("team_member_id", m.id)
       .gte("work_date", `${monthStr}-01`)
       .lte("work_date", lastDateStr)
-      .order("work_date");
+      .order("work_date", { ascending: false });
     setAttendance(data || []);
+  }
+
+  async function checkIfPayslipExists(tmId: string, y: number, mo: number) {
+    const { data } = await supabase.from("payslips")
+      .select("*")
+      .eq("team_member_id", tmId)
+      .eq("year", y)
+      .eq("month", mo)
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      setExistingPayslip(data);
+      setMemo(data.memo || "");
+      setCalcType(data.health_insurance > 0 || data.national_pension > 0 || (data.income_tax === 0 && data.health_insurance === 0) ? "regular" : "daily");
+    } else {
+      setExistingPayslip(null);
+    }
   }
 
   const isEmployer = userType === "employer" || userType === "both";
   const isWorker = userType === "worker" || userType === "both";
 
   const wage = member?.wage || 0;
+  const wageType = member?.wage_type || "hourly";
   const contractHours = member?.work_hours ? parseFloat(member.work_hours) : 8;
   const workDays = attendance.filter(a => ["normal","late","early_leave"].includes(a.status));
   const totalHours = workDays.reduce((s, a) => s + (a.actual_hours || contractHours), 0);
   const overtimeHours = Math.max(0, totalHours - workDays.length * contractHours);
-  const basePay = Math.round((totalHours - overtimeHours) * wage);
-  const overtimePay = Math.round(overtimeHours * wage * 1.5);
-  const totalPay = basePay + overtimePay;
+
+  const scheduledDaysInMonth = (() => {
+    if (!member?.work_days) return 0;
+    const WORK_DAY_MAP: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
+    const scheduledDayNums = new Set<number>();
+    for (const [label, num] of Object.entries(WORK_DAY_MAP)) {
+      if (member.work_days.includes(label)) scheduledDayNums.add(num);
+    }
+    if (scheduledDayNums.size === 0) return 0;
+    const days = new Date(year, month, 0).getDate();
+    let count = 0;
+    for (let d = 1; d <= days; d++) {
+      if (scheduledDayNums.has(new Date(year, month - 1, d).getDay())) count++;
+    }
+    return count;
+  })();
+
+  const basePay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
+    ? (existingPayslip.base_pay ?? 0)
+    : (() => {
+        if (wageType === "monthly") {
+          const dailyRate = scheduledDaysInMonth > 0 ? wage / scheduledDaysInMonth : 0;
+          return Math.round(dailyRate * workDays.length);
+        } else if (wageType === "daily") {
+          return Math.round(wage * workDays.length);
+        } else {
+          return Math.round((totalHours - overtimeHours) * wage);
+        }
+      })();
+
+  const overtimePay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
+    ? (existingPayslip.overtime_pay ?? 0)
+    : (() => {
+        if (wageType === "monthly") {
+          const hourlyEquiv = wage / 209;
+          return Math.round(overtimeHours * hourlyEquiv * 1.5);
+        } else if (wageType === "daily") {
+          const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
+          return Math.round(overtimeHours * hourlyEquiv * 1.5);
+        } else {
+          return Math.round(overtimeHours * wage * 1.5);
+        }
+      })();
+
+  const totalPay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
+    ? (existingPayslip.total_pay ?? 0)
+    : (basePay + overtimePay);
 
   // 1. 계산 의존성 useEffect: 계산 인풋이 바뀔 때 세금/공제 금액 기본 계산
   useEffect(() => {
@@ -178,7 +297,9 @@ function PayslipContent() {
       let calcLoc = 0;
       workDays.forEach(a => {
         const dailyHours = a.actual_hours || contractHours;
-        const dailyPay = Math.round(dailyHours * wage);
+        const dailyOvertime = Math.max(0, dailyHours - contractHours);
+        const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
+        const dailyPay = Math.round(wage + dailyOvertime * hourlyEquiv * 1.5);
         const tax = calcDailyWorkerTax(dailyPay);
         calcInc += tax.incomeTax;
         calcLoc += tax.localTax;
@@ -218,7 +339,7 @@ function PayslipContent() {
       setIncomeTax(0);
       setLocalTax(0);
     }
-  }, [totalPay, calcType, taxRates, year, month, existingPayslip, workDays.length, totalHours, contractInsurances]);
+  }, [totalPay, calcType, taxRates, year, month, existingPayslip, workDays.length, totalHours, contractInsurances, wage, contractHours]);
 
   // 실시간으로 체크 상태와 편집된 수치를 연동해 합계 산출
   const currentIncomeTax = enableIncomeTax ? incomeTax : 0;
@@ -233,22 +354,15 @@ function PayslipContent() {
 
   const netPay = totalPay - totalDeductions;
 
-  async function issuePayslip() {
+  function issuePayslip() {
     if (!member || !user) return;
-    if (!wage) { showToast("시급 정보가 없어요. 계약서를 먼저 작성해주세요.", "error"); return; }
+    if (!wage) { showToast("임금 정보가 없어요. 계약서를 먼저 작성해주세요.", "error"); return; }
     if (workDays.length === 0) { showToast("해당 월 근태 기록이 없어요.", "error"); return; }
+    setShowConfirmModal(true);
+  }
 
-    const confirmed = window.confirm(
-      `📄 ${year}년 ${month}월 급여 명세서 발행\n\n` +
-      `👤 ${member.worker?.nickname || "팀원"}\n` +
-      `⏱ 총 근무시간: ${totalHours.toFixed(1)}시간\n` +
-      `💰 총 지급액: ${totalPay.toLocaleString()}원\n` +
-      `💸 공제액: ${totalDeductions.toLocaleString()}원\n` +
-      `💵 실수령액: ${netPay.toLocaleString()}원\n\n` +
-      `발행하면 직원에게 채팅 알림이 가요.\n계속할까요?`
-    );
-    if (!confirmed) return;
-
+  async function executeIssuePayslip() {
+    setShowConfirmModal(false);
     setSaving(true);
     const lastDay = new Date(year, month, 0).getDate();
     const monthStr = `${year}-${String(month).padStart(2,"0")}`;
@@ -275,10 +389,7 @@ function PayslipContent() {
       // 구 스키마 컬럼 호환성 매핑
       pay_period_start: `${monthStr}-01`,
       pay_period_end: `${monthStr}-${String(lastDay).padStart(2,"0")}`,
-      base_wage: wage,
-      total_amount: totalPay,
       deductions: totalDeductions,
-      net_amount: netPay,
 
       // 신규 세금/보험 정보 저장
       income_tax: currentIncomeTax,
@@ -291,16 +402,25 @@ function PayslipContent() {
     };
 
     let payslipData: any = null;
+    let error: any = null;
     if (existingPayslip) {
-      const { data } = await supabase.from("payslips").update(payload).eq("id", existingPayslip.id).select("id").single();
+      const { data, error: err } = await supabase.from("payslips").update(payload).eq("id", existingPayslip.id).select("id").single();
       payslipData = data;
+      error = err;
     } else {
-      const { data } = await supabase.from("payslips").insert(payload).select("id").single();
+      const { data, error: err } = await supabase.from("payslips").insert(payload).select("id").single();
       payslipData = data;
+      error = err;
+    }
+
+    if (error) {
+      console.error("Payslip save error:", error);
+      showToast("발행 오류: " + error.message, "error");
+      setSaving(false);
+      return;
     }
 
     if (payslipData && member.match_id) {
-      const workerName = member.worker?.nickname || "팀원";
       await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -413,8 +533,22 @@ function PayslipContent() {
             {[
               { label:"근무일수", value:`${workDays.length}일` },
               { label:"총 근무시간", value:`${totalHours.toFixed(1)}시간` },
-              { label:`기본급 (${totalHours.toFixed(1) }h × ${wage.toLocaleString()}원)`, value:`${basePay.toLocaleString()}원` },
-              ...(overtimeHours > 0 ? [{ label:`초과수당 (${overtimeHours.toFixed(1)}h × 1.5)`, value:`${overtimePay.toLocaleString()}원` }] : []),
+              {
+                label: wageType === "monthly"
+                  ? `기본급 (월급 일할 계산: ${wage.toLocaleString()}원 × ${workDays.length}/${scheduledDaysInMonth}일)`
+                  : wageType === "daily"
+                  ? `기본급 (일급: ${wage.toLocaleString()}원 × ${workDays.length}일)`
+                  : `기본급 (${(totalHours - overtimeHours).toFixed(1)}h × ${wage.toLocaleString()}원)`,
+                value: `${basePay.toLocaleString()}원`
+              },
+              ...(overtimeHours > 0 ? [{
+                label: wageType === "monthly"
+                  ? `초과수당 (시급환산 ${Math.round(wage / 209).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5)`
+                  : wageType === "daily"
+                  ? `초과수당 (시급환산 ${Math.round(contractHours > 0 ? wage / contractHours : 0).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5)`
+                  : `초과수당 (${overtimeHours.toFixed(1)}h × ${wage.toLocaleString()}원 × 1.5)`,
+                value: `${overtimePay.toLocaleString()}원`
+              }] : []),
             ].map(r => (
               <div key={r.label} style={{ display:"flex", justifyContent:"space-between" }}>
                 <span style={{ fontSize:12, color:"rgba(255,255,255,0.8)" }}>{r.label}</span>
@@ -599,23 +733,45 @@ function PayslipContent() {
           <p style={{ fontSize:12, fontWeight:700, color:"var(--text)", margin:"0 0 10px" }}>📋 일별 근무 내역</p>
           {attendance.length === 0 ? (
             <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", padding:"16px 0" }}>근태 기록이 없어요</p>
-          ) : attendance.map(a => (
-            <div key={a.work_date} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
-              <div>
-                <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
-                {a.check_in && (
-                  <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>
-                    {new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}
-                    ~{a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-"}
-                  </span>
-                )}
+          ) : (
+            (expandAttendance ? attendance : attendance.slice(0, 3)).map(a => (
+              <div key={a.work_date} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
+                <div>
+                  <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
+                  {a.check_in && (
+                    <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>
+                      {new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}
+                      ~{a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-"}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <span style={{ fontSize:11, color:statusColor[a.status]||"#888" }}>{statusLabel[a.status]||a.status}</span>
+                  {a.actual_hours && <span style={{ fontSize:11, color:"#7c3aed", fontWeight:600 }}>{a.actual_hours}h</span>}
+                </div>
               </div>
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                <span style={{ fontSize:11, color:statusColor[a.status]||"#888" }}>{statusLabel[a.status]||a.status}</span>
-                {a.actual_hours && <span style={{ fontSize:11, color:"#7c3aed", fontWeight:600 }}>{a.actual_hours}h</span>}
-              </div>
-            </div>
-          ))}
+            ))
+          )}
+          {attendance.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setExpandAttendance(!expandAttendance)}
+              style={{
+                width: "100%",
+                background: "none",
+                border: "none",
+                padding: "10px 0 0",
+                color: "#8b5cf6",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "pointer",
+                textAlign: "center",
+                outline: "none"
+              }}
+            >
+              {expandAttendance ? "접기 ▴" : `더보기 (외 ${attendance.length - 3}건) ▾`}
+            </button>
+          )}
         </div>
 
         {/* 메모 */}
@@ -695,6 +851,22 @@ function PayslipContent() {
                 if (error) { showToast("저장 오류: " + error.message, "error"); return; }
                 setExistingPayslip((p: any) => ({ ...p, confirmed_at: confirmedAt, status: "confirmed" }));
                 showToast("✅ 급여 명세서를 확인했어요!", "success");
+
+                // 사장님에게 채팅 알림 전송
+                if (member?.match_id) {
+                  const workerName = member.worker?.nickname || "알바생";
+                  await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      matchId: member.match_id,
+                      senderId: user.id,
+                      receiverId: member.employer_id,
+                      message: `✅ [급여 명세서 확인 완료]\n${workerName}님이 ${year}년 ${month}월 급여 명세서 확인을 완료했습니다.`,
+                      messageType: "system",
+                    }),
+                  }).catch(() => {});
+                }
               }}
                 style={{ flex:1.5, background:"linear-gradient(135deg,#10b981,#059669)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
                 ✅ 확인했어요
@@ -738,6 +910,106 @@ function PayslipContent() {
           </p>
         )}
       </div>
+      {/* 발행 확인 모달 */}
+      {showConfirmModal && member && (
+        <div style={{
+          position: "fixed",
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: 16
+        }}>
+          <div style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 20,
+            width: "100%",
+            maxWidth: 380,
+            padding: 20,
+            boxShadow: "0 10px 25px rgba(0,0,0,0.3)"
+          }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px", color: "var(--text)", textAlign: "center" }}>
+              📄 급여 명세서 발행 확인
+            </h3>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                <span style={{ color: "var(--text-muted)" }}>대상 직원</span>
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>{member.worker?.nickname || "팀원"}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                <span style={{ color: "var(--text-muted)" }}>귀속 월</span>
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>{year}년 {month}월</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                <span style={{ color: "var(--text-muted)" }}>총 근무시간</span>
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>{totalHours.toFixed(1)}시간</span>
+              </div>
+              <div style={{ borderTop: "1px dashed var(--border)", margin: "6px 0" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                <span style={{ color: "var(--text-muted)" }}>총 지급액 (세전)</span>
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>{totalPay.toLocaleString()}원</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                <span style={{ color: "var(--text-muted)" }}>공제 합계</span>
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>-{totalDeductions.toLocaleString()}원</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, background: "rgba(124,58,237,0.08)", padding: "8px 10px", borderRadius: 10, marginTop: 4 }}>
+                <span style={{ fontWeight: 700, color: "#7c3aed" }}>실수령액 (세후)</span>
+                <span style={{ fontWeight: 800, color: "#7c3aed" }}>{netPay.toLocaleString()}원</span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, margin: "0 0 20px", textAlign: "center" }}>
+              💡 발행하면 알바생에게 채팅방을 통해 알림과 확인 링크가 즉시 전송됩니다. 계속 진행할까요?
+            </p>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                style={{
+                  flex: 1,
+                  background: "var(--surface2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: 12,
+                  color: "var(--text-muted)",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  outline: "none"
+                }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={executeIssuePayslip}
+                style={{
+                  flex: 1.5,
+                  background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                  border: "none",
+                  borderRadius: 12,
+                  padding: 12,
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  outline: "none"
+                }}
+              >
+                발행하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 토스트 알림 */}
       {toast && (
         <div style={{ position:"fixed", bottom:100, left:"50%", transform:"translateX(-50%)", zIndex:999,

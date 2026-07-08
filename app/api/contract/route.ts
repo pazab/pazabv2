@@ -29,118 +29,142 @@ function getSupabaseClient(req: NextRequest) {
   );
 }
 
-export async function POST(req: NextRequest) {
+async function generatePdfResponse(supabase: any, matchId: string | null, contractId: string | null, extraData: any = {}) {
   try {
-    const supabase = getSupabaseClient(req);
-    const body = await req.json();
-    const { matchId, ...extraData } = body;
+    let match: any = null;
+    let contract: any = null;
 
-    // match 정보 조회
-    const { data: match } = await supabase
-      .from("matches")
-      .select("employer_id, worker_id, employer_profile_id, interview_at")
-      .eq("id", matchId)
-      .single();
+    if (matchId) {
+      const { data: m } = await supabase
+        .from("matches")
+        .select("employer_id, worker_id, employer_profile_id, interview_at")
+        .eq("id", matchId)
+        .single();
+      match = m;
 
-    if (!match) return NextResponse.json({ error: "매칭 없음" }, { status: 404 });
+      if (match) {
+        const { data: c } = await supabase
+          .from("contracts")
+          .select("*")
+          .eq("match_id", matchId)
+          .neq("status", "superseded")
+          .order("created_at", { ascending: false})
+          .limit(1)
+          .maybeSingle();
+        contract = c;
+      }
+    } else if (contractId) {
+      const { data: c } = await supabase
+        .from("contracts")
+        .select("*")
+        .eq("id", contractId)
+        .single();
+      contract = c;
+    }
 
-    // contracts 테이블에서 최신 계약 데이터 조회
-    const { data: contract } = await supabase
-      .from("contracts")
-      .select("*")
-      .eq("match_id", matchId)
-      .neq("status", "superseded")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    if (!contract) return NextResponse.json({ error: "계약서 없음" }, { status: 404 });
+
+    const employerId = contract.employer_id || match?.employer_id;
+    const workerId = contract.worker_id || match?.worker_id;
+
+    let empProfileId = match?.employer_profile_id || null;
+    if (!empProfileId && contract.team_member_id) {
+      const { data: tm } = await supabase
+        .from("team_members")
+        .select("employer_profile_id")
+        .eq("id", contract.team_member_id)
+        .maybeSingle();
+      empProfileId = tm?.employer_profile_id;
+    }
 
     // 사장님 정보
-    const { data: employer } = await supabase
+    const { data: employer } = employerId ? await supabase
       .from("users")
-      .select("name, real_name, nickname, phone, address")
-      .eq("id", match.employer_id)
-      .single();
+      .select("real_name, nickname, phone, address")
+      .eq("id", employerId)
+      .single() : { data: null };
 
-    const { data: empProfile } = await supabase
+    const { data: empProfile } = empProfileId ? await supabase
       .from("employer_profiles")
-      .select("business_name, business_type, region, address, address_detail, wage, work_days, work_hours, biz_reg_number, ceo_name, biz_tel")
-      .eq("id", match.employer_profile_id)
-      .maybeSingle();
+      .select("business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
+      .eq("id", empProfileId)
+      .maybeSingle() : { data: null };
 
     // 알바생 정보
-    const { data: worker } = await supabase
+    const { data: worker } = workerId ? await supabase
       .from("users")
-      .select("name, real_name, nickname, phone, address, birth_date")
-      .eq("id", match.worker_id)
-      .single();
+      .select("real_name, nickname, phone, address, birth_date")
+      .eq("id", workerId)
+      .single() : { data: null };
 
-    // 기본값 머지
-    const f = contract?.contract_data || {};
-    const ct = f.contractType || "parttime";
+  // 기본값 머지
+  const f = contract?.contract_data || {};
+  const ct = f.contractType || "parttime";
 
-    const data = {
-      contractType: ct,
-      business_name: f.biz || empProfile?.business_name || "",
-      biz_reg_number: f.bizRegNo || empProfile?.biz_reg_number || "",
-      employer_name: f.ceo || employer?.real_name || employer?.nickname || employer?.name || "",
-      employer_phone: f.ceoPhone || empProfile?.biz_tel || employer?.phone || "",
-      business_address: f.bizAddr || [empProfile?.address, empProfile?.address_detail].filter(Boolean).join(" ") || empProfile?.region || "",
-      work_place: f.workPlace || empProfile?.region || "",
-      job_description: f.jobDesc || (empProfile?.business_type ? `${empProfile.business_type} 관련 업무` : ""),
-      worker_name: f.worker || worker?.real_name || worker?.nickname || worker?.name || "",
-      worker_birth: f.workerBirth || worker?.birth_date?.replace(/-/g, ". ") || "",
-      worker_phone: f.workerPhone || worker?.phone || "",
-      worker_address: f.workerAddr || worker?.address || "",
-      start_date: f.startDate || "",
-      end_date: f.endDate || "",
-      work_start: f.workStart || "",
-      work_end: f.workEnd || "",
-      break_start: f.breakStart || "12:00",
-      break_end: f.breakEnd || "13:00",
-      daily_hours: f.dailyHours || "",
-      weekly_hours: f.weeklyHours || "",
-      work_days_text: f.workDaysText || "",
-      work_days_mode: f.workDaysMode || "check",
-      weekly_holiday: f.weeklyHoliday || "일",
-      wage: f.wage || "",
-      wage_type: f.wageType || "hour",
-      has_bonus: f.hasBonus || false,
-      bonus_amount: f.bonusAmount || "",
-      has_extra_wage: f.hasExtraWage || false,
-      extra_wage_details: f.extraWageDetails || "",
-      overtime_premium_rate: f.overtimePremiumRate || "50",
-      pay_day: f.payDay || "말일",
-      pay_method: f.payMethod || "계좌이체",
-      ins_emp: f.insEmp || false,
-      ins_acc: f.insAcc || false,
-      ins_pension: f.insPension || false,
-      ins_health: f.insHealth || false,
-      contract_date: f.contractDate || "",
-      // 연소자 추가 정보
-      has_family_cert: f.hasFamilyCert !== false,
-      has_parent_consent: f.hasParentConsent !== false,
-      parent_name: f.parentName || "",
-      parent_rel: f.parentRel || "부",
-      parent_birth: f.parentBirth || "",
-      parent_address: f.parentAddr || "",
-      parent_phone: f.parentTel || "",
-      // 요일별 시간
-      workStartMon: f.workStartMon || "", workEndMon: f.workEndMon || "", breakTimeMon: f.breakTimeMon || "",
-      workStartTue: f.workStartTue || "", workEndTue: f.workEndTue || "", breakTimeTue: f.breakTimeTue || "",
-      workStartWed: f.workStartWed || "", workEndWed: f.workEndWed || "", breakTimeWed: f.breakTimeWed || "",
-      workStartThu: f.workStartThu || "", workEndThu: f.workEndThu || "", breakTimeThu: f.breakTimeThu || "",
-      workStartFri: f.workStartFri || "", workEndFri: f.workEndFri || "", breakTimeFri: f.breakTimeFri || "",
-      workStartSat: f.workStartSat || "", workEndSat: f.workEndSat || "", breakTimeSat: f.breakTimeSat || "",
-      workStartSun: f.workStartSun || "", workEndSun: f.workEndSun || "", breakTimeSun: f.breakTimeSun || "",
-      ...extraData,
-    };
+  const data = {
+    contractType: ct,
+    business_name: f.biz || empProfile?.business_name || "",
+    biz_reg_number: f.bizRegNo || empProfile?.biz_reg_number || "",
+    employer_name: f.ceo || employer?.real_name || employer?.nickname || "",
+    employer_phone: f.ceoPhone || empProfile?.biz_tel || employer?.phone || "",
+    business_address: f.bizAddr || [empProfile?.address, empProfile?.address_detail].filter(Boolean).join(" ") || empProfile?.region || "",
+    work_place: f.workPlace || empProfile?.region || "",
+    job_description: f.jobDesc || (empProfile?.business_type ? `${empProfile.business_type} 관련 업무` : ""),
+    worker_name: f.worker || worker?.real_name || worker?.nickname || "",
+    worker_birth: f.workerBirth || worker?.birth_date?.replace(/-/g, ". ") || "",
+    worker_phone: f.workerPhone || worker?.phone || "",
+    worker_address: f.workerAddr || worker?.address || "",
+    start_date: f.startDate || "",
+    end_date: f.endDate || "",
+    work_start: f.workStart || "",
+    work_end: f.workEnd || "",
+    break_start: f.breakStart || "12:00",
+    break_end: f.breakEnd || "13:00",
+    daily_hours: f.dailyHours || "",
+    weekly_hours: f.weeklyHours || "",
+    work_days_text: f.workDaysText || "",
+    work_days_mode: f.workDaysMode || "check",
+    weekly_holiday: f.weeklyHoliday || "일",
+    wage: f.wage || "",
+    wage_type: f.wageType || "hour",
+    has_bonus: f.hasBonus || false,
+    bonus_amount: f.bonusAmount || "",
+    has_extra_wage: f.hasExtraWage || false,
+    extra_wage_details: f.extraWageDetails || "",
+    overtime_premium_rate: f.overtimePremiumRate || "50",
+    pay_day: f.payDay || "말일",
+    pay_method: f.payMethod || "계좌이체",
+    ins_emp: f.insEmp || false,
+    ins_acc: f.insAcc || false,
+    ins_pension: f.insPension || false,
+    ins_health: f.insHealth || false,
+    contract_date: f.contractDate || "",
+    // 연소자 추가 정보
+    has_family_cert: f.hasFamilyCert !== false,
+    has_parent_consent: f.hasParentConsent !== false,
+    parent_name: f.parentName || "",
+    parent_rel: f.parentRel || "부",
+    parent_birth: f.parentBirth || "",
+    parent_address: f.parentAddr || "",
+    parent_phone: f.parentTel || "",
+    // 요일별 시간
+    workStartMon: f.workStartMon || "", workEndMon: f.workEndMon || "", breakTimeMon: f.breakTimeMon || "",
+    workStartTue: f.workStartTue || "", workEndTue: f.workEndTue || "", breakTimeTue: f.breakTimeTue || "",
+    workStartWed: f.workStartWed || "", workEndWed: f.workEndWed || "", breakTimeWed: f.breakTimeWed || "",
+    workStartThu: f.workStartThu || "", workEndThu: f.workEndThu || "", breakTimeThu: f.breakTimeThu || "",
+    workStartFri: f.workStartFri || "", workEndFri: f.workEndFri || "", breakTimeFri: f.breakTimeFri || "",
+    workStartSat: f.workStartSat || "", workEndSat: f.workEndSat || "", breakTimeSat: f.breakTimeSat || "",
+    workStartSun: f.workStartSun || "", workEndSun: f.workEndSun || "", breakTimeSun: f.breakTimeSun || "",
+    ...extraData,
+  };
 
-    const tmpPath = join(tmpdir(), `contract_${matchId}_${Date.now()}.pdf`);
-    const overlayPath = join(tmpdir(), `overlay_${Date.now()}.pdf`);
-    const scriptPath = join(tmpdir(), `gen_${Date.now()}.py`);
-    const templatePdfPath = join(process.cwd(), "docs", "standard_contract_form.pdf");
+  const idForFile = matchId || contractId || Date.now();
+  const tmpPath = join(tmpdir(), `contract_${idForFile}_${Date.now()}.pdf`);
+  const overlayPath = join(tmpdir(), `overlay_${Date.now()}.pdf`);
+  const scriptPath = join(tmpdir(), `gen_${Date.now()}.py`);
+  const templatePdfPath = join(process.cwd(), "docs", "standard_contract_form.pdf");
 
-    const script = `
+  const script = `
 import os
 import sys
 import json
@@ -194,11 +218,9 @@ def split_date(d_str):
     return "", "", ""
 
 if ct == "standard_unlimited" or ct == "standard_fixed":
-    # 계약당사자 상단 표기
     text(15, 34, data.get("business_name"))
     text(100, 34, data.get("worker_name"))
 
-    # 1. 근로계약기간
     sy, sm, sd = split_date(data.get("start_date", ""))
     if ct == "standard_unlimited":
         text(50, 50, sy)
@@ -213,11 +235,9 @@ if ct == "standard_unlimited" or ct == "standard_fixed":
         text(117, 50, em)
         text(128, 50, ed)
 
-    # 2. 근무장소 및 3. 업무내용
     text(55, 57, data.get("work_place"))
     text(55, 64, data.get("job_description"))
 
-    # 4. 소정근로시간
     ws_h, ws_m = data.get("work_start", "09:00").split(":") if ":" in data.get("work_start", "") else ("", "")
     we_h, we_m = data.get("work_end", "18:00").split(":") if ":" in data.get("work_end", "") else ("", "")
     bs_h, bs_m = data.get("break_start", "12:00").split(":") if ":" in data.get("break_start", "") else ("", "")
@@ -234,7 +254,6 @@ if ct == "standard_unlimited" or ct == "standard_fixed":
     text(168, 71, data.get("daily_hours"))
     text(187, 71, data.get("weekly_hours"))
 
-    # 5. 근무일 / 휴일
     days_cnt = data.get("work_days_text", "")
     if not days_cnt and data.get("work_days_mode") == "check":
         sel_days = [d for d in ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] if data.get(f"workDays{d}")]
@@ -244,7 +263,6 @@ if ct == "standard_unlimited" or ct == "standard_fixed":
     text(60, 78, days_cnt)
     text(180, 78, data.get("weekly_holiday"))
 
-    # 6. 임금
     wt = data.get("wage_type", "hour")
     wt_label = "시간급" if wt == "hour" else "일급" if wt == "day" else "월급"
     text(55, 98, f"{wt_label}  {data.get('wage')} 원")
@@ -268,25 +286,21 @@ if ct == "standard_unlimited" or ct == "standard_fixed":
     else:
         check(172, 133)
 
-    # 8. 사회보험
     if data.get("ins_emp"): check(57, 159)
     if data.get("ins_acc"): check(78, 159)
     if data.get("ins_pension"): check(99, 159)
     if data.get("ins_health"): check(120, 159)
 
-    # 날짜
     dy, dm, dd = split_date(data.get("contract_date", ""))
     text(85, 222, dy)
     text(105, 222, dm)
     text(120, 222, dd)
 
-    # 사업주 서명
     text(38, 231, f"{data.get('business_name')} (사업자번호: {data.get('biz_reg_number')})")
     text(135, 231, data.get("employer_phone"))
     text(38, 240, data.get("business_address"))
     text(38, 249, data.get("employer_name"))
 
-    # 근로자 서명
     text(38, 258, data.get("worker_address"))
     text(38, 267, data.get("worker_phone"))
     text(38, 276, data.get("worker_name"))
@@ -295,7 +309,6 @@ if ct == "standard_unlimited" or ct == "standard_fixed":
     c.showPage()
 
 elif ct == "minor":
-    # 1페이지 (연소자 근로계약서)
     text(15, 34, data.get("business_name"))
     text(100, 34, data.get("worker_name"))
 
@@ -309,7 +322,6 @@ elif ct == "minor":
     text(55, 60, data.get("work_place"))
     text(55, 67, data.get("job_description"))
 
-    # 소정근로시간
     ws_h, ws_m = data.get("work_start", "09:00").split(":") if ":" in data.get("work_start", "") else ("", "")
     we_h, we_m = data.get("work_end", "18:00").split(":") if ":" in data.get("work_end", "") else ("", "")
     bs_h, bs_m = data.get("break_start", "12:00").split(":") if ":" in data.get("break_start", "") else ("", "")
@@ -326,206 +338,175 @@ elif ct == "minor":
     text(168, 74, data.get("daily_hours"))
     text(187, 74, data.get("weekly_hours"))
 
-    # 근무일
     days_cnt = data.get("work_days_text", "")
     if not days_cnt and data.get("work_days_mode") == "check":
         sel_days = [d for d in ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] if data.get(f"workDays{d}")]
         days_cnt = str(len(sel_days))
         days_detail = "·".join(["월","화","수","목","금","토","일"][i] for i, d in enumerate(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]) if data.get(f"workDays{d}"))
-        text(115, 84, days_detail)
-    text(60, 84, days_cnt)
-    text(180, 84, data.get("weekly_holiday"))
+        text(115, 81, days_detail)
+    text(60, 81, days_cnt)
+    text(180, 81, data.get("weekly_holiday"))
 
-    # 임금
     wt = data.get("wage_type", "hour")
     wt_label = "시간급" if wt == "hour" else "일급" if wt == "day" else "월급"
-    text(55, 106, f"{wt_label}  {data.get('wage')} 원")
+    text(55, 100, f"{wt_label}  {data.get('wage')} 원")
 
     if data.get("has_bonus"):
-        check(48, 113)
-        text(65, 113, data.get("bonus_amount"))
+        check(48, 107)
+        text(65, 107, data.get("bonus_amount"))
     else:
-        check(142, 113)
+        check(142, 107)
 
     if data.get("has_extra_wage"):
-        check(83, 120)
-        text(42, 127, data.get("extra_wage_details"))
+        check(83, 114)
+        text(42, 121, data.get("extra_wage_details"))
     else:
-        check(125, 120)
+        check(125, 114)
 
-    text(98, 134, data.get("pay_day"))
+    text(98, 128, data.get("pay_day"))
 
     if data.get("pay_method") == "현금":
-        check(104, 141)
+        check(104, 135)
     else:
-        check(172, 141)
+        check(172, 135)
 
-    # 8. 가족관계증명서
-    text(105, 154, "제출함" if data.get("has_family_cert") else "미제출")
-    text(105, 161, "구비함" if data.get("has_parent_consent") else "미구비")
+    if data.get("has_family_cert"): check(78, 149)
+    else: check(102, 149)
 
-    # 사회보험
-    if data.get("ins_emp"): check(57, 172)
-    if data.get("ins_acc"): check(78, 172)
-    if data.get("ins_pension"): check(99, 172)
-    if data.get("ins_health"): check(120, 172)
+    if data.get("has_parent_consent"): check(78, 156)
+    else: check(102, 156)
 
-    # 날짜
+    if data.get("ins_emp"): check(57, 163)
+    if data.get("ins_acc"): check(78, 163)
+    if data.get("ins_pension"): check(99, 163)
+    if data.get("ins_health"): check(120, 163)
+
     dy, dm, dd = split_date(data.get("contract_date", ""))
-    text(85, 233, dy)
-    text(105, 233, dm)
-    text(120, 233, dd)
-
-    # 서명
-    text(38, 241, f"{data.get('business_name')} (사업자번호: {data.get('biz_reg_number')})")
-    text(135, 241, data.get("employer_phone"))
-    text(38, 250, data.get("business_address"))
-    text(38, 259, data.get("employer_name"))
-
-    text(38, 268, data.get("worker_address"))
-    text(38, 277, data.get("worker_phone"))
-    text(38, 286, data.get("worker_name"))
-    text(125, 286, data.get("worker_birth"))
-
-    c.showPage()
-
-    # 2페이지 (친권자 동의서)
-    text(35, 50, data.get("parent_name"))
-    text(38, 60, data.get("parent_birth"))
-    text(35, 70, data.get("parent_address"))
-    text(38, 80, data.get("parent_phone"))
-    text(60, 90, data.get("parent_rel"))
-
-    text(35, 115, data.get("worker_name"))
-    text(38, 125, data.get("worker_birth"))
-    text(35, 135, data.get("worker_address"))
-    text(38, 145, data.get("worker_phone"))
-
-    text(38, 163, data.get("business_name"))
-    text(38, 171, data.get("business_address"))
-    text(38, 180, data.get("employer_name"))
-    text(38, 188, data.get("employer_phone"))
-
-    text(90, 203, data.get("worker_name"))
-
     text(85, 231, dy)
     text(105, 231, dm)
     text(120, 231, dd)
-    text(110, 249, data.get("parent_name"))
+
+    text(38, 240, f"{data.get('business_name')} (전화: {data.get('employer_phone')})")
+    text(38, 249, data.get("business_address"))
+    text(38, 258, data.get("employer_name"))
+
+    text(38, 267, data.get("worker_address"))
+    text(38, 276, data.get("worker_phone"))
+    text(38, 285, data.get("worker_name"))
+
+    c.showPage()
+
+    text(40, 46, data.get("parent_name"))
+    text(40, 55, data.get("parent_birth"))
+    text(40, 64, data.get("parent_address"))
+    text(40, 73, data.get("parent_phone"))
+    text(65, 82, data.get("parent_rel"))
+
+    text(40, 100, data.get("worker_name"))
+    text(40, 109, data.get("worker_birth"))
+    text(40, 118, data.get("worker_address"))
+    text(40, 127, data.get("worker_phone"))
+
+    text(40, 145, data.get("business_name"))
+    text(40, 154, data.get("business_address"))
+    text(40, 163, data.get("employer_name"))
+    text(40, 172, data.get("employer_phone"))
+
+    text(52, 192, data.get("worker_name"))
+
+    text(85, 234, dy)
+    text(105, 234, dm)
+    text(120, 234, dd)
+
+    text(85, 246, data.get("parent_name"))
 
     c.showPage()
 
 elif ct == "parttime":
-    # 단시간근로자 표준근로계약서
-    text(35, 33, data.get("business_name"))
-    text(105, 33, data.get("worker_name"))
+    text(15, 34, data.get("business_name"))
+    text(100, 34, data.get("worker_name"))
 
     sy, sm, sd = split_date(data.get("start_date", ""))
-    text(42, 44, sy)
-    text(58, 44, sm)
-    text(70, 44, sd)
+    text(50, 50, sy)
+    text(63, 50, sm)
+    text(73, 50, sd)
     if data.get("end_date"):
-        text(100, 44, f"~ {data.get('end_date')}")
+        text(110, 50, f"~ {data.get('end_date')}")
 
-    text(42, 51.5, data.get("work_place"))
-    text(42, 58.5, data.get("job_description"))
+    text(55, 68, data.get("work_place"))
+    text(55, 75, data.get("job_description"))
 
-    # 4. 근로일별 근로시간 테이블 채우기
-    DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    DAYS_KO = ["월", "화", "수", "목", "금", "토", "일"]
-    sel_days = [d for d in DAYS if data.get(f"workDays{d}")]
+    sel_days = [d for d in ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] if data.get(f"workDays{d}")]
+    col_w_mm = 145.0 / max(len(sel_days), 1)
+    start_x_mm = 40.0
 
-    # 최대 6개 근무일 작성 가능 (단시간 양식 제한)
-    X_COLS = [46, 68, 92, 116, 140, 164]
-    
-    def calc_daily_hours(ws, we, bt_min):
-        try:
-            sh, sm = map(int, ws.split(':'))
-            eh, em = map(int, we.split(':'))
-            b_min = int(bt_min)
-            t_min = (eh * 60 + em) - (sh * 60 + sm) - b_min
-            return f"{t_min / 60:.1f}".rstrip('0').rstrip('.')
-        except:
-            return ""
+    days_ko = ["월","화","수","목","금","토","일"]
+    day_indices = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
 
-    for idx, d in enumerate(sel_days[:6]):
-        x_pos = X_COLS[idx]
-        ko_day = DAYS_KO[DAYS.index(d)]
-        text(x_pos, 70.0, ko_day)
+    for idx, d_code in enumerate(sel_days):
+        x_pos = start_x_mm + idx * col_w_mm + col_w_mm / 2.0
+        day_ko = days_ko[day_indices.index(d_code)]
+        text(x_pos - 2, 94, f"({day_ko})")
 
-        ws = data.get(f"workStart{d}", "09:00")
-        we = data.get(f"workEnd{d}", "18:00")
-        bt = data.get(f"breakTime{d}", "30")
-
-        dh = calc_daily_hours(ws, we, bt)
-        text(x_pos, 75.0, f"{dh}시간" if dh else "")
-
+        ws = data.get(f"workStart{d_code}", "")
+        we = data.get(f"workEnd{d_code}", "")
+        bt = data.get(f"breakTime{d_code}", "0")
+        
         ws_h, ws_m = ws.split(":") if ":" in ws else ("", "")
-        text(x_pos - 2, 80.0, ws_h)
-        text(x_pos + 6, 80.0, ws_m)
-
         we_h, we_m = we.split(":") if ":" in we else ("", "")
-        text(x_pos - 2, 85.0, we_h)
-        text(x_pos + 6, 85.0, we_m)
 
-        # 휴게시간 (기본 12시~12시30분 / 12시~13시 분할표시)
+        hours_str = ""
         try:
-            bt_val = int(bt)
-            bs_h, bs_m = "12", "00"
-            if bt_val == 30:
-                be_h, be_m = "12", "30"
-            elif bt_val == 60:
-                be_h, be_m = "13", "00"
-            else:
-                be_h = str(12 + bt_val // 60)
-                be_m = str(bt_val % 60).zfill(2)
-            text(x_pos - 2, 90.0, bs_h)
-            text(x_pos + 6, 90.0, bs_m)
-            text(x_pos - 2, 94.0, be_h)
-            text(x_pos + 6, 94.0, be_m)
+            sh = int(ws_h) * 60 + int(ws_m)
+            eh = int(we_h) * 60 + int(we_m)
+            bt_min = int(bt)
+            total_h = (eh - sh - bt_min) / 60.0
+            if total_h > 0:
+                hours_str = f"{total_h:.1f}".replace(".0", "")
         except:
             pass
 
-    text(30, 98, data.get("weekly_holiday"))
+        if hours_str: text(x_pos - 3, 101, f"{hours_str}시간")
+        text(x_pos - 5, 108, f"{ws_h}:{ws_m}")
+        text(x_pos - 5, 115, f"{we_h}:{we_m}")
+        text(x_pos - 7, 122, f"{bt}분 휴게")
 
-    # 임금
+    text(60, 130, data.get("weekly_holiday"))
+
     wt = data.get("wage_type", "hour")
     wt_label = "시간급" if wt == "hour" else "일급" if wt == "day" else "월급"
-    text(55, 118, f"{wt_label}  {data.get('wage')} 원")
+    text(55, 142, f"{wt_label}  {data.get('wage')} 원")
 
     if data.get("has_bonus"):
-        check(48, 125)
-        text(65, 125, data.get("bonus_amount"))
+        check(48, 149)
+        text(65, 149, data.get("bonus_amount"))
     else:
-        check(142.5, 125)
+        check(142, 149)
 
     if data.get("has_extra_wage"):
-        check(83, 132)
-        text(42, 139, data.get("extra_wage_details"))
+        check(83, 156)
+        text(42, 163, data.get("extra_wage_details"))
     else:
-        check(125, 132)
+        check(125, 156)
 
-    text(90, 144, data.get("overtime_premium_rate"))
-    text(98, 163, data.get("pay_day"))
+    text(82, 170, data.get("overtime_premium_rate"))
+    text(98, 177, data.get("pay_day"))
 
     if data.get("pay_method") == "현금":
-        check(104, 170)
+        check(104, 184)
     else:
-        check(172, 170)
+        check(172, 184)
 
-    # 사회보험
     if data.get("ins_emp"): check(57, 188)
     if data.get("ins_acc"): check(78, 188)
     if data.get("ins_pension"): check(99, 188)
     if data.get("ins_health"): check(120, 188)
 
-    # 날짜
     dy, dm, dd = split_date(data.get("contract_date", ""))
     text(85, 231, dy)
     text(105, 231, dm)
     text(120, 231, dd)
 
-    # 서명
     text(40, 241, f"{data.get('business_name')} (사업자번호: {data.get('biz_reg_number')})")
     text(135, 241, data.get("employer_phone"))
     text(40, 250, data.get("business_address"))
@@ -540,12 +521,10 @@ elif ct == "parttime":
 
 c.save()
 
-# PDF Merging using pypdf
 template_reader = pypdf.PdfReader("${templatePdfPath.replace(/\\/g, "\\\\")}")
 overlay_reader = pypdf.PdfReader("${overlayPath.replace(/\\/g, "\\\\")}")
 writer = pypdf.PdfWriter()
 
-# ct에 따른 템플릿 페이지 매핑
 page_map = {
     "standard_unlimited": [0],
     "standard_fixed": [1],
@@ -565,40 +544,40 @@ with open("${tmpPath.replace(/\\/g, "\\\\")}", "wb") as f_out:
 print("OK")
 `;
 
-    // Write python script to temp file
-    await writeFile(scriptPath, script, "utf-8");
+  // Write python script to temp file
+  await writeFile(scriptPath, script, "utf-8");
 
-    // Execute python
-    let pythonCmd = "python3";
-    if (process.platform === "win32") {
-      pythonCmd = "python";
+  // Execute python
+  let pythonCmd = "python3";
+  if (process.platform === "win32") {
+    pythonCmd = "python";
+  }
+
+  try {
+    const { stdout } = await execAsync(`${pythonCmd} "${scriptPath}"`);
+    if (!stdout.includes("OK")) {
+      throw new Error("Python script did not complete with OK");
     }
-
-    try {
-      const { stdout } = await execAsync(`${pythonCmd} "${scriptPath}"`);
-      if (!stdout.includes("OK")) {
-        throw new Error("Python script did not complete with OK");
-      }
-    } catch (execError: any) {
-      console.error("Python execution error, trying fallback command 'python':", execError);
-      // fallback
-      const fallbackCmd = pythonCmd === "python" ? "python3" : "python";
-      const { stdout } = await execAsync(`${fallbackCmd} "${scriptPath}"`);
-      if (!stdout.includes("OK")) {
-        throw new Error("Python fallback script did not complete with OK");
-      }
+  } catch (execError: any) {
+    console.error("Python execution error, trying fallback command 'python':", execError);
+    // fallback
+    const fallbackCmd = pythonCmd === "python" ? "python3" : "python";
+    const { stdout } = await execAsync(`${fallbackCmd} "${scriptPath}"`);
+    if (!stdout.includes("OK")) {
+      throw new Error("Python fallback script did not complete with OK");
     }
+  }
 
-    // Read generated PDF file
-    const pdfBuffer = await readFile(tmpPath);
+  // Read generated PDF file
+  const pdfBuffer = await readFile(tmpPath);
 
-    // Clean up temp files
-    await unlink(scriptPath).catch(() => {});
-    await unlink(overlayPath).catch(() => {});
-    await unlink(tmpPath).catch(() => {});
+  // Clean up temp files
+  await unlink(scriptPath).catch(() => {});
+  await unlink(overlayPath).catch(() => {});
+  await unlink(tmpPath).catch(() => {});
 
-    const safeFilename = encodeURIComponent(`근로계약서_${data.business_name}_${data.worker_name}.pdf`);
-    return new NextResponse(pdfBuffer, {
+  const safeFilename = encodeURIComponent(`근로계약서_${data.business_name || "계약서"}_${data.worker_name || "알바생"}.pdf`);
+  return new NextResponse(pdfBuffer, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename*=UTF-8''${safeFilename}`,
@@ -606,6 +585,32 @@ print("OK")
     });
   } catch (error: any) {
     console.error("Contract generation error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = getSupabaseClient(req);
+    const body = await req.json();
+    const { matchId, contractId, ...extraData } = body;
+    if (!matchId && !contractId) return NextResponse.json({ error: "matchId 또는 contractId 필수" }, { status: 400 });
+    return await generatePdfResponse(supabase, matchId || null, contractId || null, extraData);
+  } catch (error: any) {
+    console.error("Contract generation error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const supabase = getSupabaseClient(req);
+    const matchId = req.nextUrl.searchParams.get("matchId");
+    const contractId = req.nextUrl.searchParams.get("contractId");
+    if (!matchId && !contractId) return NextResponse.json({ error: "matchId 또는 contractId 필수" }, { status: 400 });
+    return await generatePdfResponse(supabase, matchId || null, contractId || null, {});
+  } catch (error: any) {
+    console.error("Contract GET generation error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

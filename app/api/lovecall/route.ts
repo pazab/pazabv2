@@ -31,14 +31,14 @@ export async function POST(req: NextRequest) {
     // 진행 중인 매칭이 있는지 체크 (pending/accepted/interviewing만)
     const { data: existing } = await supabase
       .from("matches")
-      .select("id, status")
+      .select("id, progress_status")
       .eq("employer_id", employerId)
       .eq("worker_id", workerId)
-      .in("status", ["pending", "accepted", "interviewing"])
+      .in("progress_status", ["pending", "accepted", "interviewing"])
       .maybeSingle();
 
     if (existing) {
-      return NextResponse.json({ error: "이미 진행 중인 러브콜이 있어요", status: existing.status, success: false }, { status: 409 });
+      return NextResponse.json({ error: "이미 진행 중인 러브콜이 있어요", status: existing.progress_status, success: false }, { status: 409 });
     }
 
     const { data, error } = await supabase
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       .insert({
         employer_id: employerId,
         worker_id: workerId,
-        status: "pending",
+        progress_status: "pending",
         match_score: matchScore || 0,
         employer_interest: senderType === "employer",
         worker_interest: senderType === "worker",
@@ -136,8 +136,8 @@ export async function GET(req: NextRequest) {
           .eq("user_id", match.worker_id)
           .maybeSingle();
         const { data: user } = await supabase
-          .from("users").select("name, nickname").eq("id", match.worker_id).maybeSingle();
-        return { ...match, counterpart: { ...worker, name: user?.nickname || user?.name }, isSent, myRole };
+          .from("users").select("nickname").eq("id", match.worker_id).maybeSingle();
+        return { ...match, counterpart: { ...worker, name: user?.nickname }, isSent, myRole };
       }
     }));
 
@@ -163,7 +163,6 @@ export async function PATCH(req: NextRequest) {
 
     switch (action) {
       case "accept":
-        updateData.status = "accepted";
         updateData.progress_status = "accepted";
         updateData.matched_at = new Date().toISOString();
         // 수락 시 건당 공고 매칭중으로 변경
@@ -179,8 +178,8 @@ export async function PATCH(req: NextRequest) {
               .maybeSingle();
 
             if (daetaPosting) {
-              const { data: employer } = await supabase.from("users").select("name, real_name, nickname, phone").eq("id", acceptMatchData.employer_id).maybeSingle();
-              const { data: worker } = await supabase.from("users").select("name, real_name, nickname, phone, address, birth_date").eq("id", acceptMatchData.worker_id).maybeSingle();
+              const { data: employer } = await supabase.from("users").select("real_name, nickname, phone").eq("id", acceptMatchData.employer_id).maybeSingle();
+              const { data: worker } = await supabase.from("users").select("real_name, nickname, phone, address, birth_date").eq("id", acceptMatchData.worker_id).maybeSingle();
               
               const workDate = daetaPosting.work_date || new Date().toISOString().split("T")[0];
               const formattedDate = workDate.replace(/-/g, ". ");
@@ -198,12 +197,12 @@ export async function PATCH(req: NextRequest) {
                 contractType: "parttime",
                 biz: daetaPosting.business_name || "",
                 bizRegNo: "123-45-67890",
-                ceo: employer?.real_name || employer?.nickname || employer?.name || "사장님",
+                ceo: employer?.real_name || employer?.nickname || "사장님",
                 ceoPhone: employer?.phone || "",
                 bizAddr: daetaPosting.region || "",
                 workPlace: daetaPosting.region || "",
                 jobDesc: `${daetaPosting.business_type || "기타"} 대타 근무`,
-                worker: worker?.real_name || worker?.nickname || worker?.name || "알바생",
+                worker: worker?.real_name || worker?.nickname || "알바생",
                 workerBirth: worker?.birth_date?.replace(/-/g, ". ") || "2000. 01. 01",
                 workerPhone: worker?.phone || "",
                 workerAddr: worker?.address || "서울시내",
@@ -276,11 +275,9 @@ export async function PATCH(req: NextRequest) {
         }
         break;
       case "reject":
-        updateData.status = "rejected";
         updateData.progress_status = "rejected";
         break;
       case "cancel":
-        updateData.status = "cancelled";
         updateData.progress_status = "cancelled";
         const { data: cancelMatchData } = await supabase
           .from("matches")
@@ -303,7 +300,7 @@ export async function PATCH(req: NextRequest) {
       case "leave": {
         // 채팅방 나가기 - 본인 기준 숨김 (matches는 유지, 채팅 히스토리만 삭제)
         const leavingUserId = actionUserId;
-        const { data: leaveMatch, error: leaveMatchErr } = await supabase.from("matches").select("worker_id, employer_id, status").eq("id", matchId).single();
+        const { data: leaveMatch, error: leaveMatchErr } = await supabase.from("matches").select("worker_id, employer_id, progress_status").eq("id", matchId).single();
         if (leaveMatchErr) console.error("leave: match 조회 실패", leaveMatchErr);
         if (leaveMatch) {
           const isWorkerLeaving = leaveMatch.worker_id === leavingUserId;
@@ -326,7 +323,6 @@ export async function PATCH(req: NextRequest) {
         break;
       case "hire":
         updateData.progress_status = "hired";
-        updateData.status = "hired";
         const { data: hireMatchData } = await supabase
           .from("matches")
           .select("worker_id, employer_id, employer_profile_id, job_id")
@@ -421,7 +417,7 @@ export async function PATCH(req: NextRequest) {
             if (otherMatches?.length) {
               // 나머지 매칭 failed 처리
               await supabase.from("matches")
-                .update({ progress_status: "failed", status: "failed" })
+                .update({ progress_status: "failed" })
                 .in("id", otherMatches.map(m => m.id));
 
               // 각 채팅에 시스템 메시지
@@ -461,7 +457,7 @@ export async function PATCH(req: NextRequest) {
           .eq("id", matchId).single();
         if (m) {
           const [wp, ep] = await Promise.all([
-            supabase.from("worker_profiles").select("worker_type, hexaco_data, desired_region")
+            supabase.from("worker_profiles").select("worker_type, desired_region, users!worker_profiles_user_id_fkey(worker_result)")
               .eq("user_id", m.worker_id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
             supabase.from("employer_profiles").select("employer_type, business_type, region")
               .eq("id", m.employer_profile_id).maybeSingle(),
@@ -473,7 +469,7 @@ export async function PATCH(req: NextRequest) {
             business_type: ep.data?.business_type || null,
             region_sido: (ep.data?.region || "").split(" ")[0] || null,
             outcome: action === "hire" ? "hired" : action === "cancel" ? "cancelled" : "failed",
-            worker_hexaco: wp.data?.hexaco_data || null,
+            worker_hexaco: (wp.data?.users as any)?.worker_result?.hexaco || null,
             employer_hexaco: null,
           });
         }

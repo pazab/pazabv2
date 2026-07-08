@@ -1,6 +1,6 @@
 # PAZAB v2 — DB 스키마 실측 기록
-> 2026-07-08 Supabase information_schema 직접 조회 기준 | clrjxxkgceluvzvrkvyl  
-> 2026-07-08 DB 정리 + TypeScript strict 정합 완료
+> 2026-07-09 Supabase information_schema 직접 조회 기준 | clrjxxkgceluvzvrkvyl  
+> 2026-07-09 API 코드 컬럼 오류 수정 (users.name, employer_profiles.wage/work_days/work_hours 없음 확인)
 
 ---
 
@@ -104,6 +104,8 @@
 | bot_last_checked_at | timestamptz | YES | | |
 
 > 공고 레거시 컬럼 DROP 완료: `job_status`, `job_type`, `wage`, `wage_negotiable`, `work_days`, `days_negotiable`, `work_hours`, `work_start_hour`, `work_end_hour`, `work_start_date`, `work_end_date`, `expires_at`, `is_urgent`, `is_long_term`, `meal_provided`, `parking`, `staff_count`, `tags`, `required_credentials`, `hexaco_data`, `bio5_data`, `analyzed_mbti`, `tagline`, `best_matches`, `worst_matches`, `caution`, `employer_bot_knowledge`
+
+> ⚠️ **`wage`, `work_days`, `work_hours` 컬럼 없음** — jobs 테이블 분리 이후 DROP 완료. API SELECT 시 이 컬럼 참조 금지.
 
 ---
 
@@ -287,16 +289,20 @@
 | contract_type | text | YES | 'parttime' |
 | start_date/end_date | date | YES | |
 | wage | integer | YES | |
-| wage_type | text | YES | 'hourly' |
+| wage_type | text | YES | 'hourly' | ✅ 'hourly'\|'daily'\|'monthly' |
 | work_hours/work_days | text | YES | |
 | duties | text | YES | |
 | workplace_address | text | YES | |
 | employer_signed/worker_signed | boolean | YES | false |
 | employer_signed_at/worker_signed_at | timestamptz | YES | |
 | pdf_url | text | YES | |
-| status | text | YES | 'draft' |
-| contract_data | jsonb | YES | |
+| status | text | YES | 'draft' | ✅ 'draft'\|'pending'\|'active'\|'cancelled'\|'superseded' |
+| contract_data | jsonb | YES | | ✅ 모든 위자드 입력값 SOT |
 | created_at | timestamptz | NO | now() |
+
+> ✅ `contract_data.wageType`: 'hour'\|'day'\|'month' (위자드 내부값)  
+> ✅ `contracts.wage_type`: 'hourly'\|'daily'\|'monthly' (DB 저장값, 변환 후 저장)  
+> ⚠️ 공식 양식 PDF 생성 시 `docs/standard_contract_form.pdf` 필요 (고용노동부 공식 다중페이지 PDF)
 
 ---
 
