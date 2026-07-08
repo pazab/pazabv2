@@ -280,6 +280,10 @@
 - `app/employer/records/page.tsx`: `Member` 타입에 `wage_type` 추가, member 초기화 시 contract 기반 동적 속성 반영
 - `app/employer/team/page.tsx`: 팀원 목록 로드 시 contracts 조회 후 wage_type 동적 반영, 임금 접두어 카드에 표시
 
+**계약서 미리보기 핀치줌 + 자동 맞춤**
+- 미리보기 모달 열릴 때 `window.innerWidth` 기준으로 A4(794px) 비율 자동 scale 계산 → 모바일에서 가로 스크롤 없이 전체 보임
+- 두 손가락 핀치 제스처로 0.3x~2.5x 자유 확대/축소 (`onTouchStart/Move/End` + `transform: scale`)
+
 **계약서 인쇄/PDF UX 전면 개선**
 - 서버 PDF 생성(Python overlay 방식) 폐기 — `docs/standard_contract_form.pdf` 파일 의존 구조라 실패했던 방식
 - `app/contract/view/page.tsx`: "📄 화면인쇄" / "📥 PDF 저장" 버튼 클릭 시 전체화면 미리보기 모달 오픈 → 상단 "🖨️ 인쇄 / PDF 저장" 버튼으로 `window.print()` 호출
