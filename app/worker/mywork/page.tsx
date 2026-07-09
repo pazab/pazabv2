@@ -160,7 +160,7 @@ export default function MyWorkPage() {
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:40 }}>
       {ToastUI}
-      <AppHeader title="내 근무" showBack />
+      <AppHeader title="내 근무" showBack showBellAndMenu />
 
       {/* 계약서 미작성 모달 */}
       {showContractRequestModal && (

@@ -370,7 +370,7 @@ function PayslipContent() {
       employer_id: member.employer_id,
       worker_id: member.worker_id,
       team_member_id: member.id,
-      match_id: member.match_id,
+      ...(member.match_id ? { match_id: member.match_id } : {}),
       year, month,
       wage,
       total_hours: totalHours,

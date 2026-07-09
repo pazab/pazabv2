@@ -123,8 +123,10 @@ export default function InviteAcceptPage() {
         }).eq('id', invite.team_member_id)
       } else {
         // 신형: 닉네임 검색 초대 — 직접 insert
+        // 이미 활성 상태인 팀원만 재사용 — 퇴직(left) 레코드는 재활성화 금지, 새로 INSERT
         const { data: existing } = await supabase.from('team_members')
-          .select('id').eq('employer_id', invite.employer_id).eq('worker_id', user.id).limit(1)
+          .select('id').eq('employer_id', invite.employer_id).eq('worker_id', user.id)
+          .eq('status', 'active').limit(1)
         if (!existing || existing.length === 0) {
           await supabase.from('team_members').insert({
             employer_id: invite.employer_id,
@@ -138,11 +140,10 @@ export default function InviteAcceptPage() {
             work_hours: invite.work_hours ?? null,
           })
         } else {
-          // 이미 있으면 근무조건 + 매장 연결 업데이트
+          // 이미 활성 팀원이면 매장 연결만 업데이트
           await supabase.from('team_members').update({
             employer_profile_id: invite.employer_profile_id ?? null,
             invite_status: 'joined',
-            status: 'active',
             wage: invite.wage ?? null,
             work_days: invite.work_days ?? null,
             work_hours: invite.work_hours ?? null,

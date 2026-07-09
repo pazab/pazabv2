@@ -126,12 +126,13 @@ export default function InviteBottomSheet({ isOpen, onClose, onSuccess, defaultS
     setSending(true);
 
     try {
-      // 1. 이미 팀원인지 체크
+      // 1. 이미 활성 팀원인지 체크 (퇴직자는 재초대 가능)
       const { data: existing } = await supabase
         .from("team_members")
         .select("id, status")
         .eq("employer_id", user.id)
         .eq("worker_id", selected.id)
+        .eq("status", "active")
         .limit(1);
 
       if (existing && existing.length > 0) {

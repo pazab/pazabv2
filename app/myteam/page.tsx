@@ -582,21 +582,23 @@ function WorkerAttLogs({ memberId, refreshKey = 0 }: { memberId: string; refresh
   );
 }
 
-function WorkerPayslipTab({ workerId, employerId, router }: { workerId:string; employerId:string; router:any }) {
+function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { workerId:string; employerId:string; router:any; teamMemberId?:string }) {
   const [payslips, setPayslips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandPayslips, setExpandPayslips] = useState(false);
 
   useEffect(() => {
-    if (!workerId || !employerId) { setLoading(false); return; }
-    supabase.from("payslips")
-      .select("*")
-      .eq("worker_id", workerId)
-      .eq("employer_id", employerId)
-      .order("year", { ascending: false, nullsFirst: false })
+    let q = supabase.from("payslips").select("*");
+    if (teamMemberId) {
+      q = q.eq("team_member_id", teamMemberId);
+    } else {
+      if (!workerId || !employerId) { setLoading(false); return; }
+      q = q.eq("worker_id", workerId).eq("employer_id", employerId);
+    }
+    q.order("year", { ascending: false, nullsFirst: false })
       .order("month", { ascending: false, nullsFirst: false })
       .then(({ data }: { data: any }) => { setPayslips(data || []); setLoading(false); });
-  }, [workerId, employerId]);
+  }, [workerId, employerId, teamMemberId]);
 
   if (loading) return <p style={{ textAlign:"center", color:"var(--text-muted)", fontSize:13, padding:"16px 0" }}>로딩 중...</p>;
 
@@ -1009,7 +1011,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
       {/* 급여 명세서 */}
       <div style={{ ...cardStyle, padding:"14px 16px" }}>
         <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>📋 급여 명세서</p>
-        <WorkerPayslipTab workerId={userId} employerId={m.employer_id} router={router} />
+        <WorkerPayslipTab teamMemberId={m.id} workerId={userId} employerId={m.employer_id} router={router} />
       </div>
     </div>
   );
@@ -1051,7 +1053,7 @@ function MyTeamPageContent() {
   const [toastMsg, setToastMsg] = useState("");
   const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
-  const [resignTarget, setResignTarget] = useState<{ member: any; name: string } | null>(null);
+  const [resignTarget, setResignTarget] = useState<{ member: any; name: string; hasWorkedThisMonth: boolean } | null>(null);
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
@@ -1206,9 +1208,11 @@ function MyTeamPageContent() {
     const storesWithJobs = storeList.map((s: any) => ({ ...s, activeJob: jobByStore[s.id] || null }));
     setMyStores(storesWithJobs);
 
-    // 첫 진입 시 첫 번째 매장 활성화
+    // 첫 진입 시: 이전에 선택했던 매장 복원, 없으면 첫 번째
     if (storeList.length > 0) {
-      setActiveStoreId(storeList[0].id);
+      const saved = sessionStorage.getItem("myteam_activeStoreId");
+      const restored = saved && storeList.find((s: any) => s.id === saved) ? saved : storeList[0].id;
+      setActiveStoreId(restored);
     }
 
     // 모든 팀원 로드 (employer_profile_id 포함)
@@ -1347,24 +1351,42 @@ function MyTeamPageContent() {
     const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const currentYear = kst.getUTCFullYear();
     const currentMonth = kst.getUTCMonth() + 1;
+    const monthStart = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
+    const monthEnd = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(new Date(currentYear, currentMonth, 0).getDate()).padStart(2, "0")}`;
 
-    const { data: slips, error: slipsErr } = await supabase
-      .from("payslips")
+    // 당월 출근 기록이 1건이라도 있는지 먼저 확인
+    const { data: attRows } = await supabase
+      .from("attendance")
       .select("id")
       .eq("team_member_id", member.id)
-      .eq("year", currentYear)
-      .eq("month", currentMonth)
+      .gte("work_date", monthStart)
+      .lte("work_date", monthEnd)
+      .not("status", "in", '("absent","off")')
       .limit(1);
 
-    if (slipsErr) {
-      alert("급여 발행 내역 검증 중 오류가 발생했습니다: " + slipsErr.message);
-      return;
-    }
+    const hasWorkedThisMonth = attRows && attRows.length > 0;
 
-    if (!slips || slips.length === 0) {
-      alert(`⚠️ 퇴사 처리 불가\n\n${name}님의 마지막 근무 달(${currentYear}년 ${currentMonth}월) 급여 명세서가 아직 발행되지 않았습니다. 퇴사 처리 전에 급여 명세서를 먼저 발행해 주세요.`);
-      return;
+    if (hasWorkedThisMonth) {
+      // 실제 근무 이력이 있는 달 → 급여 명세서 발행 필수
+      const { data: slips, error: slipsErr } = await supabase
+        .from("payslips")
+        .select("id")
+        .eq("team_member_id", member.id)
+        .eq("year", currentYear)
+        .eq("month", currentMonth)
+        .limit(1);
+
+      if (slipsErr) {
+        alert("급여 발행 내역 검증 중 오류가 발생했습니다: " + slipsErr.message);
+        return;
+      }
+
+      if (!slips || slips.length === 0) {
+        alert(`⚠️ 퇴사 처리 불가\n\n${name}님의 이번 달(${currentYear}년 ${currentMonth}월) 근무 기록이 있습니다.\n급여 명세서를 먼저 발행한 후 퇴사 처리해 주세요.`);
+        return;
+      }
     }
+    // 당월 출근 기록이 없으면 급여 명세서 없이 퇴사 처리 허용
 
     // 2. 퇴사 처리 진행
     const { error } = await supabase
@@ -1505,7 +1527,7 @@ function MyTeamPageContent() {
 
   async function loadPastWorks(uid: string) {
     const { data: leftData } = await supabase.from("team_members")
-      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, role_desc, invite_status, created_at, updated_at, contract_status,
+      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, employer_profile_id, role_desc, invite_status, created_at, updated_at, contract_status,
         users!team_members_employer_id_fkey (nickname, avatar_url)`)
       .eq("worker_id", uid).eq("status", "left")
       .order("updated_at", { ascending: false });
@@ -1527,17 +1549,23 @@ function MyTeamPageContent() {
       }
     }
 
-    const empIds = (leftData||[]).map((d: any) => d.employer_id);
+    // employer_profile_id가 있으면 그 매장을 직접 조회, 없으면 employer_id의 첫 매장 폴백
+    const profileIds = [...new Set((leftData||[]).map((d: any) => d.employer_profile_id).filter(Boolean))];
+    const empIdFallbacks = [...new Set((leftData||[]).filter((d: any) => !d.employer_profile_id).map((d: any) => d.employer_id))];
     const profiles: any[] = [];
-    if (empIds.length > 0) {
-      for (const empId of [...new Set(empIds)]) {
-        const { data: ep } = await supabase.from("employer_profiles")
-          .select("user_id, business_name, business_type, region")
-          .eq("user_id", empId)
-          .order("created_at", { ascending: false })
-          .limit(1).maybeSingle();
-        if (ep) profiles.push(ep);
-      }
+    if (profileIds.length > 0) {
+      const { data: eps } = await supabase.from("employer_profiles")
+        .select("id, user_id, business_name, business_type, region")
+        .in("id", profileIds);
+      if (eps) profiles.push(...eps);
+    }
+    for (const empId of empIdFallbacks) {
+      const { data: ep } = await supabase.from("employer_profiles")
+        .select("id, user_id, business_name, business_type, region")
+        .eq("user_id", empId)
+        .order("created_at", { ascending: false })
+        .limit(1).maybeSingle();
+      if (ep) profiles.push(ep);
     }
 
     const mapped = (leftData||[]).map((d: any) => {
@@ -1583,7 +1611,7 @@ function MyTeamPageContent() {
         work_days,
         work_hours,
         employer: d.users,
-        profile: profiles.find((p: any) => p.user_id === d.employer_id),
+        profile: profiles.find((p: any) => d.employer_profile_id ? p.id === d.employer_profile_id : p.user_id === d.employer_id),
         contractStatus,
       };
     });
@@ -1666,10 +1694,29 @@ function MyTeamPageContent() {
             <p style={{ fontSize:16, fontWeight:800, color:"#f87171", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
               ⚠️ 정말 퇴사 처리하시겠습니까?
             </p>
-            <p style={{ fontSize:14, fontWeight:700, color:"var(--text)", marginBottom:14 }}>
+            <p style={{ fontSize:14, fontWeight:700, color:"var(--text)", marginBottom:10 }}>
               [{resignTarget.name}] 님을 매장에서 퇴사 처리합니다.
             </p>
-            
+
+            {/* 이번 달 급여 정산 상태 안내 */}
+            <div style={{ borderRadius:10, padding:"10px 14px", marginBottom:14, border:`1px solid ${resignTarget.hasWorkedThisMonth ? "rgba(245,158,11,0.4)" : "rgba(16,185,129,0.3)"}`, background: resignTarget.hasWorkedThisMonth ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.08)" }}>
+              {resignTarget.hasWorkedThisMonth ? (
+                <>
+                  <p style={{ fontSize:12, fontWeight:700, color:"#f59e0b", margin:"0 0 4px" }}>⚠️ 이번 달 근무 기록이 있습니다</p>
+                  <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
+                    퇴사 처리 전에 <strong>이번 달 급여 명세서를 먼저 발행</strong>해 주세요.<br/>급여 미정산 상태로는 퇴사 처리가 되지 않습니다.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize:12, fontWeight:700, color:"#10b981", margin:"0 0 4px" }}>✅ 이번 달 출근 기록 없음 — 즉시 퇴사 처리 가능</p>
+                  <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
+                    이번 달 실제 출근 내역이 없어 급여 명세서 없이 퇴사 처리할 수 있습니다.
+                  </p>
+                </>
+              )}
+            </div>
+
             <div style={{ background:"var(--surface2)", borderRadius:12, padding:"12px 14px", marginBottom:20, border:"1px solid var(--border)" }}>
               <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 6px", fontWeight:700 }}>
                 💡 법적 서류 보존 안내
@@ -1693,14 +1740,15 @@ function MyTeamPageContent() {
                 setResignTarget(null);
                 await handleResign(target, name);
               }}
-                style={{ flex:1, background:"linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                disabled={resignTarget.hasWorkedThisMonth}
+                style={{ flex:1, background: resignTarget.hasWorkedThisMonth ? "var(--border)" : "linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:14, padding:14, color: resignTarget.hasWorkedThisMonth ? "var(--text-muted)" : "#fff", fontSize:14, fontWeight:700, cursor: resignTarget.hasWorkedThisMonth ? "not-allowed" : "pointer", opacity: resignTarget.hasWorkedThisMonth ? 0.6 : 1 }}>
                 🚨 퇴사 처리 확정
               </button>
             </div>
           </div>
         </div>
       )}
-      <AppHeader title="팀·소속" showBack />
+      <AppHeader title="팀·소속" showBack showBellAndMenu />
       <div style={{ maxWidth:480, margin:"0 auto", padding:"12px 16px 0" }}>
         {loading ? (
           <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>로딩 중...</div>
@@ -1778,17 +1826,8 @@ function MyTeamPageContent() {
                             style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"6px", fontSize:11, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
                             📄 근로계약서 조회
                           </button>
-                          <button onClick={() => {
-                            if (m.contractStatus === "none") {
-                              alert("⚠️ 발행된 급여명세서 내역이 없습니다.");
-                              return;
-                            }
-                            router.push(`/payslip?id=${m.id}&tab=mywork`);
-                          }}
-                            style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"6px", fontSize:11, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
-                            📋 급여내역 조회
-                          </button>
                         </div>
+                        <WorkerPayslipTab teamMemberId={m.id} workerId={user?.id||""} employerId={m.employer_id} router={router} />
                       </div>
                     );
                   })}
@@ -1988,7 +2027,7 @@ function MyTeamPageContent() {
                           return (
                             <div
                               key={store.id}
-                              onClick={() => setActiveStoreId(store.id)}
+                              onClick={() => { setActiveStoreId(store.id); sessionStorage.setItem("myteam_activeStoreId", store.id); }}
                               style={{
                                 position:"absolute", top: i * PEEK, left:0, right:0,
                                 height: PEEK,
@@ -2130,10 +2169,19 @@ function MyTeamPageContent() {
                                   }} style={{ background:m.member_role==="manager"?"#f59e0b20":"var(--surface2)", border:`1px solid ${m.member_role==="manager"?"#f59e0b":"var(--border)"}`, borderRadius:7, padding:"3px 7px", fontSize:10, color:m.member_role==="manager"?"#f59e0b":"var(--text-muted)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     {m.member_role === "manager" ? "해제" : "매니저"}
                                   </button>
-                                  <button onClick={e => {
+                                  <button onClick={async e => {
                                     e.stopPropagation();
                                     const name = m.worker?.nickname || "팀원";
-                                    setResignTarget({ member: m, name });
+                                    const now = new Date();
+                                    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+                                    const y = kst.getUTCFullYear();
+                                    const mo = kst.getUTCMonth() + 1;
+                                    const monthStart = `${y}-${String(mo).padStart(2,"0")}-01`;
+                                    const monthEnd = `${y}-${String(mo).padStart(2,"0")}-${String(new Date(y, mo, 0).getDate()).padStart(2,"0")}`;
+                                    const { data: attRows } = await supabase.from("attendance").select("id")
+                                      .eq("team_member_id", m.id).gte("work_date", monthStart).lte("work_date", monthEnd)
+                                      .not("status", "in", '("absent","off")').limit(1);
+                                    setResignTarget({ member: m, name, hasWorkedThisMonth: !!(attRows && attRows.length > 0) });
                                   }} style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:7, padding:"3px 7px", fontSize:10, color:"#f87171", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     퇴사
                                   </button>

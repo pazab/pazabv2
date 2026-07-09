@@ -1,7 +1,19 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-08 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-10 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
+
+**버그 수정 및 UX 개선 (2026-07-10)**
+- **퇴직자 재초대 데이터 오염 버그 수정**:
+  - `InviteBottomSheet` 팀원 존재 체크에 `.eq("status", "active")` 추가 → 퇴직자(`left`) 재초대 가능
+  - `app/i/[code]/page.tsx` existing 체크에 `.eq("status", "active")` 추가 → 퇴직 레코드를 재활성화하지 않고 새 `team_members` row INSERT → 이전 계약서·급여명세서 오염 차단
+- **이전 근무 이력 매장명 오류 수정**: `loadPastWorks`에 `employer_profile_id` 컬럼 추가 및 해당 ID로 직접 매장 프로필 조회 → 다중 매장 사장님 환경에서 잘못된 매장명 노출 수정
+- **이전 근무 급여내역 조회 수정**: `WorkerPayslipTab`에 `teamMemberId` prop 추가, 이전 근무 카드에서 `team_member_id` 기반으로 정확한 급여 내역 인라인 표시 (기존 `/payslip?id=` 잘못된 라우팅 제거)
+- **현재 재직 급여명세서 이전 근무분 혼입 방지**: 활성 팀원 `WorkerPayslipTab`에도 `teamMemberId` 전달 → 같은 사장 밑 재취업 시 이전 기간 명세서 섞임 차단
+- **payslips FK 오류 수정**: `payslips.match_id` NOT NULL 제약으로 초대 직원 급여 발행 불가 → `patch_payslips_match_id_nullable.sql` 실행 + payload에서 `match_id` 조건부 포함 처리
+- **퇴직 처리 로직 개선**: 당월 출근 기록이 0건이면 급여 명세서 없이 바로 퇴직 처리 허용 (기존: 무조건 급여 명세서 필수로 데드락 발생). 퇴직 확인 모달에 이번 달 출근 상태 명시 + 출근 기록 있으면 확정 버튼 비활성화
+- **마이팀 매장 선택 상태 유지**: `sessionStorage`에 `activeStoreId` 저장 → 팀원 상세 갔다 돌아와도 선택했던 매장 유지
+- **AppHeader 알림·설정 메뉴 확장**: `showBellAndMenu` prop 추가 → 대타·근태(내 근무)·마이팀 헤더에도 알림 벨 🔔 + ⋮ 메뉴 추가 (기존엔 채팅·MY에만 있었음)
 
 **최근 기능 고도화 (2026-07-10)**
 - **채용 확정 후 넥스트 스텝 배너**: 채팅방 내부 매칭 상태가 `hired`이고 계약서가 없을 때 사장님/알바생 각각 근로계약서 작성을 안내하고 라우팅 링크를 제공하는 상단 고정 안내 배너 구현

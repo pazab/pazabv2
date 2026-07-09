@@ -450,7 +450,7 @@ export default function DaetaPage() {
       {/* 배경 그라디언트 */}
       <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 30%, #1a1060 0%, transparent 65%)", pointerEvents: "none" }} />
       <div style={{ position: "relative", zIndex: 2 }}>
-        <AppHeader showBack title="대타" />
+        <AppHeader showBack title="대타" showBellAndMenu />
       </div>
 
       {/* 중앙 콘텐츠 */}
@@ -568,7 +568,7 @@ export default function DaetaPage() {
   // ── 로딩 ──
   if (step === "loading") return (
     <div style={{ position: "fixed", inset: 0, background: "#0a0a0f", display: "flex", flexDirection: "column" }}>
-      <AppHeader showBack title="대타" />
+      <AppHeader showBack title="대타" showBellAndMenu />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
       <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, #8b5cf6, #ec4899)", display: "flex", alignItems: "center", justifyContent: "center", animation: "pulse 1.5s ease-in-out infinite" }}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M12 21s-8-7.5-8-12a8 8 0 1 1 16 0c0 4.5-8 12-8 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
@@ -583,7 +583,7 @@ export default function DaetaPage() {
   // ── 결과 없음 ──
   if (!c) return (
     <div style={{ position: "fixed", inset: 0, background: "#0a0a0f", display: "flex", flexDirection: "column" }}>
-      <AppHeader showBack title="대타" />
+      <AppHeader showBack title="대타" showBellAndMenu />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
         <div style={{ fontSize: 40 }}>😅</div>
         <div style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>현재 근처에 대타 가능한 인원이 없어요</div>
@@ -690,6 +690,7 @@ export default function DaetaPage() {
         <AppHeader
           showBack
           title="대타"
+          showBellAndMenu
           rightActions={
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               {currentUserId && (

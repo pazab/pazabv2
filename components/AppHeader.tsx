@@ -15,6 +15,7 @@ interface AppHeaderProps {
   showBack?: boolean;
   onBack?: () => void;
   noSticky?: boolean;
+  showBellAndMenu?: boolean;
 }
 
 export default function AppHeader({
@@ -28,6 +29,7 @@ export default function AppHeader({
   showBack = false,
   onBack,
   noSticky = false,
+  showBellAndMenu,
 }: AppHeaderProps) {
   const router = useRouter();
   const [searchFocused, setSearchFocused] = useState(false);
@@ -89,10 +91,10 @@ export default function AppHeader({
         {rightActions}
 
         {/* 알림 벨 */}
-        {!showBack && <NotificationBell />}
+        {(showBellAndMenu ?? !showBack) && <NotificationBell />}
 
         {/* ⋮ 메뉴 */}
-        {!showBack && (
+        {(showBellAndMenu ?? !showBack) && (
           <div ref={menuRef} style={{ position: "relative" }}>
             <button onClick={() => setMenuOpen(v => !v)}
               style={{ width: 34, height: 34, borderRadius: "50%", background: menuOpen ? "var(--surface)" : "none", border: menuOpen ? "1px solid var(--border)" : "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
