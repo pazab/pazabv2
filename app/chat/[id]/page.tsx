@@ -613,7 +613,7 @@ export default function ChatRoomPage() {
   return (
     <main style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", display: "flex", flexDirection: "column", position: "relative" }}>
       {/* 헤더 */}
-      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "var(--nav-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--nav-border)", padding: "10px 14px" }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(var(--bg-rgb, 24,24,27),0.92)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)", padding: "10px 14px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, maxWidth: 480, margin: "0 auto" }}>
           <button onClick={() => router.push("/chat")}
             style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, padding: 0, width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -641,7 +641,7 @@ export default function ChatRoomPage() {
               router.push(profilePath);
             }} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <p style={{ fontSize: 15, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{counterpartName}</p>
+                <p style={{ fontSize: 15, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#ffffff" }}>{counterpartName}</p>
                 <span style={{ fontSize: 10, fontWeight: 700, color: badge.color, background: `${badge.color}18`, padding: "2px 8px", borderRadius: 20, border: `1px solid ${badge.color}30`, flexShrink: 0 }}>
                   {badge.label}
                 </span>
@@ -650,7 +650,7 @@ export default function ChatRoomPage() {
                   return <span style={{ fontSize: 10, color: g.color, flexShrink: 0 }}>{g.emoji}</span>;
                 })()}
               </div>
-              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>궁합 {match?.match_score}점 · 탭하면 프로필 보기</p>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", margin: 0 }}>궁합 {match?.match_score}점 · 탭하면 프로필 보기</p>
             </div>
           </div>
           {/* 계약서 아이콘 버튼 (hired 상태) */}
