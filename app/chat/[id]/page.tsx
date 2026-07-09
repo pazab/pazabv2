@@ -728,6 +728,61 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
+      {/* 채용 확정 후 계약서 작성 배너 (사장님용) */}
+      {progressStatus === "hired" && contractStatus === "none" && isEmployer && (
+        <div style={{
+          background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(236,72,153,0.08))",
+          borderBottom: "1px solid var(--border)",
+          padding: "12px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+            <span style={{ fontSize: 20 }}>📄</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>채용이 확정되었습니다! 🎉</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>알바생의 근로계약서를 신속히 작성해 주세요.</span>
+            </div>
+          </div>
+          <button onClick={goToUpdateContract}
+            style={{
+              background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+              border: "none",
+              borderRadius: 20,
+              padding: "6px 14px",
+              color: "#fff",
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: "pointer",
+              whiteSpace: "nowrap"
+            }}>
+            계약서 작성 →
+          </button>
+        </div>
+      )}
+
+      {/* 채용 확정 후 계약서 서명 대기 배너 (알바생용) */}
+      {progressStatus === "hired" && contractStatus === "none" && !isEmployer && (
+        <div style={{
+          background: "rgba(245,158,11,0.08)",
+          borderBottom: "1px solid var(--border)",
+          padding: "12px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+        }}>
+          <span style={{ fontSize: 20 }}>⏳</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>채용이 확정되었습니다! 🎉</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>사장님이 근로계약서를 작성하는 중입니다. 작성이 완료되면 서명 요청 알림이 발송됩니다.</span>
+          </div>
+        </div>
+      )}
+
       {/* 메시지 목록 */}
       <div style={{ flex: 1, overflowY: "auto" }} onClick={() => setShowMenu(false)}>
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "12px 14px" }}>
