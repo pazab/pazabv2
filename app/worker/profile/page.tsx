@@ -419,7 +419,12 @@ function WorkerProfileContent() {
 
     if (saveError) { setError("저장 중 오류: " + saveError.message); setSaving(false); return; }
 
-    await supabase.from("users").update({ profile_completed: true }).eq("id", session.user.id);
+    if (profileData.image_url) {
+      await supabase.from("users").update({ avatar_url: profileData.image_url, profile_completed: true }).eq("id", session.user.id);
+      await supabase.from("employer_profiles").update({ image_url: profileData.image_url }).eq("user_id", session.user.id);
+    } else {
+      await supabase.from("users").update({ profile_completed: true }).eq("id", session.user.id);
+    }
     setSuccess(true);
     const mypageUrl = `/mypage${sectionParam ? `?section=${sectionParam}` : ""}`;
     const decodedReturn = returnTo ? decodeURIComponent(returnTo) : "";

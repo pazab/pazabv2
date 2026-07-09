@@ -867,6 +867,8 @@ function MyPageContent() {
                   console.log("publicUrl:", avatarUrl);
                   const { error: dbErr } = await supabase.from("users").update({ avatar_url: avatarUrl }).eq("id", user.id);
                   console.log("db error:", dbErr);
+                  await supabase.from("worker_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
+                  await supabase.from("employer_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
                   setUser(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev);
                 }
               }} />
