@@ -1051,9 +1051,11 @@ function MyTeamPageContent() {
   const [toastMsg, setToastMsg] = useState("");
   const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
+  const [resignTarget, setResignTarget] = useState<{ member: any; name: string } | null>(null);
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
+  const [pastWorks, setPastWorks] = useState<any[]>([]);
   const [workOpen, setWorkOpen] = useState(false);
 
   const hasStore = myStores.length > 0;
@@ -1120,8 +1122,36 @@ function MyTeamPageContent() {
     userTypeRef.current = ut;
     if (data?.employer_result) setEmployerResult(data.employer_result);
     if (data) setUser((p: any) => ({ ...p, ...data }));
-    if (ut === "employer" || ut === "both") { setTeamOpen(true); loadTeam(uid); }
-    if (ut === "worker" || ut === "both") { setWorkOpen(true); loadMyWork(uid); }
+
+    let loadedStores: any[] = [];
+    let loadedWork: any[] = [];
+
+    const promises: Promise<any>[] = [];
+    if (ut === "employer" || ut === "both") {
+      promises.push(loadTeam(uid).then(res => { loadedStores = res || []; }));
+    }
+    if (ut === "worker" || ut === "both") {
+      promises.push(loadMyWork(uid).then(res => { loadedWork = res || []; }));
+      promises.push(loadPastWorks(uid));
+    }
+
+    await Promise.all(promises);
+
+    const hasStores = loadedStores.length > 0;
+    const hasWork = loadedWork.length > 0;
+
+    // 디폴트 접힘/펼침 로직 적용
+    if (!hasStores && !hasWork) {
+      setTeamOpen(true);
+      setWorkOpen(true);
+    } else if (hasStores && hasWork) {
+      setTeamOpen(true);
+      setWorkOpen(true);
+    } else {
+      setTeamOpen(hasStores);
+      setWorkOpen(hasWork);
+    }
+
     setLoading(false);
   }
 
@@ -1288,7 +1318,7 @@ function MyTeamPageContent() {
       };
     }
     setStatsByStore(stats);
-    if (storeList.length > 0) setTeamOpen(true);
+    return storeList;
   }
 
   async function upgradeToBoth(targetType: "worker" | "employer") {
@@ -1309,6 +1339,81 @@ function MyTeamPageContent() {
     
     await loadTeam(user.id);
     await loadMyWork(user.id);
+  }
+
+  async function handleResign(member: any, name: string) {
+    // 1. 퇴사일 기준 당월(KST) 급여 명세서 발행 여부 확인
+    const now = new Date();
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const currentYear = kst.getUTCFullYear();
+    const currentMonth = kst.getUTCMonth() + 1;
+
+    const { data: slips, error: slipsErr } = await supabase
+      .from("payslips")
+      .select("id")
+      .eq("team_member_id", member.id)
+      .eq("year", currentYear)
+      .eq("month", currentMonth)
+      .limit(1);
+
+    if (slipsErr) {
+      alert("급여 발행 내역 검증 중 오류가 발생했습니다: " + slipsErr.message);
+      return;
+    }
+
+    if (!slips || slips.length === 0) {
+      alert(`⚠️ 퇴사 처리 불가\n\n${name}님의 마지막 근무 달(${currentYear}년 ${currentMonth}월) 급여 명세서가 아직 발행되지 않았습니다. 퇴사 처리 전에 급여 명세서를 먼저 발행해 주세요.`);
+      return;
+    }
+
+    // 2. 퇴사 처리 진행
+    const { error } = await supabase
+      .from("team_members")
+      .update({ status: "left" })
+      .eq("id", member.id);
+
+    if (error) {
+      alert("퇴사 처리 중 오류가 발생했습니다: " + error.message);
+      return;
+    }
+
+    setMembersByStore(prev => {
+      const u = { ...prev };
+      for (const k of Object.keys(u)) {
+        u[k] = u[k].filter((tm: any) => tm.id !== member.id);
+      }
+      return u;
+    });
+
+    showToast(`${name}님 퇴사 처리됐어요.`);
+
+    // 1. 상대방(알바생)에게 푸시 알림 전송
+    if (member.worker_id) {
+      const activeStore = myStores.find(s => s.id === activeStoreId);
+      sendPushNotification({
+        userId: member.worker_id,
+        title: "🔴 퇴사 처리 완료",
+        body: `${activeStore?.business_name || "매장"}에서 퇴사 처리되었습니다.`,
+        url: `/worker/mywork`,
+        tag: "resignation"
+      });
+    }
+
+    // 2. 1:1 대화방에 시스템 메시지 전송
+    if (member.match_id && user) {
+      const employerName = user.nickname || "사장님";
+      await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          matchId: member.match_id,
+          senderId: user.id,
+          receiverId: member.worker_id,
+          message: `[시스템] ${employerName} 사장님이 ${name}님을 퇴사 처리하였습니다.\n이후 근무 기록 및 톡 공유가 종료됩니다.`,
+          messageType: "system",
+        }),
+      });
+    }
   }
 
   async function loadMyWork(uid: string) {
@@ -1395,7 +1500,96 @@ function MyTeamPageContent() {
       };
     });
     setCurrent(mapped);
-    if (mapped.length > 0) setWorkOpen(true);
+    return mapped;
+  }
+
+  async function loadPastWorks(uid: string) {
+    const { data: leftData } = await supabase.from("team_members")
+      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, role_desc, invite_status, created_at, updated_at, contract_status,
+        users!team_members_employer_id_fkey (nickname, avatar_url)`)
+      .eq("worker_id", uid).eq("status", "left")
+      .order("updated_at", { ascending: false });
+
+    // 각 소속의 최신 계약서 로드
+    const tmIds = (leftData||[]).map((d: any) => d.id);
+    const { data: memberContracts } = tmIds.length > 0
+      ? await supabase.from("contracts")
+          .select("team_member_id, wage, wage_type, work_days, work_hours, contract_data, status")
+          .in("team_member_id", tmIds)
+          .neq("status", "cancelled")
+          .order("created_at", { ascending: false })
+      : { data: [] };
+
+    const contractByMember: Record<string, any> = {};
+    for (const c of (memberContracts || [])) {
+      if (!contractByMember[c.team_member_id]) {
+        contractByMember[c.team_member_id] = c;
+      }
+    }
+
+    const empIds = (leftData||[]).map((d: any) => d.employer_id);
+    const profiles: any[] = [];
+    if (empIds.length > 0) {
+      for (const empId of [...new Set(empIds)]) {
+        const { data: ep } = await supabase.from("employer_profiles")
+          .select("user_id, business_name, business_type, region")
+          .eq("user_id", empId)
+          .order("created_at", { ascending: false })
+          .limit(1).maybeSingle();
+        if (ep) profiles.push(ep);
+      }
+    }
+
+    const mapped = (leftData||[]).map((d: any) => {
+      let wage = d.wage;
+      let wage_type = "hourly";
+      let work_days = d.work_days;
+      let work_hours = d.work_hours;
+
+      const contract = contractByMember[d.id];
+      if (contract) {
+        const cd = contract.contract_data;
+        if (cd?.wageType) wage_type = cd.wageType === "month" ? "monthly" : cd.wageType === "day" ? "daily" : "hourly";
+        else if (contract.wage_type) wage_type = contract.wage_type;
+        if (cd?.wage) wage = parseInt(String(cd.wage).replace(/,/g, ""));
+        else if (contract.wage) wage = contract.wage;
+        
+        if (cd) {
+          if (cd.workDaysMode === "text" && cd.workDaysText) work_days = cd.workDaysText;
+          else {
+            const days = ["월", "화", "수", "목", "금", "토", "일"]
+              .filter((_, i) => (cd as any)[`workDays${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}`])
+              .join("·");
+            if (days) work_days = days;
+          }
+          if (cd.workStart && cd.workEnd) {
+            work_hours = `${cd.workStart} ~ ${cd.workEnd}`;
+          } else if (cd.dailyHours) {
+            work_hours = cd.dailyHours;
+          }
+        } else {
+          if (contract.work_days) work_days = contract.work_days;
+          if (contract.work_hours) work_hours = contract.work_hours;
+        }
+      }
+
+      const contractStatus = d.contract_status === "active" ? "done"
+        : d.contract_status === "pending" ? "pending" : "none";
+
+      return {
+        ...d,
+        wage,
+        wage_type,
+        work_days,
+        work_hours,
+        employer: d.users,
+        profile: profiles.find((p: any) => p.user_id === d.employer_id),
+        contractStatus,
+      };
+    });
+
+    setPastWorks(mapped);
+    return mapped;
   }
 
   const isEmployer = userType === "employer" || userType === "both";
@@ -1463,6 +1657,49 @@ function MyTeamPageContent() {
           </div>
         </div>
       )}
+
+      {resignTarget && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:500, display:"flex", alignItems:"flex-end" }}
+          onClick={() => setResignTarget(null)}>
+          <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:480, margin:"0 auto" }}
+            onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize:16, fontWeight:800, color:"#f87171", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
+              ⚠️ 정말 퇴사 처리하시겠습니까?
+            </p>
+            <p style={{ fontSize:14, fontWeight:700, color:"var(--text)", marginBottom:14 }}>
+              [{resignTarget.name}] 님을 매장에서 퇴사 처리합니다.
+            </p>
+            
+            <div style={{ background:"var(--surface2)", borderRadius:12, padding:"12px 14px", marginBottom:20, border:"1px solid var(--border)" }}>
+              <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 6px", fontWeight:700 }}>
+                💡 법적 서류 보존 안내
+              </p>
+              <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
+                • 작성된 <strong>근로계약서</strong>와 <strong>급여명세서/지급내역</strong>은 근로기준법 및 관련 법령에 의거하여 <strong>법적 보존 연한(3년~5년) 동안 안전하게 보존</strong>되며, 퇴사 처리 후에도 필요 시 양측 모두 언제든지 열람할 수 있습니다.
+              </p>
+              <p style={{ fontSize:11, color:"var(--text-muted)", margin:"8px 0 0", lineHeight:1.5 }}>
+                • 퇴사 완료 시 해당 직원과의 근무 현황 및 1:1 대화방이 종료되며, 직원에게 퇴사 처리 알림이 전송됩니다.
+              </p>
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setResignTarget(null)}
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text-muted)", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+                취소
+              </button>
+              <button onClick={async () => {
+                const target = resignTarget.member;
+                const name = resignTarget.name;
+                setResignTarget(null);
+                await handleResign(target, name);
+              }}
+                style={{ flex:1, background:"linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                🚨 퇴사 처리 확정
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <AppHeader title="팀·소속" showBack />
       <div style={{ maxWidth:480, margin:"0 auto", padding:"12px 16px 0" }}>
         {loading ? (
@@ -1500,6 +1737,62 @@ function MyTeamPageContent() {
                     </div>
                   )
                 )}
+              </section>
+            )}
+
+            {/* ── 이전 근무 이력 (worker / both) ── */}
+            {isWorker && pastWorks.length > 0 && (
+              <section style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: 12 }}>
+                  <p style={{ fontSize:15, fontWeight:800, color:"var(--text)", margin:0 }}>🏛️ 이전 근무 이력 (경력)</p>
+                  <span style={{ fontSize:11, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 8px", fontWeight:700 }}>{pastWorks.length}곳</span>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                  {pastWorks.map(m => {
+                    const storeName = m.profile?.business_name || m.employer?.nickname || "이전 매장";
+                    const bizType = m.profile?.business_type || "기타 업종";
+                    const hireDate = m.hire_date || "입사일 미정";
+                    const resignDate = m.updated_at 
+                      ? new Date(new Date(m.updated_at).getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0] 
+                      : "퇴사일 미정";
+
+                    return (
+                      <div key={m.id} style={{ ...cardStyle, padding:"14px 16px", display:"flex", flexDirection:"column", gap:10, background:"var(--surface2)", opacity: 0.9 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                          <div>
+                            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
+                              <span style={{ fontSize:14, fontWeight:800, color:"var(--text)" }}>{storeName}</span>
+                              <span style={{ fontSize:10, background:"rgba(239,68,68,0.1)", color:"#f87171", borderRadius:6, padding:"1px 6px", fontWeight:700 }}>퇴직</span>
+                            </div>
+                            <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>
+                              {bizType} · {m.role_desc || "스태프"}
+                            </p>
+                          </div>
+                          <span style={{ fontSize:11, color:"var(--text-muted)", fontWeight:600 }}>
+                            {hireDate} ~ {resignDate}
+                          </span>
+                        </div>
+
+                        <div style={{ display:"flex", gap:8, borderTop:"1px solid var(--border)", paddingTop:10, marginTop:2 }}>
+                          <button onClick={() => router.push(`/contract/view?memberId=${m.id}`)}
+                            style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"6px", fontSize:11, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                            📄 근로계약서 조회
+                          </button>
+                          <button onClick={() => {
+                            if (m.contractStatus === "none") {
+                              alert("⚠️ 발행된 급여명세서 내역이 없습니다.");
+                              return;
+                            }
+                            router.push(`/payslip?id=${m.id}&tab=mywork`);
+                          }}
+                            style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"6px", fontSize:11, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                            📋 급여내역 조회
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
             )}
 
@@ -1837,15 +2130,10 @@ function MyTeamPageContent() {
                                   }} style={{ background:m.member_role==="manager"?"#f59e0b20":"var(--surface2)", border:`1px solid ${m.member_role==="manager"?"#f59e0b":"var(--border)"}`, borderRadius:7, padding:"3px 7px", fontSize:10, color:m.member_role==="manager"?"#f59e0b":"var(--text-muted)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     {m.member_role === "manager" ? "해제" : "매니저"}
                                   </button>
-                                  <button onClick={async e => {
+                                  <button onClick={e => {
                                     e.stopPropagation();
-                                    await supabase.from("team_members").update({ status: "left" }).eq("id", m.id);
-                                    setMembersByStore(prev => {
-                                      const u = { ...prev };
-                                      u[activeStore.id] = (u[activeStore.id]||[]).filter((tm: any) => tm.id !== m.id);
-                                      return u;
-                                    });
-                                    showToast(`${name}님 퇴사 처리됐어요.`);
+                                    const name = m.worker?.nickname || "팀원";
+                                    setResignTarget({ member: m, name });
                                   }} style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:7, padding:"3px 7px", fontSize:10, color:"#f87171", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     퇴사
                                   </button>
@@ -1911,6 +2199,7 @@ function MyTeamPageContent() {
         onSuccess={() => {
           if (user?.id) loadTeam(user.id);
         }}
+        defaultStoreId={activeStoreId || undefined}
       />
       {/* 매장 삭제 확인 팝업 */}
       {deleteTarget && (() => {

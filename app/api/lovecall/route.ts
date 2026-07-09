@@ -87,10 +87,12 @@ export async function GET(req: NextRequest) {
     const workerMatches = (workerRes.data || []).map(m => ({ ...m, _myRole: "worker" }));
     const employerMatches = (employerRes.data || []).map(m => ({ ...m, _myRole: "employer" }));
 
-    // 중복 제거
-    const all = [...workerMatches, ...employerMatches].filter(
-      (m, i, arr) => arr.findIndex(x => x.id === m.id) === i
-    );
+    // 중복 제거 및 초대로 생성된 매칭(job_id와 daeta_posting_id 둘 다 null)은 러브콜 목록에서 제외
+    const all = [...workerMatches, ...employerMatches]
+      .filter(m => m.job_id || m.daeta_posting_id)
+      .filter(
+        (m, i, arr) => arr.findIndex(x => x.id === m.id) === i
+      );
 
     const enriched = await Promise.all(all.map(async (match) => {
       const myRole = match._myRole;

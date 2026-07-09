@@ -8,6 +8,7 @@ import AppHeader from "@/components/AppHeader";
 import { getTrustGrade } from "@/lib/utils";
 import DateWheelPicker from "@/components/DateWheelPicker";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
+import { sendPushNotification } from "@/lib/usePush";
 
 // ─────────────────────────────────────────────
 // 근태 이력 타임라인 (아코디언, 기본 접힘)
@@ -298,6 +299,10 @@ export default function TeamMemberPage() {
 
   // 급여 명세서 상태
   const [payslips, setPayslips] = useState<any[]>([]);
+  const isResigned = member?.status === "left" || member?.status === "resigned";
+  const resignDateStr = isResigned && member?.updated_at 
+    ? new Date(new Date(member.updated_at).getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0] 
+    : null;
   const [payslipsLoading, setPayslipsLoading] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [cancelTargetContract, setCancelTargetContract] = useState<any>(null);
@@ -591,6 +596,10 @@ export default function TeamMemberPage() {
   }
   const isScheduledDay = (day: number) => {
     if (scheduledDayNums.size === 0) return false;
+    if (isResigned && resignDateStr) {
+      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      if (dateStr > resignDateStr) return false;
+    }
     return scheduledDayNums.has(new Date(viewYear, viewMonth, day).getDay());
   };
   const scheduledDaysInMonth = (() => {
@@ -598,6 +607,10 @@ export default function TeamMemberPage() {
     const days = new Date(viewYear, viewMonth + 1, 0).getDate();
     let count = 0;
     for (let d = 1; d <= days; d++) {
+      if (isResigned && resignDateStr) {
+        const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        if (dateStr > resignDateStr) continue;
+      }
       if (scheduledDayNums.has(new Date(viewYear, viewMonth, d).getDay())) count++;
     }
     return count;
@@ -726,17 +739,19 @@ export default function TeamMemberPage() {
                 {pType && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", margin: "0 0 2px" }}>{PERSONALITY_EMOJI[pType]} {pType}</p>}
                 <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
                   입사일 {member.hire_date || "미설정"}{" "}
-                  <button onClick={() => {
-                    setHireDateInput(member.hire_date || new Date().toISOString().split("T")[0]);
-                    setEditHireDate(true);
-                  }} style={{ fontSize: 10, color: "#fff", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer" }}>
-                    수정
-                  </button>
+                  {!isResigned && (
+                    <button onClick={() => {
+                      setHireDateInput(member.hire_date || new Date().toISOString().split("T")[0]);
+                      setEditHireDate(true);
+                    }} style={{ fontSize: 10, color: "#fff", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer" }}>
+                      수정
+                    </button>
+                  )}
                 </p>
               </div>
             </div>
           </div>
-
+ 
           {/* 근무 조건 3열 */}
           <div style={{ padding: "10px 16px 12px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -778,7 +793,11 @@ export default function TeamMemberPage() {
                 </div>
               ))}
             </div>
-            {member.contract_status === "none" ? (
+            {isResigned ? (
+              <div style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px", fontSize: 12, color: "var(--text-muted)", textAlign: "center", fontWeight: 600 }}>
+                🔒 퇴직한 팀원으로 근무조건 및 계약서 수정 불가
+              </div>
+            ) : member.contract_status === "none" ? (
               <button onClick={() => {
                 setEditWage(member.wage ? String(member.wage) : "");
                 setEditWorkDays(member.work_days || "");
@@ -795,7 +814,7 @@ export default function TeamMemberPage() {
               </button>
             )}
           </div>
-
+ 
           {/* 하단 액션 버튼 */}
           <div style={{ display: "flex", borderTop: "1px solid var(--border)" }}>
             <button onClick={() => router.push(`/chat?worker=${member.worker_id}`)}
@@ -803,9 +822,15 @@ export default function TeamMemberPage() {
               💬 채팅
             </button>
             <div style={{ width: 1, background: "var(--border)" }} />
-            <button onClick={() => router.push(`/payslip?tmId=${member.id}`)}
-              style={{ flex: 1, background: "none", border: "none", padding: "11px", fontSize: 13, color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              📋 급여 발행
+            <button onClick={() => {
+              if (isResigned) {
+                alert("🔒 퇴직한 팀원은 신규 급여 발행을 할 수 없습니다. (지급 내역 조회는 아래 급여명세서 보관함에서 가능합니다)");
+                return;
+              }
+              router.push(`/payslip?tmId=${member.id}`);
+            }}
+              style={{ flex: 1, background: "none", border: "none", padding: "11px", fontSize: 13, color: "var(--text-muted)", opacity: isResigned ? 0.4 : 1, cursor: isResigned ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              📋 {isResigned ? "🔒 급여 발행 불가" : "급여 발행"}
             </button>
           </div>
         </div>
@@ -823,15 +848,18 @@ export default function TeamMemberPage() {
                   <input
                     defaultValue={member.nickname || ""}
                     id="member-nickname-input"
+                    disabled={isResigned}
                     placeholder={`${workerName} (기본값)`}
-                    style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", color: "var(--text)", fontSize: 13, outline: "none" }}
+                    style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", color: "var(--text)", fontSize: 13, outline: "none", opacity: isResigned ? 0.6 : 1 }}
                   />
                   <button onClick={async () => {
+                    if (isResigned) return;
                     const val = (document.getElementById("member-nickname-input") as HTMLInputElement)?.value || "";
                     const { error } = await supabase.from("team_members").update({ nickname: val || null }).eq("id", member.id);
                     if (!error) showToast(val ? `"${val}"로 호칭 저장됐어요!` : "호칭이 초기화됐어요");
                   }}
-                    style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 10, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                    disabled={isResigned}
+                    style={{ background: isResigned ? "var(--border)" : "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 10, padding: "8px 14px", color: isResigned ? "var(--text-muted)" : "#fff", fontSize: 12, fontWeight: 700, cursor: isResigned ? "not-allowed" : "pointer", flexShrink: 0 }}>
                     저장
                   </button>
                 </div>
@@ -883,7 +911,7 @@ export default function TeamMemberPage() {
             </div>
             {(() => {
               const signedC = contracts.find(c => c.worker_signed && c.employer_signed && c.status !== "cancelled" && c.status !== "superseded");
-              if (!signedC) return null;
+              if (!signedC || isResigned) return null;
               return (
                 <button onClick={() => setMonthBatchTarget({ id: signedC.id, startDate: signedC.start_date, endDate: signedC.end_date })}
                   style={{ background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.3)", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700, color: "#0ea5e9", cursor: "pointer" }}>
@@ -1011,10 +1039,11 @@ export default function TeamMemberPage() {
                 const isSunday = dayOfWeek === 0;
                 const isSaturday = dayOfWeek === 6;
                 const isScheduled = isScheduledDay(day);
+                const isResignDay = dateStr === resignDateStr;
                 return (
                   <div key={day}
                     onClick={() => {
-                      if (isFuture) return;
+                      if (isFuture || isResigned) return;
                       setAttDate(dateStr);
                       setAttStatus(att?.status || "normal");
                       setAttNote(att?.memo || "");
@@ -1023,14 +1052,16 @@ export default function TeamMemberPage() {
                       setShowAttModal(true);
                     }}
                     style={{
-                      borderRadius: 7, cursor: isFuture ? "default" : "pointer", overflow: "hidden",
-                      background: status ? status.bg : isToday ? "#7c3aed20" : isScheduled ? "#7c3aed10" : "none",
-                      border: isToday ? "1.5px solid #7c3aed" : att ? `1px solid ${status?.color}40` : isScheduled && !isFuture ? "1px dashed #7c3aed40" : "1px solid transparent",
+                      borderRadius: 7, cursor: (isFuture || isResigned) ? "default" : "pointer", overflow: "hidden",
+                      background: isResignDay ? "rgba(239, 68, 68, 0.15)" : (status ? status.bg : isToday ? "#7c3aed20" : isScheduled ? "#7c3aed10" : "none"),
+                      border: isResignDay ? "1.5px solid #ef4444" : (isToday ? "1.5px solid #7c3aed" : att ? `1px solid ${status?.color}40` : isScheduled && !isFuture ? "1px dashed #7c3aed40" : "1px solid transparent"),
                       opacity: isFuture && !isScheduled ? 0.2 : isFuture && isScheduled ? 0.5 : 1,
                       padding: "3px 2px 2px",
                     }}>
-                    <div style={{ textAlign: "center", fontSize: 10, fontWeight: isToday ? 700 : 500, color: isToday ? "#7c3aed" : isSunday ? "#ef4444" : isSaturday ? "#3b82f6" : "var(--text)" }}>{day}</div>
-                    {att ? (
+                    <div style={{ textAlign: "center", fontSize: 10, fontWeight: isToday || isResignDay ? 700 : 500, color: isResignDay ? "#ef4444" : (isToday ? "#7c3aed" : isSunday ? "#ef4444" : isSaturday ? "#3b82f6" : "var(--text)") }}>{day}</div>
+                    {isResignDay ? (
+                      <div style={{ textAlign: "center", fontSize: 8, color: "#ef4444", fontWeight: 700, lineHeight: 1.3 }}>🚪<br/>퇴직</div>
+                    ) : att ? (
                       <div style={{ textAlign: "center", fontSize: 8, color: status?.color, lineHeight: 1.3 }}>
                         {statusEmoji[att.status]}<br />{statusShort[att.status]}
                         {att.actual_hours && att.status !== "absent" && att.status !== "off" && <><br /><span style={{ fontSize: 7 }}>{att.actual_hours}h</span></>}
@@ -1134,11 +1165,11 @@ export default function TeamMemberPage() {
                   {DOCS.map(doc => {
                     const on = !!docsSubmitted[doc.key];
                     return (
-                      <button key={doc.key} onClick={() => toggleDoc(doc.key)} disabled={docsSaving}
+                      <button key={doc.key} onClick={() => { if (!isResigned) toggleDoc(doc.key); }} disabled={docsSaving || isResigned}
                         style={{
                           background: on ? "rgba(74,222,128,0.08)" : "var(--surface2)",
                           border: `1px solid ${on ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
-                          borderRadius: 12, padding: "12px 14px", cursor: "pointer",
+                          borderRadius: 12, padding: "12px 14px", cursor: isResigned ? "not-allowed" : "pointer",
                           display: "flex", alignItems: "center", gap: 12, textAlign: "left", width: "100%",
                         }}>
                         <span style={{ fontSize: 22, flexShrink: 0 }}>{on ? "✅" : "⬜"}</span>
@@ -1155,7 +1186,7 @@ export default function TeamMemberPage() {
                     );
                   })}
                   <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.5 }}>
-                    * 탭 하면 수령/미제출 상태가 즉시 저장됩니다
+                    {isResigned ? "* 🔒 퇴직 처리된 팀원으로 서류 수령 상태 변경이 불가능합니다." : "* 탭 하면 수령/미제출 상태가 즉시 저장됩니다"}
                   </p>
                 </div>
               )}
@@ -1227,24 +1258,24 @@ export default function TeamMemberPage() {
                           style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
                           📄 보기
                         </button>
-                        {isLatest && !isSuperseded && (
+                        {isLatest && !isSuperseded && !isResigned && (
                           <button onClick={() => router.push(`/contract?memberId=${c.team_member_id}&mode=update`)}
                             style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
                             ✏️ 수정
                           </button>
                         )}
-                        {isSigned && !isSuperseded && (
+                        {isSigned && !isSuperseded && !isResigned && (
                           <>
                             <button onClick={() => setBatchContract({ id: c.id, startDate: c.start_date, endDate: c.end_date })}
                               style={{ flex: 1, background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, color: "var(--purple-text)", cursor: "pointer" }}>
-                              ⚡ 전체 소급
+                                ⚡ 전체 소급
                             </button>
                           </>
                         )}
                         {(!isLatest || isSuperseded) && (
                           <span style={{ flex: 1, textAlign: "center", fontSize: 11, color: "var(--text-muted)", padding: "8px", alignSelf: "center" }}>🔒 이력 보존</span>
                         )}
-                        {isPending && (
+                         {isPending && !isResigned && (
                           <div style={{ display: "flex", gap: 6, width: "100%", marginTop: 6 }}>
                             <button onClick={async () => {
                               const chatMsg = `⚠️ **근로계약서 서명 요청**\n아직 근로계약서에 서명하지 않으셨습니다. 아래 링크를 눌러 계약서를 확인하고 서명해 주세요!\n👉 [근로계약서 확인 및 서명하기](file:///contract/view?memberId=${c.team_member_id})`;
@@ -1275,23 +1306,27 @@ export default function TeamMemberPage() {
                   );
                 })
               )}
-              <button onClick={() => {
-                router.push(`/contract?memberId=${member.id}`);
-              }}
-                style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 13, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                + 새 계약서 작성
-              </button>
+              {!isResigned && (
+                <button onClick={() => {
+                  router.push(`/contract?memberId=${member.id}`);
+                }}
+                  style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 13, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  + 새 계약서 작성
+                </button>
+              )}
             </div>
           )}
         </div>
 
         {/* ── 퇴직 처리 ── */}
-        <div style={{ paddingTop: 20 }}>
-          <button onClick={() => setShowResignModal(true)}
-            style={{ width: "100%", background: "none", border: "1px solid #ef444430", borderRadius: 12, padding: "12px", color: "#ef4444", fontSize: 13, cursor: "pointer" }}>
-            🚪 퇴직 처리
-          </button>
-        </div>
+        {!isResigned && (
+          <div style={{ paddingTop: 20 }}>
+            <button onClick={() => setShowResignModal(true)}
+              style={{ width: "100%", background: "none", border: "1px solid #ef444430", borderRadius: 12, padding: "12px", color: "#ef4444", fontSize: 13, cursor: "pointer" }}>
+              🚪 퇴직 처리
+            </button>
+          </div>
+        )}
 
         {/* 📌 법정 보존 기간 안내 */}
         <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 12, padding: "12px 14px", marginTop: 24 }}>
@@ -1548,9 +1583,73 @@ export default function TeamMemberPage() {
                 취소
               </button>
               <button onClick={async () => {
-                await supabase.from("team_members").update({ status: "resigned" }).eq("id", member.id);
+                // 1. 퇴사일 기준 당월(KST) 급여 명세서 발행 여부 확인
+                const now = new Date();
+                const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+                const currentYear = kst.getUTCFullYear();
+                const currentMonth = kst.getUTCMonth() + 1;
+
+                const { data: slips, error: slipsErr } = await supabase
+                  .from("payslips")
+                  .select("id")
+                  .eq("team_member_id", member.id)
+                  .eq("year", currentYear)
+                  .eq("month", currentMonth)
+                  .limit(1);
+
+                if (slipsErr) {
+                  alert("급여 발행 내역 검증 중 오류가 발생했습니다: " + slipsErr.message);
+                  return;
+                }
+
+                if (!slips || slips.length === 0) {
+                  alert(`⚠️ 퇴직 처리 불가\n\n${workerName}님의 마지막 근무 달(${currentYear}년 ${currentMonth}월) 급여 명세서가 아직 발행되지 않았습니다. 퇴직 처리 전에 급여 명세서를 먼저 발행해 주세요.`);
+                  return;
+                }
+
+                // 2. 퇴직 처리 진행
+                const { error } = await supabase.from("team_members").update({ status: "left" }).eq("id", member.id);
+                if (error) {
+                  alert("퇴직 처리 중 오류가 발생했습니다: " + error.message);
+                  return;
+                }
+
                 setShowResignModal(false);
                 showToast("퇴직 처리됐어요", "success");
+
+                // 3. 상대방(알바생)에게 푸시 알림 전송
+                if (member.worker_id) {
+                  let bizName = "매장";
+                  if (member.employer_profile_id) {
+                    const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", member.employer_profile_id).maybeSingle();
+                    if (ep?.business_name) bizName = ep.business_name;
+                  }
+                  sendPushNotification({
+                    userId: member.worker_id,
+                    title: "🔴 퇴사 처리 완료",
+                    body: `${bizName}에서 퇴사 처리되었습니다.`,
+                    url: `/worker/mywork`,
+                    tag: "resignation"
+                  });
+                }
+
+                // 4. 1:1 대화방에 시스템 메시지 전송
+                if (member.match_id) {
+                  const { data: u } = await supabase.auth.getUser();
+                  const employerName = u?.user?.user_metadata?.nickname || "사장님";
+                  await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      matchId: member.match_id,
+                      senderId: u?.user?.id,
+                      receiverId: member.worker_id,
+                      message: `[시스템] ${employerName} 사장님이 ${workerName}님을 퇴사 처리하였습니다.\n이후 근무 기록 및 톡 공유가 종료됩니다.`,
+                      messageType: "system",
+                    }),
+                  });
+                }
+
                 setTimeout(() => router.back(), 1000);
               }}
                 style={{ flex: 1, background: "#ef4444", border: "none", borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 700, color: "#fff", cursor: "pointer" }}>

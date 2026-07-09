@@ -63,10 +63,13 @@ export default function MyWorkPage() {
 
     // 계약서 상태 조회 — match_id 또는 team_member_id 기반
     const activeMemberIds = (activeData || []).map((d: TmRow) => d.id).filter(Boolean);
-    const { data: contractsData } = activeMemberIds.length > 0
+    const historyMemberIds = (historyData || []).map((d: TmRow) => d.id).filter(Boolean);
+    const allMemberIds = [...activeMemberIds, ...historyMemberIds];
+
+    const { data: contractsData } = allMemberIds.length > 0
       ? await supabase.from("contracts")
           .select("id, match_id, team_member_id, worker_signed, employer_signed")
-          .in("team_member_id", activeMemberIds)
+          .in("team_member_id", allMemberIds)
           .neq("status", "superseded")
           .order("created_at", { ascending: false })
       : { data: [] };
@@ -83,11 +86,18 @@ export default function MyWorkPage() {
         contractId: contract?.id || null,
       };
     }));
-    setHistory((historyData || []).map((d: TmRow) => ({
-      ...d,
-      employer: (d as any).users,
-      profile: (histProfileData || []).find((p: any) => p.user_id === d.employer_id),
-    })));
+    setHistory((historyData || []).map((d: TmRow) => {
+      const contract = (contractsData || []).find((c: any) => c.team_member_id === d.id);
+      const contractStatus = !contract ? "none" : contract.worker_signed ? "done" : "pending";
+      return {
+        ...d,
+        employer: (d as any).users,
+        profile: (histProfileData || []).find((p: any) => p.user_id === d.employer_id),
+        contractStatus,
+        contractSigned: contract?.worker_signed || false,
+        contractId: contract?.id || null,
+      };
+    }));
     setLoading(false);
   }
 
@@ -282,20 +292,47 @@ export default function MyWorkPage() {
                     <span style={{ color:"var(--text-muted)", fontSize:13 }}>근무 이력이 없어요</span>
                   </div>
                 ) : history.map(m => (
-                  <div key={m.id} style={{ background:"var(--surface)", borderRadius:14, padding:"14px 16px", border:"1px solid var(--border)", display:"flex", gap:12, alignItems:"center" }}>
-                    <span style={{ fontSize:24, flexShrink:0 }}>{businessTypeEmoji[m.profile?.business_type] || "🏪"}</span>
-                    <div style={{ flex:1 }}>
-                      <p style={{ fontSize:14, fontWeight:600, color:"var(--text)", margin:"0 0 3px" }}>
-                        {m.profile?.business_name || m.employer?.nickname || "매장"}
-                      </p>
-                      <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 4px" }}>
-                        {m.profile?.business_type} · {m.hire_date} ~
-                      </p>
-                      <span style={{ fontSize:11, background:"var(--surface2)", borderRadius:6, padding:"2px 8px", color:"var(--text-muted)" }}>
-                        {m.status === "resigned" ? "퇴직" : "계약종료"}
-                      </span>
+                  <div key={m.id} style={{ background:"var(--surface)", borderRadius:16, border:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 16px", gap:12 }}>
+                    <div style={{ display:"flex", gap:12, alignItems:"center" }}>
+                      <span style={{ fontSize:24, flexShrink:0 }}>{businessTypeEmoji[m.profile?.business_type] || "🏪"}</span>
+                      <div style={{ flex:1 }}>
+                        <p style={{ fontSize:14, fontWeight:600, color:"var(--text)", margin:"0 0 3px" }}>
+                          {m.profile?.business_name || m.employer?.nickname || "매장"}
+                        </p>
+                        <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 4px" }}>
+                          {m.profile?.business_type} · {m.hire_date || "입사일 미정"} ~
+                        </p>
+                        <span style={{ fontSize:11, background:"var(--surface2)", borderRadius:6, padding:"2px 8px", color:"var(--text-muted)", fontWeight:600 }}>
+                          퇴직
+                        </span>
+                      </div>
+                      {m.wage && <span style={{ fontSize:13, fontWeight:700, color:"var(--text)", flexShrink:0 }}>{m.wage.toLocaleString()}원</span>}
                     </div>
-                    {m.wage && <span style={{ fontSize:12, color:"var(--text-muted)", flexShrink:0 }}>{m.wage.toLocaleString()}원</span>}
+
+                    <div style={{ display:"flex", gap:8, borderTop:"1px solid var(--border)", paddingTop:10 }}>
+                      <button onClick={() => {
+                        if (m.contractId) {
+                          router.push(`/contract/view?contractId=${m.contractId}`);
+                        } else if (m.match_id) {
+                          router.push(`/contract/view?matchId=${m.match_id}`);
+                        } else {
+                          router.push(`/contract/view?memberId=${m.id}`);
+                        }
+                      }}
+                        style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"6px", fontSize:11, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                        📄 근로계약서 조회
+                      </button>
+                      <button onClick={() => {
+                        if (m.contractStatus === "none") {
+                          alert("⚠️ 발행된 급여명세서 내역이 없습니다.");
+                          return;
+                        }
+                        router.push(`/payslip?id=${m.id}&tab=mywork`);
+                      }}
+                        style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"6px", fontSize:11, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                        📋 급여내역 조회
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

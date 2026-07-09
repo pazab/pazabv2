@@ -15,6 +15,7 @@ interface InviteBottomSheetProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  defaultStoreId?: string;
 }
 
 function generateCode() {
@@ -22,7 +23,7 @@ function generateCode() {
   return "PAZ-" + Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-export default function InviteBottomSheet({ isOpen, onClose, onSuccess }: InviteBottomSheetProps) {
+export default function InviteBottomSheet({ isOpen, onClose, onSuccess, defaultStoreId }: InviteBottomSheetProps) {
   const router = useRouter();
   const { showToast, ToastUI } = useToast();
 
@@ -70,10 +71,11 @@ export default function InviteBottomSheet({ isOpen, onClose, onSuccess }: Invite
 
       if (ps && ps.length > 0) {
         setProfiles(ps);
-        setSelProfile(ps[0]); // 기본 첫 번째 매장 자동 선택
+        const matched = defaultStoreId ? ps.find(p => p.id === defaultStoreId) : null;
+        setSelProfile(matched || ps[0]); // 매칭되는게 있으면 그것으로, 없으면 첫번째 매장
       }
     });
-  }, [isOpen]);
+  }, [isOpen, defaultStoreId]);
 
   // 직원 실시간 검색 핸들러
   const onQueryChange = (v: string) => {

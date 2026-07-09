@@ -177,6 +177,13 @@ export default function InviteAcceptPage() {
         await supabase.from('users').update({ user_type: newType }).eq('id', user.id)
       }
 
+      // 초대로 가입/소속 되었으므로 구직 탐색에서 즉시 제외 및 상태를 hired로 처리
+      await supabase.from('worker_profiles').update({
+        is_active: false,
+        is_public: false,
+        job_status: 'hired'
+      }).eq('user_id', user.id)
+
       // 4. Tier1 검증 승격 (team_history)
       await markVerified(supabase, user.id, 'team_history')
 
