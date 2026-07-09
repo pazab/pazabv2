@@ -611,24 +611,27 @@ export default function ChatRoomPage() {
   );
 
   return (
-    <main style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto", position: "relative" }}>
+    <main style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", display: "flex", flexDirection: "column", position: "relative" }}>
       {/* 헤더 */}
-      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)", padding: "12px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(var(--bg-rgb, 24,24,27),0.92)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)", padding: "10px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, maxWidth: 480, margin: "0 auto" }}>
           <button onClick={() => router.push("/chat")}
-            style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, padding: 4 }}>
-            <i className="ti ti-arrow-left" style={{ fontSize: 20, display: "block" }} aria-hidden="true" />
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, padding: 0, width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <i className="ti ti-arrow-left" style={{ fontSize: 18, display: "block" }} aria-hidden="true" />
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
             {/* 아바타 영역: 퀵 프로필 팝업 */}
             <div onClick={() => {
               if (counterpart?.id) setActiveQuickProfile(counterpart.id);
-            }} style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", fontSize: 18, cursor: "pointer" }}>
-              {counterpartAvatar ? (
-                <img src={counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
-              )}
+            }} style={{ position: "relative", flexShrink: 0, cursor: "pointer" }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 18, boxShadow: "0 0 0 2px var(--border)" }}>
+                {counterpartAvatar ? (
+                  <img src={counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
+                )}
+              </div>
+              <div style={{ position: "absolute", bottom: 0, right: 0, width: 11, height: 11, borderRadius: "50%", background: "#22c55e", border: "2px solid var(--bg)" }} />
             </div>
             {/* 이름 텍스트 영역: 상세 프로필 이동 */}
             <div onClick={() => {
@@ -639,7 +642,7 @@ export default function ChatRoomPage() {
             }} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <p style={{ fontSize: 15, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{counterpartName}</p>
-                <span style={{ fontSize: 10, fontWeight: 700, color: badge.color, background: `${badge.color}20`, padding: "2px 7px", borderRadius: 20, flexShrink: 0 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: badge.color, background: `${badge.color}18`, padding: "2px 8px", borderRadius: 20, border: `1px solid ${badge.color}30`, flexShrink: 0 }}>
                   {badge.label}
                 </span>
                 {counterpart?.trust_score != null && (() => {
@@ -650,71 +653,74 @@ export default function ChatRoomPage() {
               <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>궁합 {match?.match_score}점 · 탭하면 프로필 보기</p>
             </div>
           </div>
-          {/* AI 사전미팅 버튼 */}
-          <button onClick={() => router.push(`/pre-meet/${params.id}`)}
-            style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 20, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
-            🤖 사전미팅
-          </button>
-          {/* ··· 메뉴 */}
-          <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-          {/* 계약서 버튼 (hired 상태) */}
+          {/* 계약서 아이콘 버튼 (hired 상태) */}
           {progressStatus === "hired" && (
             <button onClick={loadContract}
               style={{
-                background: contractStatus === "done" ? "rgba(16,185,129,0.15)" : contractStatus === "pending" ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.15)",
+                width: 34, height: 34, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: contractStatus === "done" ? "rgba(16,185,129,0.15)" : contractStatus === "pending" ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.12)",
                 border: `1px solid ${contractStatus === "done" ? "rgba(16,185,129,0.4)" : contractStatus === "pending" ? "rgba(245,158,11,0.4)" : "rgba(239,68,68,0.4)"}`,
                 color: contractStatus === "done" ? "#10b981" : contractStatus === "pending" ? "#f59e0b" : "#ef4444",
-                fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 20, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" as const,
-              }}>
-              {contractStatus === "done" ? "📄 계약완료" : contractStatus === "pending" ? "⏳ 서명대기" : "⚠️ 계약서미작성"}
+                fontSize: 16,
+              }}
+              title={contractStatus === "done" ? "계약완료" : contractStatus === "pending" ? "서명대기" : "계약서 미작성"}>
+              {contractStatus === "done" ? "📄" : contractStatus === "pending" ? "⏳" : "⚠️"}
             </button>
           )}
+          {/* ··· 메뉴 */}
+          <div style={{ position: "relative" }}>
             <button onClick={() => setShowMenu(!showMenu)}
-              style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px 8px" }}>
-              <i className="ti ti-dots" style={{ fontSize: 20, display: "block" }} aria-hidden="true" />
+              style={{ width: 34, height: 34, borderRadius: "50%", background: showMenu ? "var(--surface)" : "none", border: showMenu ? "1px solid var(--border)" : "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <i className="ti ti-dots-vertical" style={{ fontSize: 20 }} aria-hidden="true" />
             </button>
             {showMenu && (
-              <div style={{ position: "absolute", top: "100%", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", width: 180, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 50 }}>
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", width: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 50 }}>
+                {/* AI 사전미팅 */}
+                <button onClick={() => { setShowMenu(false); router.push(`/pre-meet/${params.id}`); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#c4b5fd", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>🤖</span> AI 사전미팅
+                </button>
                 {/* 알림 끄기 */}
                 <button onClick={() => { setMuteNotif(!muteNotif); setShowMenu(false); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>
-                  {muteNotif ? "🔔 알림 켜기" : "🔕 알림 끄기"}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>{muteNotif ? "🔔" : "🔕"}</span> {muteNotif ? "알림 켜기" : "알림 끄기"}
                 </button>
                 {/* 면접 예약/수정 (사장님 + accepted 상태만) */}
                 {isEmployer && progressStatus === "accepted" && (
                   <button onClick={() => { setShowMenu(false); setShowInterviewModal(true); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)" }}>
-                    {hasInterview ? "📅 면접 일정 수정" : "📅 면접 예약하기"}
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 15 }}>📅</span> {hasInterview ? "면접 일정 수정" : "면접 예약하기"}
                   </button>
                 )}
                 {/* 면접 결과 처리 (interviewing 상태) */}
                 {progressStatus === "interviewing" && (<>
                   {isEmployer && (
                     <button onClick={() => { setShowMenu(false); handleInterviewResult("complete"); }}
-                      style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#86efac", borderBottom: "1px solid var(--border)" }}>
-                      ✅ 면접 완료
+                      style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#86efac", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 15 }}>✅</span> 면접 완료
                     </button>
                   )}
                   <button onClick={() => { setShowMenu(false); handleInterviewResult("cancel"); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)" }}>
-                    ❌ 면접 취소 (합의)
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 15 }}>❌</span> 면접 취소 (합의)
                   </button>
                   <button onClick={() => { setShowMenu(false); handleInterviewResult("noshow"); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171", borderBottom: "1px solid var(--border)" }}>
-                    🚫 노쇼 신고
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 15 }}>🚫</span> 노쇼 신고
                   </button>
                 </>)}
                 {/* 채용 확정 (사장님 + accepted or interviewing만) */}
                 {isEmployer && ["accepted", "interviewing"].includes(progressStatus) && (
                   <button onClick={() => { setShowMenu(false); handleProgress("hire"); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#86efac", borderBottom: "1px solid var(--border)" }}>
-                    ✅ 채용 제안 보내기
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#86efac", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 15 }}>✅</span> 채용 제안 보내기
                   </button>
                 )}
-                {/* 채팅방 나가기 - 항상 표시 */}
+                {/* 채팅방 나가기 */}
                 <button onClick={() => { setShowMenu(false); setShowLeaveModal(true); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171" }}>
-                  🚪 채팅방 나가기
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>🚪</span> 채팅방 나가기
                 </button>
               </div>
             )}
@@ -723,11 +729,13 @@ export default function ChatRoomPage() {
       </div>
 
       {/* 메시지 목록 */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px" }} onClick={() => setShowMenu(false)}>
+      <div style={{ flex: 1, overflowY: "auto" }} onClick={() => setShowMenu(false)}>
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "12px 14px" }}>
         {messages.length === 0 && (
-          <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 4 }}>매칭이 성사됐어요! 🎉</p>
-            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>먼저 인사를 건네보세요 👋</p>
+          <div style={{ textAlign: "center", padding: "48px 0" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>👋</div>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>매칭이 성사됐어요! 🎉</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>먼저 인사를 건네보세요</p>
           </div>
         )}
         {messages.map((msg) => {
@@ -738,19 +746,21 @@ export default function ChatRoomPage() {
           return (
             <div key={msg.id}>
               {showDate && (
-                <div style={{ textAlign: "center", margin: "12px 0" }}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--surface2)", padding: "4px 12px", borderRadius: 20 }}>{dateLabel}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 12px" }}>
+                  <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, whiteSpace: "nowrap", background: "var(--bg)", padding: "0 4px" }}>{dateLabel}</span>
+                  <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
                 </div>
               )}
               {msg.message_type === "system" ? (
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-                  <div style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(236,72,153,0.08))", border: "1px solid var(--primary-border)", borderRadius: 16, padding: "10px 16px", fontSize: 13, color: "#c4b5fd", textAlign: "center", maxWidth: "85%", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+                  <div style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.1), rgba(236,72,153,0.07))", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 18, padding: "10px 18px", fontSize: 13, color: "#c4b5fd", textAlign: "center", maxWidth: "88%", lineHeight: 1.7, whiteSpace: "pre-line", boxShadow: "0 2px 8px rgba(139,92,246,0.08)" }}>
                     {msg.message}
                     {/* 채용 확정 → 사장님: 계약서 작성 버튼 */}
                     {msg.message?.includes("채용이 확정됐어요") && msg.message?.includes("계약서를 작성") && isEmployer && (
                       <div style={{ marginTop: 10 }}>
                         <button onClick={() => router.push(`/contract?matchId=${matchId}&mode=update&from=chat`)}
-                          style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 10, padding: "8px 16px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: "8px 18px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(124,58,237,0.35)" }}>
                           ✏️ 계약서 작성하기
                         </button>
                       </div>
@@ -759,12 +769,12 @@ export default function ChatRoomPage() {
                     {(msg.message?.includes("근로계약서가 발행") || msg.message?.includes("근로계약서가 수정")) && (
                       <div style={{ marginTop: 10, display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" as const }}>
                         <button onClick={loadContract}
-                          style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 10, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           📄 계약서 확인하기
                         </button>
                         {isEmployer && (
                           <button onClick={goToUpdateContract}
-                            style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
+                            style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
                             ✏️ 수정하기
                           </button>
                         )}
@@ -774,7 +784,7 @@ export default function ChatRoomPage() {
                     {msg.message?.includes("수정 요청") && isEmployer && (
                       <div style={{ marginTop: 10 }}>
                         <button onClick={goToUpdateContract}
-                          style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 10, padding: "8px 16px", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 12, padding: "8px 16px", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           ✏️ 계약서 수정하기
                         </button>
                       </div>
@@ -783,12 +793,12 @@ export default function ChatRoomPage() {
                     {msg.message?.includes("동의가 완료") && (
                       <div style={{ marginTop: 10, display:"flex", gap:6, justifyContent:"center", flexWrap:"wrap" as const }}>
                         <button onClick={loadContract}
-                          style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 10, padding: "8px 14px", color: "#10b981", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 12, padding: "8px 14px", color: "#10b981", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           📄 계약서 보기
                         </button>
                         {isEmployer && (
                           <button onClick={goToUpdateContract}
-                            style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
+                            style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
                             📝 재계약하기
                           </button>
                         )}
@@ -798,45 +808,45 @@ export default function ChatRoomPage() {
                 </div>
               ) : isMine ? (
                 /* 내 메시지 - 오른쪽 */
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-                  <div style={{ maxWidth: "82%" }}>
-                    <div style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", borderRadius: "18px 18px 4px 18px", padding: "10px 14px", fontSize: 14, color: "#fff", lineHeight: 1.5, wordBreak: "break-word" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 3, alignItems: "flex-end", gap: 6 }}>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+                    {!msg.is_read && <span style={{ color: "#c4b5fd", fontSize: 9, fontWeight: 800, lineHeight: 1 }}>1</span>}
+                    <span>{formatTime(msg.created_at)}</span>
+                  </div>
+                  <div style={{ maxWidth: "78%" }}>
+                    <div style={{ background: "linear-gradient(135deg, #8b5cf6, #6d28d9)", borderRadius: "20px 20px 4px 20px", padding: "10px 15px", fontSize: 14, color: "#fff", lineHeight: 1.55, wordBreak: "break-word", boxShadow: "0 2px 10px rgba(109,40,217,0.35)" }}>
                       {msg.message}
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, textAlign: "right", display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-                      {!msg.is_read && <span style={{ color: "#c4b5fd", fontSize: 9, fontWeight: 700 }}>1</span>}
-                      {formatTime(msg.created_at)}
                     </div>
                   </div>
                 </div>
               ) : (
                 /* 상대방 메시지 - 왼쪽 + 아바타 + 닉네임 */
-                <div style={{ display: "flex", gap: 8, marginBottom: 4, alignItems: "flex-start" }}>
+                <div style={{ display: "flex", gap: 9, marginBottom: 3, alignItems: "flex-end" }}>
                   {/* 아바타 */}
                   <button onClick={() => {
                     if (counterpart?.id) setActiveQuickProfile(counterpart.id);
                   }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
                     {counterpartAvatar ? (
-                       <img src={counterpartAvatar} alt="avatar"
-                         style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
+                      <img src={counterpartAvatar} alt="avatar"
+                        style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1.5px solid var(--border)" }} />
                     ) : (
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, border: "1.5px solid var(--border)" }}>
                         <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
                       </div>
                     )}
                   </button>
-                  <div style={{ maxWidth: "82%" }}>
+                  <div style={{ maxWidth: "78%" }}>
                     {/* 닉네임 */}
                     <button onClick={() => router.push(`/profile/${counterpart?.id}`)}
-                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", marginBottom: 5 }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>
                         {counterpartName}
                       </span>
                     </button>
-                    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "4px 18px 18px 18px", padding: "10px 14px", fontSize: 14, color: "var(--text)", lineHeight: 1.5, wordBreak: "break-word" }}>
+                    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "4px 20px 20px 20px", padding: "10px 15px", fontSize: 14, color: "var(--text)", lineHeight: 1.55, wordBreak: "break-word", boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
                       {msg.message}
                     </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, paddingLeft: 2 }}>
                       {formatTime(msg.created_at)}
                     </div>
                   </div>
@@ -847,41 +857,48 @@ export default function ChatRoomPage() {
         })}
         <div ref={bottomRef} />
       </div>
+      </div>
 
       {/* 입력창 */}
-      <div style={{ borderTop: "1px solid var(--border)", padding: "10px 16px", background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", paddingBottom: "calc(10px + env(safe-area-inset-bottom))" }}>
+      <div style={{ borderTop: "1px solid var(--border)", background: "rgba(var(--bg-rgb, 24,24,27),0.95)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "10px 14px", paddingBottom: "calc(10px + env(safe-area-inset-bottom))" }}>
         {/* 상대방 나간 상태 */}
         {(() => {
           const isEmp = match?.employer_id === userId;
           const counterpartLeft = isEmp ? match?.worker_left : match?.employer_left;
           if (counterpartLeft) return (
-            <div style={{ textAlign: "center", padding: "8px 0", marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--surface2)", padding: "6px 14px", borderRadius: 20 }}>
+            <div style={{ textAlign: "center", padding: "6px 0", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--surface2)", padding: "5px 14px", borderRadius: 20, border: "1px solid var(--border)" }}>
                 상대방이 채팅방을 나갔어요
               </span>
             </div>
           );
           return null;
         })()}
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          {/* 음성 입력 버튼 - 토글 */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* 음성 입력 버튼 */}
           <button
             onClick={recording ? stopRecording : startRecording}
             disabled={sending || !!(match?.employer_id === userId ? match?.worker_left : match?.employer_left)}
-            style={{ width: 42, height: 42, borderRadius: "50%", flexShrink: 0, background: recording ? "linear-gradient(135deg, #ef4444, #dc2626)" : "var(--surface2)", border: `1px solid ${recording ? "#ef4444" : "var(--border)"}`, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: recording ? "0 0 0 4px rgba(239,68,68,0.25)" : "none", transition: "all 0.15s" }}>
-            <i className={`ti ${recording ? "ti-player-stop" : "ti-microphone"}`} style={{ fontSize: 18 }} aria-hidden="true" />
+            style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0, background: recording ? "linear-gradient(135deg, #ef4444, #dc2626)" : "var(--surface)", border: `1px solid ${recording ? "rgba(239,68,68,0.6)" : "var(--border)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: recording ? "0 0 0 4px rgba(239,68,68,0.2), 0 2px 8px rgba(239,68,68,0.3)" : "0 1px 4px rgba(0,0,0,0.1)", transition: "all 0.18s", color: recording ? "#fff" : "var(--text-muted)" }}>
+            <i className={`ti ${recording ? "ti-player-stop" : "ti-microphone"}`} style={{ fontSize: 17 }} aria-hidden="true" />
           </button>
-          <input ref={inputRef} type="text" value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            placeholder={recording ? "말씀하세요... 🎤" : "메시지를 입력하세요..."}
-            disabled={!!(match?.employer_id === userId ? match?.worker_left : match?.employer_left)}
-            style={{ flex: 1, background: "var(--surface)", border: `1px solid ${recording ? "#8b5cf6" : "var(--border)"}`, borderRadius: 20, padding: "10px 16px", color: "var(--text)", fontSize: 14, outline: "none", transition: "border 0.15s", opacity: (match?.employer_id === userId ? match?.worker_left : match?.employer_left) ? 0.5 : 1 }} />
+          {/* 텍스트 입력 */}
+          <div style={{ flex: 1, position: "relative" }}>
+            <input ref={inputRef} type="text" value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder={recording ? "말씀하세요... 🎤" : "메시지를 입력하세요..."}
+              disabled={!!(match?.employer_id === userId ? match?.worker_left : match?.employer_left)}
+              style={{ width: "100%", background: "var(--surface)", border: `1.5px solid ${recording ? "rgba(139,92,246,0.5)" : input ? "rgba(139,92,246,0.3)" : "var(--border)"}`, borderRadius: 24, padding: "10px 18px", color: "var(--text)", fontSize: 14, outline: "none", transition: "border 0.18s, box-shadow 0.18s", opacity: (match?.employer_id === userId ? match?.worker_left : match?.employer_left) ? 0.5 : 1, boxSizing: "border-box", boxShadow: input ? "0 0 0 3px rgba(139,92,246,0.08)" : "none" }} />
+          </div>
+          {/* 전송 버튼 */}
           <button onClick={() => sendMessage()} disabled={!input.trim() || sending || !!(match?.employer_id === userId ? match?.worker_left : match?.employer_left)}
-            style={{ width: 42, height: 42, borderRadius: "50%", background: input.trim() ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)", border: "none", color: "#fff", cursor: input.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.2s" }}>
-            <i className="ti ti-send" style={{ fontSize: 18 }} aria-hidden="true" />
+            style={{ width: 40, height: 40, borderRadius: "50%", background: input.trim() ? "linear-gradient(135deg, #8b5cf6, #6d28d9)" : "var(--surface)", border: input.trim() ? "none" : "1px solid var(--border)", color: input.trim() ? "#fff" : "var(--text-muted)", cursor: input.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", boxShadow: input.trim() ? "0 2px 10px rgba(109,40,217,0.4)" : "none", transform: input.trim() ? "scale(1)" : "scale(0.92)" }}>
+            <i className="ti ti-send" style={{ fontSize: 17 }} aria-hidden="true" />
           </button>
         </div>
+      </div>
       </div>
 
       {/* 면접 예약 모달 */}

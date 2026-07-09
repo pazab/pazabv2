@@ -31,6 +31,14 @@
 - TimeWheelPicker/DateWheelPicker 신규(네이티브 input 대체)
 - 알림시스템(lib/notify.ts, NotificationBell, /notifications)
 
+**UI 디자인 전면 개선 (2026-07-09)**
+- 채팅 목록(`/chat`): 구분선 방식 → 카드 방식(border-radius 18), 읽지 않은 방 강조(보라 링+굵은 텍스트), 아바타 온라인 도트, 카드 hover lift 효과
+- 채팅방(`/chat/[id]`): 메시지 버블 shadow 추가, 날짜 구분선 `—— 날짜 ——` 방식, 입력창 포커스 glow, 전송 버튼 그라디언트/shadow, 헤더 full-width 구조 개선
+- 채팅방 헤더: ⋮ 메뉴에 사전미팅 이동, 계약서 버튼 아이콘 전용 원형 버튼, 뒤로가기 원형 버튼, 아바타 온라인 도트
+- AppHeader: 대타SVG·스도쿠SVG 인라인 제거 → ⋮ 드롭다운(대타SOS/스도쿠/설정)으로 이동, 뒤로가기 `ti-chevron-left` 원형 버튼 통일, 헤더 아바타 제거(네비 MY탭으로 충분), blur 강화
+- BottomNav: 액티브 pill 배경 제거 → 상단 그라디언트 바 인디케이터, 중앙 근태 버튼 액티브 ring glow, 뱃지 그라디언트, safe-area-inset-bottom 적용
+- 설정 페이지: "내 정보" 섹션(이름/전화/생년월일/지역) 제거 — 실명·연락처·생년월일은 계약서 작성 시점에만 수집, settings는 계정·알림·정보·위험구역만 유지
+
 **UI/색상 시인성 전면 개선 (2026-07-02 3차)**
 - globals.css에 라이트/다크 통합 CSS 변수 추가: `--success-text`, `--purple-text`, `--pink-text`, `--card-inner`, `--card-inner-border`, `--progress-track`, `--chip-*-bg/border` 등 (라이트=진한색, 다크=파스텔 유지)
 - mypage 전체: `#86efac`(연초록)·`#c4b5fd`(연보라)·`#f9a8d4`(연핑크) → var() 교체로 흰배경 시인성 확보

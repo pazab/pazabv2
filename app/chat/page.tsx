@@ -123,7 +123,7 @@ export default function ChatListPage() {
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 100 }}>
       <AppHeader title="채팅" />
 
-      <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 16px" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "8px 12px" }}>
         {loading ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200 }}>
             <p style={{ color: "var(--text-muted)" }}>불러오는 중...</p>
@@ -141,7 +141,7 @@ export default function ChatListPage() {
             </button>
           </div>
         ) : (
-          <div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {chatrooms.map(room => {
               if (room.isPaz) {
                 const pazAvatar = room.counterpartAvatar;
@@ -149,63 +149,63 @@ export default function ChatListPage() {
                   <button key={room.id} onClick={() => router.push("/paz")}
                     style={{
                       width: "100%",
-                      background: "rgba(236, 72, 153, 0.06)",
-                      border: "none",
-                      borderBottom: "1px solid rgba(236, 72, 153, 0.2)",
-                      padding: "16px 16px",
+                      background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(236,72,153,0.06))",
+                      border: "1px solid rgba(236,72,153,0.2)",
+                      borderRadius: 18,
+                      padding: "14px 16px",
                       cursor: "pointer",
                       textAlign: "left",
                       display: "flex",
                       alignItems: "center",
-                      gap: 12,
-                      transition: "all 0.15s"
+                      gap: 14,
+                      transition: "all 0.18s",
+                      boxShadow: "0 2px 12px rgba(236,72,153,0.08)",
                     }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "rgba(236, 72, 153, 0.12)")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "rgba(236, 72, 153, 0.06)")}>
-                    {/* 아바타 */}
-                    <div style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: "50%",
-                      background: "linear-gradient(135deg, #7c3aed, #ec4899)",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 1,
-                      flexShrink: 0,
-                      overflow: "hidden",
-                      boxShadow: "0 2px 8px rgba(236, 72, 153, 0.3)"
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = "linear-gradient(135deg, rgba(124,58,237,0.14), rgba(236,72,153,0.10))";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                      e.currentTarget.style.boxShadow = "0 4px 18px rgba(236,72,153,0.15)";
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(236,72,153,0.06))";
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "0 2px 12px rgba(236,72,153,0.08)";
                     }}>
-                      {pazAvatar ? (
-                        <img src={pazAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        <>
-                          <i className="ti ti-robot" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
-                          <span style={{ fontSize: 7, fontWeight: 900, color: "#fff", letterSpacing: 1 }}>PAZ</span>
-                        </>
-                      )}
+                    {/* 아바타 */}
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      <div style={{
+                        width: 50, height: 50, borderRadius: "50%",
+                        background: "linear-gradient(135deg, #7c3aed, #ec4899)",
+                        display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center", gap: 1,
+                        overflow: "hidden",
+                        boxShadow: "0 0 0 2px rgba(236,72,153,0.4), 0 3px 10px rgba(236,72,153,0.3)",
+                      }}>
+                        {pazAvatar ? (
+                          <img src={pazAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <>
+                            <i className="ti ti-robot" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
+                            <span style={{ fontSize: 7, fontWeight: 900, color: "#fff", letterSpacing: 1 }}>PAZ</span>
+                          </>
+                        )}
+                      </div>
+                      {/* 온라인 도트 */}
+                      <div style={{ position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: "50%", background: "#22c55e", border: "2px solid var(--bg)" }} />
                     </div>
                     {/* 내용 */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 14, fontWeight: 800, color: "#fbcfe8" }}>{room.counterpartName}</span>
-                          <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: "linear-gradient(135deg, #ec4899, #f43f5e)", padding: "1px 5px", borderRadius: 4 }}>AI</span>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: "#fbcfe8" }}>{room.counterpartName}</span>
+                          <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: "linear-gradient(135deg, #ec4899, #f43f5e)", padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 }}>AI</span>
                         </div>
-                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatTime(room.last_message_at)}</span>
+                        <span style={{ fontSize: 11, color: "rgba(236,72,153,0.6)", fontWeight: 500 }}>{formatTime(room.last_message_at)}</span>
                       </div>
-                      {/* 설명 & 상태 */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>언제나 대화 가능</span>
-                        <span style={{ fontSize: 10, color: "var(--border)" }}>·</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#fbcfe8", background: "rgba(236,72,153,0.15)", padding: "2px 7px", borderRadius: 10 }}>AI 비서</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, fontWeight: 500 }}>
-                          {room.last_message}
-                        </span>
-                      </div>
+                      <p style={{ fontSize: 13, color: "#fbcfe8", opacity: 0.7, margin: "0 0 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
+                        {room.last_message}
+                      </p>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#fbcfe8", background: "rgba(236,72,153,0.15)", padding: "2px 8px", borderRadius: 10, border: "1px solid rgba(236,72,153,0.2)" }}>AI 비서 · 언제나 대화 가능</span>
                     </div>
                   </button>
                 );
@@ -220,46 +220,71 @@ export default function ChatListPage() {
                 cancelled: { label: "취소", color: "#71717a" },
               };
               const statusInfo = statusConfig[status] || { label: "대기중", color: "#71717a" };
+              const hasUnread = room.unreadCount > 0;
 
               return (
                 <button key={room.id} onClick={() => router.push(`/chat/${room.id}`)}
-                  style={{ width: "100%", background: "none", border: "none", borderBottom: "1px solid var(--border)", padding: "14px 16px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12, transition: "background 0.15s" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(139,92,246,0.06)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                  style={{
+                    width: "100%",
+                    background: hasUnread ? "rgba(139,92,246,0.06)" : "var(--surface)",
+                    border: `1px solid ${hasUnread ? "rgba(139,92,246,0.25)" : "var(--border)"}`,
+                    borderRadius: 18,
+                    padding: "14px 16px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                    transition: "all 0.18s",
+                    boxShadow: hasUnread ? "0 2px 12px rgba(139,92,246,0.1)" : "0 1px 4px rgba(0,0,0,0.06)",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = "rgba(139,92,246,0.09)";
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow = "0 4px 16px rgba(139,92,246,0.12)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = hasUnread ? "rgba(139,92,246,0.06)" : "var(--surface)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = hasUnread ? "0 2px 12px rgba(139,92,246,0.1)" : "0 1px 4px rgba(0,0,0,0.06)";
+                  }}>
                   {/* 아바타 */}
-                  <div style={{ width: 48, height: 48, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, overflow: "hidden" }}>
-                    {room.counterpartAvatar ? (
-                       <img src={room.counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <span>{room.counterpartType === "employer" ? "🏪" : "👤"}</span>
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    <div style={{
+                      width: 50, height: 50, borderRadius: "50%",
+                      background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 22, overflow: "hidden",
+                      boxShadow: hasUnread ? "0 0 0 2px rgba(139,92,246,0.5)" : "0 0 0 1.5px var(--border)",
+                    }}>
+                      {room.counterpartAvatar ? (
+                        <img src={room.counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <span>{room.counterpartType === "employer" ? "🏪" : "👤"}</span>
+                      )}
+                    </div>
+                    {hasUnread && (
+                      <div style={{ position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: "50%", background: "#8b5cf6", border: "2px solid var(--bg)" }} />
                     )}
                   </div>
                   {/* 내용 */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{room.counterpartName}</span>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatTime(room.last_message_at)}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                      <span style={{ fontSize: 15, fontWeight: hasUnread ? 800 : 700, color: "var(--text)" }}>{room.counterpartName}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>{formatTime(room.last_message_at)}</span>
                     </div>
-                    {/* 날짜 + 공고명 + 상태 */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {new Date(room.created_at).toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
                       {room.businessName && (
-                        <>
-                          <span style={{ fontSize: 10, color: "var(--border)" }}>·</span>
-                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{room.businessName}</span>
-                        </>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{room.businessName}</span>
                       )}
-                      <span style={{ fontSize: 10, color: "var(--border)" }}>·</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: statusInfo.color, background: `${statusInfo.color}20`, padding: "2px 7px", borderRadius: 10 }}>{statusInfo.label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: statusInfo.color, background: `${statusInfo.color}18`, padding: "2px 8px", borderRadius: 10, border: `1px solid ${statusInfo.color}30`, flexShrink: 0 }}>{statusInfo.label}</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 13, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13, color: hasUnread ? "var(--text)" : "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, fontWeight: hasUnread ? 600 : 400 }}>
                         {room.last_message || "채팅을 시작해보세요 👋"}
                       </span>
-                      {room.unreadCount > 0 && (
-                        <span style={{ marginLeft: 8, background: "#8b5cf6", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, flexShrink: 0 }}>
+                      {hasUnread && (
+                        <span style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", color: "#fff", fontSize: 11, fontWeight: 700, minWidth: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 11, flexShrink: 0, padding: "0 6px" }}>
                           {room.unreadCount}
                         </span>
                       )}
@@ -271,7 +296,7 @@ export default function ChatListPage() {
 
             {/* 일반 채팅방이 없는 경우 안내 배너 */}
             {chatrooms.length <= 1 && (
-              <div style={{ textAlign: "center", padding: "48px 20px", marginTop: 20 }}>
+              <div style={{ textAlign: "center", padding: "48px 20px", marginTop: 12 }}>
                 <div style={{ fontSize: 36, marginBottom: 12 }}>💬</div>
                 <h4 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 6px", color: "var(--text)" }}>일반 채팅방이 아직 없어요</h4>
                 <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
@@ -287,7 +312,7 @@ export default function ChatListPage() {
         )}
       </div>
 
-      
+
     </main>
   );
 }

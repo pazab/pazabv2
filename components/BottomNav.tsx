@@ -267,43 +267,50 @@ export default function BottomNav() {
         transform: hidden ? "translateY(100%)" : "translateY(0)",
         transition: "transform 0.3s ease",
         display: "flex", justifyContent: "center",
-        background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)",
+        background: "rgba(24,24,27,0.96)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
         borderTop: "1px solid var(--border)",
       }}>
         <div style={{ width: "100%", maxWidth: 480 }}>
-        <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", padding: "10px 8px 14px", maxWidth: 480, margin: "0 auto" }}>
-          {tabs.map(tab => {
-            const isCenter = (tab as any).center;
-            return isCenter ? (
-              <button key={tab.label} onClick={() => handleTabClick(tab.path)}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", position: "relative", padding: "0 8px", marginTop: -18 }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: "50%",
-                  background: tab.active ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "linear-gradient(135deg,#6d28d9,#db2777)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 4px 16px rgba(139,92,246,0.5)",
-                  border: "3px solid rgba(24,24,27,0.97)",
-                }}>
-                  <i className={`ti ${tab.icon}`} style={{ fontSize: 24, color: "#fff", display: "block" }} aria-hidden="true" />
-                </div>
-                <span style={{ fontSize: 10, fontWeight: 700, color: tab.active ? "#a78bfa" : "#8b5cf6" }}>{tab.label}</span>
-              </button>
-            ) : (
-              <button key={tab.label} onClick={() => handleTabClick(tab.path)}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: tab.active ? "rgba(139,92,246,0.13)" : "none", border: "none", cursor: "pointer", borderRadius: 14, padding: "8px 16px", position: "relative", transition: "background 0.2s" }}>
-                <div style={{ position: "relative" }}>
-                  <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#8b5cf6" : "#52525b", display: "block" }} aria-hidden="true" />
-                  {(tab as any).badge > 0 && (
-                    <span style={{ position: "absolute", top: -4, right: -8, background: "#ec4899", color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 10, minWidth: 16, textAlign: "center" }}>
-                      {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
-                    </span>
-                  )}
-                </div>
-                <span style={{ fontSize: 10, fontWeight: tab.active ? 500 : 400, color: tab.active ? "#8b5cf6" : "#52525b" }}>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
+          <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", padding: "8px 4px calc(8px + env(safe-area-inset-bottom))" }}>
+            {tabs.map(tab => {
+              const isCenter = (tab as any).center;
+              return isCenter ? (
+                <button key={tab.label} onClick={() => handleTabClick(tab.path)}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", position: "relative", padding: "0 10px", marginBottom: 10, marginTop: -20, flexShrink: 0 }}>
+                  <div style={{
+                    width: 54, height: 54, borderRadius: "50%",
+                    background: "linear-gradient(135deg, #7c3aed, #ec4899)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: tab.active
+                      ? "0 0 0 3px rgba(139,92,246,0.35), 0 6px 20px rgba(139,92,246,0.5)"
+                      : "0 4px 16px rgba(139,92,246,0.4)",
+                    border: "3px solid rgba(24,24,27,0.96)",
+                    transition: "box-shadow 0.2s",
+                  }}>
+                    <i className={`ti ${tab.icon}`} style={{ fontSize: 24, color: "#fff" }} aria-hidden="true" />
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: tab.active ? "#c4b5fd" : "#8b5cf6" }}>{tab.label}</span>
+                </button>
+              ) : (
+                <button key={tab.label} onClick={() => handleTabClick(tab.path)}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "8px 14px 6px", position: "relative", flex: 1, transition: "opacity 0.15s" }}>
+                  {/* 상단 액티브 인디케이터 바 */}
+                  <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: tab.active ? 20 : 0, height: 2, borderRadius: 2, background: "linear-gradient(90deg, #8b5cf6, #ec4899)", transition: "width 0.25s ease" }} />
+                  <div style={{ position: "relative" }}>
+                    <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#a78bfa" : "#52525b", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
+                    {(tab as any).badge > 0 && (
+                      <span style={{ position: "absolute", top: -3, right: -8, background: "linear-gradient(135deg, #ec4899, #f43f5e)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 10, minWidth: 16, textAlign: "center", border: "1.5px solid rgba(24,24,27,0.96)" }}>
+                        {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: tab.active ? 700 : 500, color: tab.active ? "#a78bfa" : "#52525b", transition: "color 0.2s" }}>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </>

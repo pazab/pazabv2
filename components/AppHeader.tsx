@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 
 interface AppHeaderProps {
@@ -31,38 +30,40 @@ export default function AppHeader({
   noSticky = false,
 }: AppHeaderProps) {
   const router = useRouter();
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: u } = await supabase.from("users").select("avatar_url").eq("id", user.id).maybeSingle();
-        setAvatarUrl(u?.avatar_url || null);
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
       }
-    })();
-  }, []);
+    };
+    if (menuOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
 
   return (
     <div style={{
       ...(noSticky ? {} : { position: "sticky", top: 0, zIndex: 30 }),
-      background: "rgba(24,24,27,0.97)",
-      backdropFilter: "blur(12px)",
+      background: "rgba(24,24,27,0.95)",
+      backdropFilter: "blur(20px)",
+      WebkitBackdropFilter: "blur(20px)",
       borderBottom: "1px solid var(--border)",
     }}>
       {/* 상단 바 */}
       <div style={{
         maxWidth: 480, margin: "0 auto",
-        padding: "12px 16px",
-        display: "flex", alignItems: "center", gap: 10,
+        padding: "10px 14px",
+        display: "flex", alignItems: "center", gap: 8,
       }}>
         {/* 뒤로가기 */}
         {showBack && (
           <button onClick={() => onBack ? onBack() : router.back()}
-            style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>
-            <i className="ti ti-arrow-left" style={{ fontSize: 20, display: "block" }} aria-hidden="true" />
+            style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+            <i className="ti ti-chevron-left" style={{ fontSize: 20, display: "block" }} aria-hidden="true" />
           </button>
         )}
 
@@ -74,107 +75,61 @@ export default function AppHeader({
           </span>
         </button>
 
-        {/* 구분선 */}
+        {/* 구분선 + 페이지 타이틀 */}
         {title && (
           <>
             <div style={{ width: 1, height: 14, background: "var(--border)", flexShrink: 0 }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", flexShrink: 0 }}>{title}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-muted)", flexShrink: 0 }}>{title}</span>
           </>
         )}
 
-        {/* 중간 공백 */}
         <div style={{ flex: 1 }} />
 
-        {/* 오른쪽 액션 */}
+        {/* 오른쪽 커스텀 액션 */}
         {rightActions}
-
-        {/* 설정 버튼 (MY 페이지) */}
-        {showSettings && (
-          <button onClick={() => router.push("/settings")}
-            style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 18, cursor: "pointer", padding: "0 2px" }}
-            title="설정">
-            <i className="ti ti-settings" style={{ fontSize: 18, display: "block" }} aria-hidden="true" />
-          </button>
-        )}
-
-        {/* 대타 버튼 */}
-        {!showBack && (
-          <button onClick={() => router.push("/daeta")} title="대타"
-            style={{ background: "none", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 2 }}>
-            <svg width="54" height="27" viewBox="0 0 512 256" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="hFireFill" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#ffffff" />
-                  <stop offset="30%" stopColor="#ffe082" />
-                  <stop offset="60%" stopColor="#ff9800" />
-                  <stop offset="100%" stopColor="#ff3d00" />
-                </linearGradient>
-                <linearGradient id="hFireStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#ff6d00" />
-                  <stop offset="100%" stopColor="#d84315" />
-                </linearGradient>
-              </defs>
-              <text x="50%" y="55%" dominantBaseline="middle" textAnchor="middle"
-                fontFamily="Pretendard, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
-                fontSize="140" fontWeight="900"
-                fill="none" stroke="url(#hFireStroke)" strokeWidth="10" strokeLinejoin="round"
-                transform="skewX(-12)">대타</text>
-              <text x="50%" y="55%" dominantBaseline="middle" textAnchor="middle"
-                fontFamily="Pretendard, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
-                fontSize="140" fontWeight="900"
-                fill="url(#hFireFill)"
-                transform="skewX(-12)">대타</text>
-            </svg>
-          </button>
-        )}
-
-        {/* 스도쿠 버튼 */}
-        {!showBack && (
-          <button onClick={() => router.push("/sudoku")} title="스도쿠"
-            style={{ background: "none", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 6 }}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              {[0,1,2].map(br => [0,1,2].map(bc =>
-                [0,1,2].map(r => [0,1,2].map(c => {
-                  const x = (bc * 3 + c) * 2 + bc * 1
-                  const y = (br * 3 + r) * 2 + br * 1
-                  const isBox = (br + bc) % 2 === 0
-                  return (
-                    <rect key={`${br}${bc}${r}${c}`} x={x} y={y} width="2" height="2"
-                      rx="0.3"
-                      fill={isBox ? "rgba(139,92,246,0.75)" : "rgba(139,92,246,0.35)"}
-                    />
-                  )
-                }))
-              ))}
-            </svg>
-          </button>
-        )}
 
         {/* 알림 벨 */}
         {!showBack && <NotificationBell />}
 
-        {/* 프로필 아바타 (탐색 페이지) */}
-        {!showSettings && !showBack && (
-          <button onClick={() => router.push("/mypage")}
-            style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-            {avatarUrl
-              ? <img src={avatarUrl} alt="프로필" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              : <i className="ti ti-user-circle" style={{ fontSize: 16, color: "var(--text-muted)" }} aria-hidden="true" />}
-          </button>
+        {/* ⋮ 메뉴 */}
+        {!showBack && (
+          <div ref={menuRef} style={{ position: "relative" }}>
+            <button onClick={() => setMenuOpen(v => !v)}
+              style={{ width: 34, height: 34, borderRadius: "50%", background: menuOpen ? "var(--surface)" : "none", border: menuOpen ? "1px solid var(--border)" : "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+              <i className="ti ti-dots-vertical" style={{ fontSize: 20 }} aria-hidden="true" />
+            </button>
+            {menuOpen && (
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", width: 190, boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 50 }}>
+                <button onClick={() => { setMenuOpen(false); router.push("/daeta"); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fb923c", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>🔥</span> 대타 SOS
+                </button>
+                <button onClick={() => { setMenuOpen(false); router.push("/sudoku"); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#a78bfa", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>🔢</span> 스도쿠
+                </button>
+                <button onClick={() => { setMenuOpen(false); router.push("/settings"); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>⚙️</span> 설정
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
       {/* 검색바 (탐색 페이지만) */}
       {showSearch && (
-        <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 16px 8px" }}>
+        <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 14px 10px" }}>
           <div style={{
-            display: "flex", alignItems: "center", gap: 6,
-            background: "var(--surface2)",
-            border: `1px solid ${searchFocused ? "#8b5cf6" : "var(--border)"}`,
-            borderRadius: 18, padding: "4px 10px",
-            transition: "border 0.2s",
+            display: "flex", alignItems: "center", gap: 8,
+            background: "var(--surface)",
+            border: `1.5px solid ${searchFocused ? "rgba(139,92,246,0.5)" : "var(--border)"}`,
+            borderRadius: 22, padding: "7px 14px",
+            transition: "border 0.18s, box-shadow 0.18s",
+            boxShadow: searchFocused ? "0 0 0 3px rgba(139,92,246,0.08)" : "none",
           }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>🔍</span>
+            <i className="ti ti-search" style={{ fontSize: 15, color: "var(--text-muted)", flexShrink: 0 }} aria-hidden="true" />
             <input
               ref={inputRef}
               value={searchValue}
@@ -185,13 +140,13 @@ export default function AppHeader({
               placeholder="직종, 지역, 매장 이름으로 검색"
               style={{
                 flex: 1, background: "none", border: "none", outline: "none",
-                color: "var(--text)", fontSize: 13, height: 28,
+                color: "var(--text)", fontSize: 13, height: 26,
               }}
             />
             {searchValue && (
               <button onClick={() => { onSearchChange?.(""); inputRef.current?.focus(); }}
-                style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 12, cursor: "pointer", padding: 0, flexShrink: 0 }}>
-                ✕
+                style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 13, cursor: "pointer", padding: 0, flexShrink: 0, display: "flex", alignItems: "center" }}>
+                <i className="ti ti-x" style={{ fontSize: 14 }} aria-hidden="true" />
               </button>
             )}
           </div>
