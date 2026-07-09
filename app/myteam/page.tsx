@@ -1291,6 +1291,26 @@ function MyTeamPageContent() {
     if (storeList.length > 0) setTeamOpen(true);
   }
 
+  async function upgradeToBoth(targetType: "worker" | "employer") {
+    if (!user) return;
+    const { error } = await supabase
+      .from("users")
+      .update({ user_type: "both" })
+      .eq("id", user.id);
+    
+    if (error) {
+      showToast("역할 추가 오류: " + error.message, "error");
+      return;
+    }
+    
+    setUserType("both");
+    userTypeRef.current = "both";
+    showToast(targetType === "worker" ? "🙋‍♂️ 알바생 역할이 추가되었습니다!" : "💼 사장님 역할이 추가되었습니다!");
+    
+    await loadTeam(user.id);
+    await loadMyWork(user.id);
+  }
+
   async function loadMyWork(uid: string) {
     const { data: activeData } = await supabase.from("team_members")
       .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, role_desc, invite_status, created_at, contract_status,
@@ -1481,6 +1501,36 @@ function MyTeamPageContent() {
                   )
                 )}
               </section>
+            )}
+
+            {userType === "worker" && (
+              <div style={{
+                ...cardStyle,
+                padding: "16px",
+                background: "rgba(124, 58, 237, 0.04)",
+                border: "1px dashed rgba(124, 58, 237, 0.25)",
+                borderRadius: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                alignItems: "center",
+                textAlign: "center",
+                marginTop: -10,
+                marginBottom: 10
+              }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>💼 매장을 운영하고 계신가요?</p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>사장님 역할을 추가하면 매장을 등록하고 직원을 구인할 수 있습니다.</p>
+                </div>
+                <button onClick={() => upgradeToBoth("employer")}
+                  style={{
+                    background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                    border: "none", borderRadius: 20, padding: "6px 16px",
+                    color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer"
+                  }}>
+                  사장님 역할 추가하기 →
+                </button>
+              </div>
             )}
 
             {/* ── 내 팀 (employer / both) ── */}
@@ -1820,6 +1870,36 @@ function MyTeamPageContent() {
                 })()}
                 </>)}
               </section>
+            )}
+
+            {userType === "employer" && (
+              <div style={{
+                ...cardStyle,
+                padding: "16px",
+                background: "rgba(236,72,153,0.04)",
+                border: "1px dashed rgba(236,72,153,0.25)",
+                borderRadius: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                alignItems: "center",
+                textAlign: "center",
+                marginTop: 10,
+                marginBottom: 10
+              }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--pink-text)", margin: "0 0 2px" }}>🙋‍♂️ 알바도 구하고 싶으신가요?</p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>알바생 역할을 추가하면 구직 공고를 탐색하고 지원할 수 있습니다.</p>
+                </div>
+                <button onClick={() => upgradeToBoth("worker")}
+                  style={{
+                    background: "linear-gradient(135deg,#ec4899,#f43f5e)",
+                    border: "none", borderRadius: 20, padding: "6px 16px",
+                    color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer"
+                  }}>
+                  알바생 역할 추가하기 →
+                </button>
+              </div>
             )}
 
           </div>
