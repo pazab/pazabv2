@@ -1056,6 +1056,11 @@ function MyTeamPageContent() {
   const [current, setCurrent] = useState<any[]>([]);
   const [workOpen, setWorkOpen] = useState(false);
 
+  const hasStore = myStores.length > 0;
+  const hasEmployee = hasStore && (myStores.some(s => s.activeJob !== null) || Object.values(membersByStore).flat().length > 0);
+  const hasContract = hasStore && Object.values(membersByStore).flat().some(m => m.contractStatus === "done" || m.contractStatus === "pending");
+  const onboardingCompleted = hasStore && hasEmployee && hasContract;
+
   const userTypeRef = useRef<string>("");
 
   useEffect(() => {
@@ -1492,14 +1497,119 @@ function MyTeamPageContent() {
                 </button>
                 {teamOpen && (<>
 
-                {/* 매장 없는 사장님 — 등록 CTA */}
-                {myStores.length === 0 && (
-                  <div style={{ ...cardStyle, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-                    <span style={{ color:"var(--text-muted)", fontSize:13 }}>등록된 매장이 없어요</span>
-                    <button onClick={() => { setEditingStore(null); setStoreModalOpen(true); }}
-                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:20, padding:"5px 14px", color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
-                      매장 등록 →
-                    </button>
+                {/* 사장님 온보딩 가이드 (미완료 시 상단 노출) */}
+                {!onboardingCompleted && (
+                  <div style={{
+                    ...cardStyle,
+                    padding: "16px 18px",
+                    marginBottom: 14,
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 18,
+                    boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+                  }}>
+                    <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>🚀 사장님 3단계 시작 가이드</span>
+                      <span style={{ fontSize: 10, background: "rgba(124,58,237,0.12)", color: "var(--purple-text)", borderRadius: 10, padding: "2px 8px", fontWeight: 700 }}>
+                        {[hasStore, hasEmployee, hasContract].filter(Boolean).length} / 3 완료
+                      </span>
+                    </p>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {/* 1단계: 매장 등록 */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{
+                            width: 18, height: 18, borderRadius: "50%",
+                            background: hasStore ? "#10b981" : "var(--border)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 10, color: "#fff", fontWeight: 700
+                          }}>
+                            {hasStore ? "✓" : "1"}
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: hasStore ? "var(--text-muted)" : "var(--text)", textDecoration: hasStore ? "line-through" : "none" }}>
+                            매장 등록하기
+                          </span>
+                        </div>
+                        {!hasStore && (
+                          <button onClick={() => { setEditingStore(null); setStoreModalOpen(true); }}
+                            style={{
+                              background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                              border: "none", borderRadius: 20, padding: "4px 12px",
+                              color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer"
+                            }}>
+                            등록하기
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 2단계: 직원 초대 or 공고 */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{
+                            width: 18, height: 18, borderRadius: "50%",
+                            background: hasEmployee ? "#10b981" : "var(--border)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 10, color: "#fff", fontWeight: 700
+                          }}>
+                            {hasEmployee ? "✓" : "2"}
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: hasEmployee ? "var(--text-muted)" : (hasStore ? "var(--text)" : "var(--text-muted)"), textDecoration: hasEmployee ? "line-through" : "none" }}>
+                            직원 초대 or 공고 올리기
+                          </span>
+                        </div>
+                        {hasStore && !hasEmployee && (
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => router.push(`/employer/register?storeId=${activeStoreId || myStores[0]?.id}`)}
+                              style={{
+                                background: "var(--surface2)", border: "1px solid var(--border)",
+                                borderRadius: 20, padding: "4px 10px",
+                                color: "var(--text)", fontSize: 9, fontWeight: 700, cursor: "pointer"
+                              }}>
+                              공고 올리기
+                            </button>
+                            <button onClick={() => setInviteOpen(true)}
+                              style={{
+                                background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                                border: "none", borderRadius: 20, padding: "4px 10px",
+                                color: "#fff", fontSize: 9, fontWeight: 700, cursor: "pointer"
+                              }}>
+                              직원 초대
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3단계: 근로계약서 작성 */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{
+                            width: 18, height: 18, borderRadius: "50%",
+                            background: hasContract ? "#10b981" : "var(--border)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 10, color: "#fff", fontWeight: 700
+                          }}>
+                            {hasContract ? "✓" : "3"}
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: hasContract ? "var(--text-muted)" : (hasEmployee ? "var(--text)" : "var(--text-muted)"), textDecoration: hasContract ? "line-through" : "none" }}>
+                            근로계약서 작성 완료하기
+                          </span>
+                        </div>
+                        {hasEmployee && !hasContract && (() => {
+                          const firstMember = Object.values(membersByStore).flat()[0];
+                          return firstMember ? (
+                            <button onClick={() => router.push(`/contract?memberId=${firstMember.id}`)}
+                              style={{
+                                background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                                border: "none", borderRadius: 20, padding: "4px 12px",
+                                color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer"
+                              }}>
+                              계약서 작성
+                            </button>
+                          ) : null;
+                        })()}
+                      </div>
+                    </div>
                   </div>
                 )}
 

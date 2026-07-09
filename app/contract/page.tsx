@@ -119,6 +119,7 @@ function ContractContent() {
   const [selEp, setSelEp] = useState<any>(null);
   const [myUserId, setMyUserId] = useState<string>("");
   const [jobDuties, setJobDuties] = useState<{ name: string; parentName: string }[]>([]);
+  const [prevContractData, setPrevContractData] = useState<any>(null);
 
   // 스텝 위자드 상태 (0=사업체, 1=근로자, 2=근무, 3=임금, 4=보험/서명)
   const [wizardStep, setWizardStep] = useState(0);
@@ -360,10 +361,57 @@ function ContractContent() {
     }
   };
 
+  const fetchPrevContract = async (employerId: string) => {
+    if (!employerId) return;
+    const { data } = await supabase.from("contracts")
+      .select("contract_data")
+      .eq("employer_id", employerId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data?.contract_data) {
+      setPrevContractData(data.contract_data);
+    } else {
+      setPrevContractData(null);
+    }
+  };
+
+  const applyPrevContract = () => {
+    if (!prevContractData) return;
+    const keptFields = {
+      worker: f.worker,
+      workerBirth: f.workerBirth,
+      workerPhone: f.workerPhone,
+      workerAddr: f.workerAddr,
+      workerAddrDetail: f.workerAddrDetail,
+      startDate: f.startDate,
+      endDate: f.endDate,
+      contractDate: f.contractDate,
+      school: f.school,
+      grade: f.grade,
+      parentName: f.parentName,
+      parentRel: f.parentRel,
+      parentBirth: f.parentBirth,
+      parentAddr: f.parentAddr,
+      parentTel: f.parentTel,
+    };
+    setF(prev => ({
+      ...prev,
+      ...prevContractData,
+      ...keptFields
+    }));
+    if (prevContractData.contractType) {
+      setCt(prevContractData.contractType);
+    }
+    showToast("이전 계약서 설정을 불러왔습니다! 근로자 정보와 날짜는 그대로 유지됩니다.");
+  };
+
   const loadInit = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setMyUserId(user.id);
+      await fetchPrevContract(user.id);
       // 스키마 확정 컬럼만 선택 (없는 컬럼 선택 시 쿼리 전체 실패)
       const { data: eps } = await supabase
         .from("employer_profiles")
@@ -446,7 +494,10 @@ function ContractContent() {
     ]);
 
     const cur2 = enriched.find(m => m.id === matchId) || enriched[0];
-    if (cur2) initF(cur2, eu.data, wu.data);
+    if (cur2) {
+      initF(cur2, eu.data, wu.data);
+      await fetchPrevContract(cur.employer_id);
+    }
 
     if (mode === "update" && matchId) {
       const { data: existing } = await supabase.from("contracts")
@@ -542,6 +593,7 @@ function ContractContent() {
 
     setMatches([memberAsMatch]);
     initF(memberAsMatch, eu.data, wu.data);
+    await fetchPrevContract(tm.employer_id);
 
     if (mode === "update") {
       const { data: existing } = await supabase.from("contracts")
@@ -595,6 +647,7 @@ function ContractContent() {
     const updatedMatch = { ...m, ep: epData };
     setSelMatch(updatedMatch);
     initF(updatedMatch, euRes.data, wuRes.data);
+    await fetchPrevContract(m.employer_id);
 
     const { data: existing } = await supabase.from("contracts")
       .select("*").eq("match_id", m.id)
@@ -1614,6 +1667,39 @@ function ContractContent() {
                       </div>
                     </div>
                   )}
+
+                  {prevContractData && (
+                    <div style={{
+                      background: "rgba(124, 58, 237, 0.08)",
+                      border: "1px dashed rgba(124, 58, 237, 0.3)",
+                      borderRadius: 14,
+                      padding: "10px 12px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      margin: "4px 0 8px"
+                    }}>
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>📋 이전 계약서 템플릿 존재</p>
+                        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>직전에 작성한 계약조건을 그대로 가져옵니다.</p>
+                      </div>
+                      <button onClick={applyPrevContract}
+                        style={{
+                          background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                          border: "none",
+                          borderRadius: 20,
+                          padding: "6px 12px",
+                          color: "#fff",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap"
+                        }}>
+                        불러오기
+                      </button>
+                    </div>
+                  )}
+
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>회사명/상호</label>
                     <input style={errStyle(!f.biz.trim())} value={f.biz} onChange={e => updateField("biz", e.target.value)} placeholder="예) 파스쿠찌 신창점" />
