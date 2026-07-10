@@ -1,0 +1,27 @@
+==================================================
+           OCR API ACCURACY EVALUATION REPORT
+==================================================
+Total Evaluated Images : 100
+Total Execution Time   : 1251.89 seconds
+Average Time per Image : 12.519 seconds
+--------------------------------------------------
+  FIELD KEY       | MATCH / TOTAL | ACCURACY (%)
+--------------------------------------------------
+  biz             |  63 / 100   |  63.00%
+  bizRegNo        |  85 / 100   |  85.00%
+  ceo             |  64 / 100   |  64.00%
+  ceoPhone        |  99 / 100   |  99.00%
+  bizAddr         |  55 / 100   |  55.00%
+  worker          |   0 / 100   |   0.00%
+  workerBirth     |  88 / 100   |  88.00%
+  workerPhone     |  99 / 100   |  99.00%
+  workerAddr      |  96 / 100   |  96.00%
+  startDate       | 100 / 100   | 100.00%
+  workPlace       |  38 / 100   |  38.00%
+  jobDesc         |  93 / 100   |  93.00%
+  workStart       |  83 / 100   |  83.00%
+  workEnd         |  90 / 100   |  90.00%
+  workDaysText    |   5 / 100   |   5.00%
+  wage            |  93 / 100   |  93.00%
+  contractDate    | 100 / 100   | 100.00%
+==================================================

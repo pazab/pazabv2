@@ -42,3 +42,12 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Python virtual environment
+ocr-test/.venv
+.venv
+venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
