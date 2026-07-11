@@ -52,47 +52,13 @@ const DAYKEYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const RESPONSIVE_CSS = `
   .contract-layout {
     display: flex;
-    flex-direction: column-reverse;
-    gap: 20px;
+    flex-direction: column;
+    gap: 16px;
     padding: 16px 16px 100px;
     width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
     box-sizing: border-box;
-  }
-  .form-section {
-    width: 100%;
-  }
-  .preview-section {
-    width: 100%;
-  }
-  
-  @media (min-width: 900px) {
-    .contract-layout {
-      flex-direction: row;
-      align-items: flex-start;
-      max-width: 1200px;
-      margin: 0 auto;
-      gap: 28px;
-      padding: 24px 24px 100px;
-    }
-    .form-section {
-      flex: 1.1;
-      position: sticky;
-      top: 80px;
-      max-height: calc(100vh - 140px);
-      overflow-y: auto;
-      padding-right: 4px;
-    }
-    .form-section::-webkit-scrollbar {
-      width: 6px;
-    }
-    .form-section::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.1);
-      border-radius: 4px;
-    }
-    .preview-section {
-      flex: 1;
-      min-width: 450px;
-    }
   }
   @keyframes spin {
     to { transform: rotate(360deg); }
@@ -126,96 +92,9 @@ function ContractContent() {
   const [myUserId, setMyUserId] = useState<string>("");
   const [jobDuties, setJobDuties] = useState<{ name: string; parentName: string }[]>([]);
   const [prevContractData, setPrevContractData] = useState<any>(null);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrImage, setOcrImage] = useState<string | null>(null);
-  const [ocrBoxes, setOcrBoxes] = useState<Record<string, number[]>>({});
-  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
-  const [activeField, setActiveField] = useState<string | null>(null);
-  const [previewTab, setPreviewTab] = useState<"document" | "image">("document");
-  const [showZoomModal, setShowZoomModal] = useState(false);
   const [showDocZoomModal, setShowDocZoomModal] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(false);
 
-  const handleOcrUpload = async (file: File) => {
-    setOcrLoading(true);
-    const body = new FormData();
-    body.append("file", file);
-
-    try {
-      const res = await fetch("/api/contract/ocr", {
-        method: "POST",
-        body,
-      });
-      const result = await res.json();
-
-      if (result.success && result.data) {
-        const ocr = result.data;
-        const boxes = result.boxes || {};
-        const size = result.image_size || null;
-
-        const objectUrl = URL.createObjectURL(file);
-        setOcrImage(objectUrl);
-        setOcrBoxes(boxes);
-        setImageSize(size);
-        setPreviewTab("image");
-        
-        setF(prev => {
-          const updated = { ...prev };
-          if (ocr.biz) updated.biz = ocr.biz;
-          if (ocr.bizRegNo) updated.bizRegNo = ocr.bizRegNo;
-          if (ocr.ceo) updated.ceo = ocr.ceo;
-          if (ocr.ceoPhone) updated.ceoPhone = ocr.ceoPhone;
-          if (ocr.bizAddr) updated.bizAddr = ocr.bizAddr;
-          if (ocr.worker) updated.worker = ocr.worker;
-          if (ocr.workerBirth) updated.workerBirth = ocr.workerBirth;
-          if (ocr.workerPhone) updated.workerPhone = ocr.workerPhone;
-          if (ocr.workerAddr) updated.workerAddr = ocr.workerAddr;
-          
-          if (ocr.startDate) updated.startDate = ocr.startDate;
-          if (ocr.endDate) updated.endDate = ocr.endDate;
-          
-          if (ocr.workStart) updated.workStart = ocr.workStart;
-          if (ocr.workEnd) updated.workEnd = ocr.workEnd;
-          
-          if (ocr.wage) updated.wage = ocr.wage;
-          
-          if (ocr.workDaysText) {
-            const days = ocr.workDaysText;
-            updated.workDaysMon = days.includes("월");
-            updated.workDaysTue = days.includes("화");
-            updated.workDaysWed = days.includes("수");
-            updated.workDaysThu = days.includes("목");
-            updated.workDaysFri = days.includes("금");
-            updated.workDaysSat = days.includes("토");
-            updated.workDaysSun = days.includes("일");
-            updated.workDaysText = days;
-          }
-          
-          if (ocr.workPlace) updated.workPlace = ocr.workPlace;
-          if (ocr.jobDesc) updated.jobDesc = ocr.jobDesc;
-          
-          return updated;
-        });
-
-        if (ocr.wageType === "hour") {
-          setCt("parttime");
-        } else if (ocr.endDate) {
-          setCt("standard_fixed");
-        } else {
-          setCt("standard_unlimited");
-        }
-
-        showToast("📄 계약서 사진 분석 완료! 폼이 자동으로 채워졌습니다. 오인식된 부분을 검토하고 수정해 주세요.", "success");
-      } else {
-        showToast("계약서 인식에 실패했습니다. 직접 작성해 주세요.", "error");
-      }
-    } catch (err) {
-      console.error("OCR API Error:", err);
-      showToast("서버 연결에 실패했습니다. 직접 작성해 주세요.", "error");
-    } finally {
-      setOcrLoading(false);
-    }
-  };
 
   // 스텝 위자드 상태 (0=사업체, 1=근로자, 2=근무, 3=임금, 4=보험/서명)
   const [wizardStep, setWizardStep] = useState(0);
@@ -457,15 +336,18 @@ function ContractContent() {
     }
   };
 
-  const fetchPrevContract = async (employerId: string) => {
+  const fetchPrevContract = async (employerId: string, employerProfileId?: string) => {
     if (!employerId) return;
-    const { data } = await supabase.from("contracts")
+    let q = supabase.from("contracts")
       .select("contract_data")
       .eq("employer_id", employerId)
       .neq("status", "cancelled")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    if (employerProfileId) {
+      q = q.eq("employer_profile_id", employerProfileId);
+    }
+    const { data } = await q.maybeSingle();
     if (data?.contract_data) {
       setPrevContractData(data.contract_data);
     } else {
@@ -476,6 +358,7 @@ function ContractContent() {
   const applyPrevContract = () => {
     if (!prevContractData) return;
     const keptFields = {
+      // 근로자 정보 (현재 선택된 근로자 유지)
       worker: f.worker,
       workerBirth: f.workerBirth,
       workerPhone: f.workerPhone,
@@ -491,6 +374,16 @@ function ContractContent() {
       parentBirth: f.parentBirth,
       parentAddr: f.parentAddr,
       parentTel: f.parentTel,
+      // 사업체 정보 (initF에서 selEp 기준으로 이미 채워짐, 덮어쓰기 방지)
+      biz: f.biz,
+      bizRegNo: f.bizRegNo,
+      ceo: f.ceo,
+      ceoPhone: f.ceoPhone,
+      bizAddr: f.bizAddr,
+      bizAddrDetail: f.bizAddrDetail,
+      bizType: f.bizType,
+      samePlace: f.samePlace,
+      workPlace: f.workPlace,
     };
     setF(prev => ({
       ...prev,
@@ -592,7 +485,7 @@ function ContractContent() {
     const cur2 = enriched.find(m => m.id === matchId) || enriched[0];
     if (cur2) {
       initF(cur2, eu.data, wu.data);
-      await fetchPrevContract(cur.employer_id);
+      await fetchPrevContract(cur.employer_id, cur2.employer_profile_id);
     }
 
     if (mode === "update" && matchId) {
@@ -689,7 +582,7 @@ function ContractContent() {
 
     setMatches([memberAsMatch]);
     initF(memberAsMatch, eu.data, wu.data);
-    await fetchPrevContract(tm.employer_id);
+    await fetchPrevContract(tm.employer_id, tm.employer_profile_id);
 
     if (mode === "update") {
       const { data: existing } = await supabase.from("contracts")
@@ -743,7 +636,7 @@ function ContractContent() {
     const updatedMatch = { ...m, ep: epData };
     setSelMatch(updatedMatch);
     initF(updatedMatch, euRes.data, wuRes.data);
-    await fetchPrevContract(m.employer_id);
+    await fetchPrevContract(m.employer_id, m.employer_profile_id);
 
     const { data: existing } = await supabase.from("contracts")
       .select("*").eq("match_id", m.id)
@@ -1670,10 +1563,9 @@ function ContractContent() {
         </div>
       ) : (
         <div className="contract-layout">
-          
-          {/* 📋 모바일/데스크톱 입력 폼 */}
-          <div className="form-section">
-            <div style={cardStyle}>
+
+          {/* 📋 위자드 폼 */}
+          <div style={cardStyle}>
               {/* 스텝 위자드 헤더 */}
               {(() => {
                 const steps = [
@@ -1738,36 +1630,6 @@ function ContractContent() {
               {/* 스텝 0: 사업체 */}
               {wizardStep === 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  
-                  {/* OCR 종이계약서 사진 업로드 자동완성 카드 */}
-                  <div style={{
-                    background: "var(--surface2)",
-                    border: "1px dashed var(--border)",
-                    borderRadius: 14,
-                    padding: "16px",
-                    textAlign: "center",
-                    marginBottom: 10,
-                    cursor: "pointer",
-                    position: "relative"
-                  }}>
-                    {ocrLoading ? (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                        <div className="animate-spin" style={{ width: 24, height: 24, borderRadius: "50%", border: "3px solid #7c3aed", borderTopColor: "transparent" }} />
-                        <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", margin: 0 }}>계약서 사진 분석 중... (약 10초 소요)</p>
-                        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>상호, 이름, 시급, 시간 등을 추출하고 있어요.</p>
-                      </div>
-                    ) : (
-                      <label style={{ display: "block", cursor: "pointer", margin: 0 }}>
-                        <input type="file" accept="image/*" onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleOcrUpload(file);
-                        }} style={{ display: "none" }} />
-                        <span style={{ fontSize: 24, display: "block", marginBottom: 6 }}>📸</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", display: "block", marginBottom: 2 }}>종이 계약서 사진으로 자동 완성</span>
-                        <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block" }}>작성된 계약서가 있다면 사진을 찍어 폼을 채워보세요.</span>
-                      </label>
-                    )}
-                  </div>
 
                   {myEps.length > 0 && (
                     <div>
@@ -1829,24 +1691,24 @@ function ContractContent() {
 
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>회사명/상호</label>
-                    <input style={errStyle(!f.biz.trim())} value={f.biz} onChange={e => updateField("biz", e.target.value)} onFocus={() => setActiveField("biz")} onBlur={() => setActiveField(null)} placeholder="예) 파스쿠찌 신창점" />
+                    <input style={errStyle(!f.biz.trim())} value={f.biz} onChange={e => updateField("biz", e.target.value)} placeholder="예) 파스쿠찌 신창점" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>사업자등록번호</label>
-                    <input style={inputStyle} value={f.bizRegNo} onChange={e => updateField("bizRegNo", formatBizNo(e.target.value))} onFocus={() => setActiveField("bizRegNo")} onBlur={() => setActiveField(null)} placeholder="000-00-00000" />
+                    <input style={inputStyle} value={f.bizRegNo} onChange={e => updateField("bizRegNo", formatBizNo(e.target.value))} placeholder="000-00-00000" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>대표자 성명</label>
-                    <input style={errStyle(!f.ceo.trim())} value={f.ceo} onChange={e => updateField("ceo", e.target.value)} onFocus={() => setActiveField("ceo")} onBlur={() => setActiveField(null)} placeholder="성명 입력" />
+                    <input style={errStyle(!f.ceo.trim())} value={f.ceo} onChange={e => updateField("ceo", e.target.value)} placeholder="성명 입력" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>대표 연락처</label>
-                    <input style={inputStyle} value={f.ceoPhone} onChange={e => updateField("ceoPhone", formatPhone(e.target.value))} onFocus={() => setActiveField("ceoPhone")} onBlur={() => setActiveField(null)} placeholder="010-0000-0000" />
+                    <input style={inputStyle} value={f.ceoPhone} onChange={e => updateField("ceoPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)" }}>사업장 소재지 주소</label>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <input style={{ ...(triedNext && !f.bizAddr.trim() ? { ...inputStyle, border: "1.5px solid #ef4444" } : inputStyle), flex: 1 }} value={f.bizAddr} onChange={e => updateField("bizAddr", e.target.value)} onFocus={() => setActiveField("bizAddr")} onBlur={() => setActiveField(null)} placeholder="주소 입력" readOnly />
+                      <input style={{ ...(triedNext && !f.bizAddr.trim() ? { ...inputStyle, border: "1.5px solid #ef4444" } : inputStyle), flex: 1 }} value={f.bizAddr} onChange={e => updateField("bizAddr", e.target.value)} placeholder="주소 입력" readOnly />
                       <button onClick={() => openAddressSearch("bizAddr")} style={{ ...btnSecondary, width: "auto", fontSize: 11, padding: "10px 12px" }}>🔍 검색</button>
                     </div>
                     {f.bizAddr && (
@@ -1866,11 +1728,11 @@ function ContractContent() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>근로자 이름</label>
-                    <input style={errStyle(!f.worker.trim())} value={f.worker} onChange={e => updateField("worker", e.target.value)} onFocus={() => setActiveField("worker")} onBlur={() => setActiveField(null)} placeholder="근로자 이름" />
+                    <input style={errStyle(!f.worker.trim())} value={f.worker} onChange={e => updateField("worker", e.target.value)} placeholder="근로자 이름" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>생년월일</label>
-                    <input type="date" style={errStyle(!f.workerBirth.trim())} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} onFocus={() => setActiveField("workerBirth")} onBlur={() => setActiveField(null)} />
+                    <input type="date" style={errStyle(!f.workerBirth.trim())} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} />
                     {(() => {
                       const age = f.workerBirth ? calcAge(f.workerBirth) : null;
                       if (age === null) return null;
@@ -1895,12 +1757,11 @@ function ContractContent() {
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>연락처</label>
-                    <input type="tel" style={inputStyle} value={f.workerPhone} onChange={e => updateField("workerPhone", formatPhone(e.target.value))} onFocus={() => setActiveField("workerPhone")} onBlur={() => setActiveField(null)} placeholder="010-0000-0000" inputMode="tel" />
+                    <input type="tel" style={inputStyle} value={f.workerPhone} onChange={e => updateField("workerPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" inputMode="tel" />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>주소 (등본지 주소)</label>
                     <button onClick={() => openAddressSearch("workerAddr")}
-                      onMouseEnter={() => setActiveField("workerAddr")} onMouseLeave={() => setActiveField(null)}
                       style={{ width: "100%", background: "var(--surface2)", border: "1.5px solid var(--border)", borderRadius: 12, padding: "13px 16px", color: f.workerAddr ? "var(--text)" : "var(--text-muted)", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 16 }}>🔍</span>
                       <span>{f.workerAddr || "주소 검색 (도로명/지번)"}</span>
@@ -1923,7 +1784,7 @@ function ContractContent() {
                   {/* 계약 기간 */}
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계약 개시일</label>
-                    <input type="date" style={errStyle(!f.startDate.trim())} value={toDateInput(f.startDate)} onChange={e => updateField("startDate", fromDateInput(e.target.value))} onFocus={() => setActiveField("startDate")} onBlur={() => setActiveField(null)} />
+                    <input type="date" style={errStyle(!f.startDate.trim())} value={toDateInput(f.startDate)} onChange={e => updateField("startDate", fromDateInput(e.target.value))} />
                     <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "5px 0 0", lineHeight: 1.5 }}>
                       처음 입사일이 아닌 <strong>이 계약 조건이 적용되는 시작일</strong>을 입력하세요.<br />
                       재계약·임금 인상 시에는 갱신 날짜 기준으로 작성하세요.
@@ -1932,7 +1793,7 @@ function ContractContent() {
                   {ct !== "standard_unlimited" && (
                     <div>
                       <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계약 종료일</label>
-                      <input type="date" style={inputStyle} value={toDateInput(f.endDate)} onChange={e => updateField("endDate", fromDateInput(e.target.value))} onFocus={() => setActiveField("endDate")} onBlur={() => setActiveField(null)} />
+                      <input type="date" style={inputStyle} value={toDateInput(f.endDate)} onChange={e => updateField("endDate", fromDateInput(e.target.value))} />
                     </div>
                   )}
 
@@ -2026,7 +1887,7 @@ function ContractContent() {
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <div>
                               <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>출근 시각</label>
-                              <input type="time" style={inputStyle} value={f.workStart} onFocus={() => setActiveField("workStart")} onBlur={() => setActiveField(null)} onChange={e => {
+                              <input type="time" style={inputStyle} value={f.workStart} onChange={e => {
                                 const start = e.target.value; const end = f.workEnd;
                                 const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
                                 if (start && end) {
@@ -2045,7 +1906,7 @@ function ContractContent() {
                             </div>
                             <div>
                               <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>퇴근 시각</label>
-                              <input type="time" style={inputStyle} value={f.workEnd} onFocus={() => setActiveField("workEnd")} onBlur={() => setActiveField(null)} onChange={e => {
+                              <input type="time" style={inputStyle} value={f.workEnd} onChange={e => {
                                 const end = e.target.value; const start = f.workStart;
                                 const breakMin = f.noBreak ? 0 : parseInt(f.breakTime || "0");
                                 if (start && end) {
@@ -2161,11 +2022,11 @@ function ContractContent() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>기본 출근 시각</label>
-                          <input type="time" style={inputStyle} value={f.workStart} onFocus={() => setActiveField("workStart")} onBlur={() => setActiveField(null)} onChange={e => updateField("workStart", e.target.value)} />
+                          <input type="time" style={inputStyle} value={f.workStart} onChange={e => updateField("workStart", e.target.value)} />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>기본 퇴근 시각</label>
-                          <input type="time" style={inputStyle} value={f.workEnd} onFocus={() => setActiveField("workEnd")} onBlur={() => setActiveField(null)} onChange={e => updateField("workEnd", e.target.value)} />
+                          <input type="time" style={inputStyle} value={f.workEnd} onChange={e => updateField("workEnd", e.target.value)} />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>휴게시간</label>
@@ -2239,7 +2100,7 @@ function ContractContent() {
                         : "월급 (원/월)"}
                     </label>
                     <input type="tel" inputMode="numeric" style={errStyle(!f.wage.trim())} value={f.wage}
-                      onFocus={() => setActiveField("wage")} onBlur={() => setActiveField(null)}
+                     
                       onChange={e => {
                         const n = e.target.value.replace(/[^0-9]/g, "");
                         updateField("wage", n ? Number(n).toLocaleString() : "");
@@ -2516,164 +2377,37 @@ function ContractContent() {
               </div>
 
             </div>
-          </div>
 
-          {/* 📄 인쇄/미리보기 및 이미지 BBox 하이라이팅 영역 */}
-          <div className="preview-section">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingLeft: 4 }}>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block" }}>
-                📄 {previewTab === "document" ? "공식 표준 계약서 미리보기 (실시간)" : "📸 계약서 사진 자동 인식 위치 확인"}
-              </span>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                {ocrImage && (
-                  <>
-                    <button onClick={() => setPreviewTab("document")}
-                      style={{
-                        background: previewTab === "document" ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
-                        border: previewTab === "document" ? "none" : "1px solid var(--border)",
-                        borderRadius: 8, padding: "5px 10px", color: previewTab === "document" ? "#fff" : "var(--text-muted)",
-                        fontSize: 10, fontWeight: 700, cursor: "pointer"
-                      }}>
-                      📄 계약서 서식
-                    </button>
-                    <button onClick={() => { setPreviewTab("image"); setIsCollapsed(false); }}
-                      style={{
-                        background: previewTab === "image" ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
-                        border: previewTab === "image" ? "none" : "1px solid var(--border)",
-                        borderRadius: 8, padding: "5px 10px", color: previewTab === "image" ? "#fff" : "var(--text-muted)",
-                        fontSize: 10, fontWeight: 700, cursor: "pointer"
-                      }}>
-                      📸 계약서 사진
-                    </button>
-                  </>
-                )}
-                {(ocrImage || previewTab === "document") && (
-                  <button onClick={() => setIsCollapsed(!isCollapsed)}
-                    style={{
-                      background: "var(--surface2)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8, padding: "5px 10px", color: "var(--text)",
-                      fontSize: 10, fontWeight: 700, cursor: "pointer"
-                    }}>
-                    {isCollapsed ? "▼ 펼치기" : "▲ 접기"}
-                  </button>
-                )}
+          {/* 📄 공식 계약서 미리보기 (폼 아래 배치) */}
+          <div style={cardStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isPreviewCollapsed ? 0 : 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>📄 계약서 미리보기</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button onClick={() => setShowDocZoomModal(true)}
+                  style={{ background: "none", border: "none", fontSize: 10, color: "var(--purple-text)", cursor: "pointer", fontWeight: 700, padding: 0 }}>
+                  크게 보기 ↗
+                </button>
+                <button onClick={() => setIsPreviewCollapsed(!isPreviewCollapsed)}
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px", color: "var(--text)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                  {isPreviewCollapsed ? "▼ 펼치기" : "▲ 접기"}
+                </button>
               </div>
             </div>
-
-            {previewTab === "document" ? (
-              <div style={{ display: isCollapsed ? "none" : "block" }}>
-                <div style={{
-                  background: "#fff",
-                  borderRadius: 16,
-                  border: "1px solid #ccc",
-                  height: "220px",
-                  overflowY: "auto",
-                  padding: "16px",
-                  cursor: "zoom-in",
-                  boxSizing: "border-box"
-                }} onClick={() => setShowDocZoomModal(true)}>
-                  <div id="contract-print" style={{ transform: "scale(0.85)", transformOrigin: "top center" }}>
-                    <ContractBody />
-                  </div>
-                </div>
-                <span style={{ fontSize: 9, color: "var(--text-muted)", display: "block", marginTop: 4, textAlign: "center" }}>
-                  💡 서식 영역을 클릭하면 원래 크기로 크게 볼 수 있습니다.
-                </span>
+            {!isPreviewCollapsed && (
+              <div style={{
+                background: "#fff",
+                borderRadius: 12,
+                border: "1px solid #ddd",
+                overflow: "hidden",
+                cursor: "zoom-in",
+                zoom: 0.75,
+              }} onClick={() => setShowDocZoomModal(true)}>
+                <ContractBody />
               </div>
-            ) : ocrImage ? (
-              <div style={{ display: isCollapsed ? "none" : "block" }}>
-                <div style={{
-                  position: "relative",
-                  background: "#18181b",
-                  borderRadius: 16,
-                  border: "1px solid var(--border)",
-                  overflow: "hidden",
-                  width: "100%",
-                  height: "220px",
-                  boxSizing: "border-box",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  cursor: "zoom-in"
-                }} onClick={() => setShowZoomModal(true)}>
-                  {/* 원본 계약서 이미지 */}
-                  <img src={ocrImage} alt="OCR 원본 계약서" style={{ maxHeight: "100%", width: "auto", display: "block", objectFit: "contain" }} />
-                  
-                  {/* 캔버스 가이드 Bounding Box 오버레이 */}
-                  {imageSize && Object.entries(ocrBoxes).map(([key, box]) => {
-                    const left = (box[0] / imageSize.width) * 100 + "%";
-                    const top = (box[1] / imageSize.height) * 100 + "%";
-                    const width = ((box[2] - box[0]) / imageSize.width) * 100 + "%";
-                    const height = ((box[3] - box[1]) / imageSize.height) * 100 + "%";
-                    const isActive = activeField === key;
-                    
-                    return (
-                      <div key={key} style={{
-                        position: "absolute",
-                        left,
-                        top,
-                        width,
-                        height,
-                        border: isActive ? "2.5px solid #a78bfa" : "1.2px dashed rgba(236,72,153,0.5)",
-                        backgroundColor: isActive ? "rgba(139,92,246,0.18)" : "rgba(236,72,153,0.03)",
-                        borderRadius: 3,
-                        transition: "all 0.15s ease",
-                        zIndex: isActive ? 10 : 2,
-                        boxShadow: isActive ? "0 0 10px #7c3aed" : "none",
-                        pointerEvents: "none"
-                      }} />
-                    );
-                  })}
-                </div>
-                <span style={{ fontSize: 9, color: "var(--text-muted)", display: "block", marginTop: 4, textAlign: "center" }}>
-                  💡 계약서 사진을 클릭하면 크게 확대해 볼 수 있습니다.
-                </span>
-              </div>
-            ) : null}
+            )}
           </div>
 
-          {/* 🔍 사진 확대 라이트박스 모달 팝업 */}
-          {showZoomModal && ocrImage && (
-            <div style={{
-              position: "fixed",
-              top: 0, left: 0, right: 0, bottom: 0,
-              background: "rgba(9, 9, 11, 0.95)",
-              zIndex: 99999,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "20px",
-              cursor: "zoom-out"
-            }} onClick={() => setShowZoomModal(false)}>
-              <div style={{ position: "relative", maxWidth: "95vw", maxHeight: "85vh" }} onClick={e => e.stopPropagation()}>
-                <img src={ocrImage} alt="확대 계약서 이미지" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.5)" }} />
-                <button onClick={() => setShowZoomModal(false)}
-                  style={{
-                    position: "absolute",
-                    top: -45, right: 0,
-                    background: "rgba(255,255,255,0.15)",
-                    border: "1px solid rgba(255,255,255,0.3)",
-                    borderRadius: "50%",
-                    width: 32, height: 32,
-                    color: "#fff",
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 14,
-                    transition: "all 0.2s"
-                  }}>✕</button>
-                <p style={{ color: "rgba(255,255,255,0.6)", textAlign: "center", fontSize: 11, marginTop: 12, margin: 0 }}>
-                  💡 임의의 영역을 클릭하거나 우측 상단 ✕를 눌러 닫기
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* 🔍 문서(서식) 확대 라이트박스 모달 팝업 */}
+          {/* 🔍 계약서 서식 전체화면 모달 */}
           {showDocZoomModal && (
             <div style={{
               position: "fixed",

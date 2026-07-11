@@ -1,5 +1,9 @@
 # 계약서 OCR 자동완성 및 인터랙티브 하이라이트 시스템 사양서
-> 최종 업데이트: 2026-07-10 | PAZAB v2 (`C:\pazabv2\plan\contract_ocr_specification.md`)
+> 최종 업데이트: 2026-07-11 | PAZAB v2 (`C:\pazabv2\plan\contract_ocr_specification.md`)
+> **현황**: OCR 백엔드 파일 일체 유지, 프론트 UI 제거됨 (2026-07-11). 재활성화 시 이 문서 참고.
+> - `ocr-test/app.py`: EasyOCR FastAPI 데몬 (연결 해제)
+> - `app/api/contract/ocr/route.ts`: Python 데몬 프록시 (연결 해제)
+> - `app/api/contract/ocr-haiku/route.ts`: Claude Haiku Vision 직접 호출 (연결 해제, AiGate 우회)
 
 이 문서는 파잡(PAZAB) v2 플랫폼에 구현된 종이 근로계약서 사진 기반 **OCR 규칙 파서 엔진** 및 **프론트엔드 인터랙티브 하이라이팅(Bounding Box) 연동 사양**과 **향후 발전 로드맵**을 상세 기술합니다.
 

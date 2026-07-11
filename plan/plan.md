@@ -1,16 +1,26 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-10 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-11 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
 
-**계약서 OCR 규칙 파서 및 인터랙티브 하이라이팅 연동 (2026-07-10)**
+**계약서 OCR 아키텍처 전환 및 UI 정리 (2026-07-11)**
+- **OCR 엔진 전환**: PaddleOCR(규칙파서) → EasyOCR → **Claude Haiku Vision**(`claude-haiku-4-5-20251001`) 순으로 전환. 최종적으로 OCR UI를 프론트에서 걷어내되 백엔드 파일은 유지 (향후 재활성화 대비)
+  - `ocr-test/app.py`: EasyOCR 기반 FastAPI 데몬 (유지, 연결 해제)
+  - `ocr-test/compare_ocr.py`: PaddleOCR vs EasyOCR 비교 스크립트 (유지)
+  - `app/api/contract/ocr-haiku/route.ts`: Claude Haiku Vision 직접 호출 라우트 (유지, 연결 해제) — AiGate 50k 문자 제한 우회를 위해 `new Anthropic({ apiKey })` 직접 사용
+  - `app/api/contract/ocr/route.ts`: 기존 Python 데몬 프록시 라우트 (유지, 연결 해제)
+- **계약서 페이지 레이아웃 단순화** (`app/contract/page.tsx`):
+  - BBox 오버레이·OCR 이미지 뷰어·진입 선택 화면 전부 제거
+  - 단일 컬럼 레이아웃 (`max-width: 680px`), 폼 위·미리보기 아래 배치
+  - 미리보기 기본 펼침(`isPreviewCollapsed: false`), `zoom: 0.75`로 레이아웃 반영 확대
+- **이전 계약서 템플릿 불러오기 버그 수정** (`app/contract/page.tsx`):
+  - `fetchPrevContract`에 `employerProfileId` 파라미터 추가 → 현재 선택된 매장의 계약서만 조회 (기존: employer 전체 계약서 중 최신)
+  - `applyPrevContract`의 `keptFields`에 사업체 필드(`biz`, `bizRegNo`, `ceo`, `ceoPhone`, `bizAddr`, `bizAddrDetail`, `bizType`, `samePlace`, `workPlace`) 추가 → `initF`가 채운 현재 매장 정보를 이전 계약서 데이터로 덮어쓰지 않음. 템플릿에서 복사되는 건 임금·근무시간·요일·보험 등 재사용 조건만
+
+**계약서 OCR 규칙 파서 및 인터랙티브 하이라이팅 연동 (2026-07-10)** *(이후 UI 제거됨)*
 - **OCR 규칙 파서 성능 개선**: 역정렬 X/Y 정렬 알고리즘, 이웃 단어 탐색(`find_right_neighbor`), 시급 클렌징 노이즈 필터 적용 → 시급 0% ➡️ 93%, 주소 0% ➡️ 96% 정확도 대폭 향상
-- **정밀 Bounding Box 좌표 회복**: 한 글자 조각에 쏠리던 오버레이 역방향 비교 조건(`clean_txt in clean_val`) 제거하여, 각 필드별 진짜 이미지 내 BBox 좌표 `[x_min, y_min, x_max, y_max]` 추출 회복 완료
-- **모바일 스크롤 압박 해소 (220px 축소 뷰)**: 사진 뷰어와 공식 서식 미리보기 영역의 높이를 모두 `220px`로 일치시켜 레이아웃 일관성 확보 및 세로 폭 절약
-- **양방향 포커스 싱크 (Highlight Sync)**: 인풋 폼 포커스 시 이미지 위에 해당 검출 좌표를 보라색 펄스 그림자 상자로 실시간 하이라이팅
-- **접이식 아코디언 토글**: 보기창 헤더에 `[▲ 접기] / [▼ 펼치기]` 공통 버튼을 달아, 폼 입력 중 화면 시야 확보 극대화
-- **통합 라이트박스 팝업 모달 (Lightbox Zoom)**: 컴팩트 미리보기를 클릭하면 원본 이미지 또는 실시간 채워지는 서식 문서를 화면 전체 크기의 어두운 레이어 팝업으로 상세 조회 가능
-- **모바일 가상 키보드 가림 차단**: 세로 뷰포트에서 가상 키보드 전개 시 미리보기가 덮이지 않도록 모바일에서만 **[상단: 미리보기] ➡️ [하단: 입력 폼]** 으로 flex 방향 반전(`column-reverse`) 적용
+- **정밀 Bounding Box 좌표 회복**: 한 글자 조각에 쏠리던 오버레이 역방향 비교 조건(`clean_txt in clean_val`) 제거
+- **모바일 최적화**: 220px 컴팩트 뷰어, 양방향 포커스 싱크, 접이식 토글, 라이트박스 팝업 — *이후 레이아웃 단순화로 전부 제거됨*
 
 **버그 수정 및 UX 개선 (2026-07-10)**
 - **퇴직자 재초대 데이터 오염 버그 수정**:
