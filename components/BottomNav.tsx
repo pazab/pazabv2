@@ -193,7 +193,7 @@ export default function BottomNav() {
   }, [pathname, checkUnread]);
 
   const handleTabClick = (path: string) => {
-    const protectedPaths = ["/chat", "/mypage", "/personality", "/interview", "/myteam", "/daeta"];
+    const protectedPaths = ["/feed", "/mypage", "/personality", "/interview", "/myteam", "/daeta"];
     const isProtected = protectedPaths.some(p => path.startsWith(p));
     // null이면 아직 세션 확인 중 - 잠깐 기다렸다 재시도
     if (isProtected && isLoggedIn === null) {
@@ -222,7 +222,7 @@ export default function BottomNav() {
     { icon: "ti-compass", label: "탐색", path: "/explore", active: pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
     { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta") },
     { icon: "ti-calendar-event", label: "근태", path: "/myteam", active: pathname.startsWith("/myteam"), center: true },
-    { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat") && !pathname.includes("/paz"), badge: unreadCount },
+    { icon: "ti-news", label: "피드", path: "/feed", active: pathname.startsWith("/feed") },
     { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];
 

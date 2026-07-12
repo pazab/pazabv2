@@ -1,57 +1,43 @@
-# [검증 보고서] 근로계약서 자동 인식 API 빌드 및 연동 완료
+# [검증 보고서] 인스타그램 스타일 피드 및 글로벌 플로팅 DM 메신저 연동 완료
 
-FastAPI 로컬 데몬(OpenCV + PaddleOCR + Bbox 매핑 + Regex)을 구축하고, `pazabv2` Next.js의 Proxy API Route와 통합하는 모든 빌드 작업을 성공적으로 완료했습니다.
+피드 타임라인 조회/등록/인터랙션(좋아요, 댓글, 북마크) 기능과 우측 하단 글로벌 플로팅 DM 메신저 위젯 구축 및 심리스 전체화면 연동 작업을 성공적으로 완료했습니다.
 
 ---
 
 ## 🛠️ 작업 완료 내역
 
-### 1. Python OCR 데몬 구축 (`ocr-test`)
-* **[requirements.txt](file:///C:/pazabv2/ocr-test/requirements.txt)**: `fastapi`, `uvicorn[standard]`, `opencv-python`, `python-multipart` 의존성 패키지 관리 완료.
-* **[app.py](file:///C:/pazabv2/ocr-test/app.py)**:
-  * **전처리**: OpenCV Adaptive Thresholding으로 그림자 및 화질 보정.
-  * **좌표 파서**: `find_right_neighbor` 기하 매핑을 구현해 키워드(예: '성명', '대표자') 우측의 값을 추적하여 매핑 정확도 확보.
-  * **정규식 파서**: 금액 파서(콤마/한글 제거) 및 근무시간 순차 매핑 알고리즘 최적화.
-  * **CamelCase 매핑**: Next.js UI Form의 `contract_data` 스펙(예: `biz`, `ceo`, `worker`, `wage`, `workStart` 등)과 100% 동일한 키명으로 자동 가공하여 응답 반환.
+### 1. 인스타그램 스타일 피드 구축
+* **[app/feed/page.tsx](file:///c:/pazabv2/app/feed/page.tsx)**:
+  - 카테고리 필터링(전체, 내 주변, 매장 소식, 구직 피드) 구현.
+  - 피드 카드 내 북마크(🔖) 버튼 연계 및 좋아요, 댓글 등록 실시간 UI 갱신.
+* **피드 백엔드 API Route 구축**:
+  - **[app/api/feed/route.ts](file:///c:/pazabv2/app/api/feed/route.ts)**: GET(피드 목록 조회), POST(피드 등록), DELETE(내 글 및 종속 데이터 일괄 삭제) 구현.
+  - **[app/api/feed/like/route.ts](file:///c:/pazabv2/app/api/feed/like/route.ts)**: 좋아요 토글 및 카운트 반영.
+  - **[app/api/feed/comment/route.ts](file:///c:/pazabv2/app/api/feed/comment/route.ts)**: 댓글 작성/삭제 및 댓글 수 연동.
+  - **[app/api/feed/bookmark/route.ts](file:///c:/pazabv2/app/api/feed/bookmark/route.ts)**: 북마크 저장 토글 및 마이페이지 내 저장 목록 조회 연동.
+* **프로필 및 마이페이지 피드 그리드 연동**:
+  - **[app/profile/[userId]/page.tsx](file:///c:/pazabv2/app/profile/%5BuserId%5D/page.tsx)**: 하단 피드 스토리 3열 그리드 및 상세 보기 라이트박스 팝업 연동.
+  - **[app/mypage/page.tsx](file:///c:/pazabv2/app/mypage/page.tsx)**: 하단 `내 스토리` & `저장됨` 그리드 탭 분기 및 모달 팝업 내 글 삭제(🗑️) 처리 연계.
 
-### 2. Next.js API 프록시 구축 (`pazabv2`)
-* **[route.ts](file:///C:/pazabv2/app/api/contract/ocr/route.ts)**: Multipart 이미지 업로드를 받아 FastAPI OCR 데몬으로 중계하고, 정제된 JSON 스펙을 클라이언트에 무손실 반환하는 라우트 탑재 완료.
+### 2. 글로벌 플로팅 DM 메신저 위젯 구축
+* **[components/FloatingChatWidget.tsx](file:///c:/pazabv2/components/FloatingChatWidget.tsx)**:
+  - 하단 네비게이션 `BottomNav`에서 기존 '채팅' 탭이 제거되고 '피드'가 추가됨에 따라, 우측 하단 고정 메시지 버튼(💬)으로 채팅창 진입 동선 설계.
+  - 클릭 시 대화방 목록 팝업 노출 및 실시간 안읽은 카운트 뱃지(Realtime db) 연동.
+  - 개별 대화방 진입 시 메시지 수신/발송 기능 구현.
+  - 팝업 헤더 영역에 **`(↗️) 전체보기`** 및 **`(↗️) 채팅 상세`** 한글 결합 버튼을 제공하여 각각 전체화면 대화목록(`/chat`) 및 대화방(`/chat/[id]`)으로의 심리스 전환 보장.
+
+### 3. 마이페이지 대시보드 바로가기 연동
+* **[app/mypage/page.tsx](file:///c:/pazabv2/app/mypage/page.tsx)**:
+  - 대시보드 내에 `💬 전체 채팅 보관함` 카드를 신규 배치하여 2클릭만에 풀스크린 대화창 목록 진입 보장.
+  - 마이페이지 내 `러브콜/매칭` 카드 내부의 `💬 채팅하기` 버튼 누를 시, full-screen 채팅방(`/chat/[id]`)으로 다이렉트 랜딩 제공.
+
+### 4. Supabase DB matches 유실 진단 및 임시 복원
+* `team_members`가 정상 참조하고 있으나 부모 `matches` 테이블 데이터가 유실되었던 현상 규명.
+* 누락된 `match_id`를 기반으로 `matches` 테이블 데이터 복원 및 시작 메시지 데이터 복구 완료.
 
 ---
 
-## 🧪 통합 API 동작 테스트 결과
+## 🧪 통합 동작 테스트 결과
 
-FastAPI 데몬 구동 상태에서 `sample.jpg`를 전송해 검증한 실제 API 반환값입니다.
-
-```json
-{
-  "success": true,
-  "data": {
-    "biz": "",
-    "bizRegNo": "",
-    "ceo": "주식회사",     // (한글 온전 전송 확인)
-    "ceoPhone": "",
-    "bizAddr": "",
-    "worker": "홍길동",    // (한글 온전 전송 확인)
-    "workerBirth": "",
-    "workerPhone": "",
-    "workerAddr": "",
-    "startDate": "",
-    "endDate": "",
-    "workPlace": "",
-    "jobDesc": "",
-    "workStart": "18:00",
-    "workEnd": "",
-    "breakStart": "12:00",
-    "breakEnd": "13:00",
-    "workDaysText": "",
-    "wage": "12000",       // (정규식 필터 보정으로 12000 정상 획득)
-    "wageType": "hour",
-    "contractDate": ""
-  }
-}
-```
-
-* **보정 확인**:
-  * 기존에 앞의 3자리만 끊어 읽던 시급 정규식 버그를 보완하여 **`12000`**원으로 완벽히 교정되었습니다.
-  * 한글 인코딩 역시 Next.js API Route 수신 시 UTF-8 표준으로 깨짐 없이 안전하게 획득됨을 교차 검증했습니다.
+* **TypeScript 컴파일 검사**: `npx tsc --noEmit` 실행 시 컴파일 에러 전혀 없이 정상 빌드 완료.
+* **API 동작성 검증**: `/api/chatrooms?userId=...` API 호출 시 복원된 대화방 정보가 정상 반환됨을 확인.

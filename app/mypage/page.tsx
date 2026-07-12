@@ -560,6 +560,16 @@ function MyPageContent() {
   const [showWorkerCalls, setShowWorkerCalls] = useState(false);
   const [showEmployerCalls, setShowEmployerCalls] = useState(false);
 
+  // 피드 및 북마크 탭 관련 상태
+  const [myPosts, setMyPosts] = useState<any[]>([]);
+  const [savedPosts, setSavedPosts] = useState<any[]>([]);
+  const [feedTab, setFeedTab] = useState<"posts" | "saved">("posts");
+  const [selectedPost, setSelectedPost] = useState<any | null>(null);
+  const [comments, setComments] = useState<any[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState("");
+  const [commenting, setCommenting] = useState(false);
+
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if (user) loadResultsForType(viewType, user.id); }, [viewType]);
 
@@ -608,8 +618,137 @@ function MyPageContent() {
       const { data: eps } = await supabase.from("employer_profiles").select("*").eq("user_id", session.user.id).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null).order("created_at", { ascending: false });
       setMyWorkerProfile(wps?.[0] || null);
       setMyEmployerProfile(eps?.[0] || null);
+
+      // 내 피드 & 북마크 로딩
+      fetchMyFeeds(session.user.id);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
+  };
+
+  const fetchMyFeeds = async (uid: string) => {
+    try {
+      // 1. 내가 올린 피드 조회
+      const { data: posts } = await supabase
+        .from("feed_posts")
+        .select("*")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false });
+      setMyPosts(posts || []);
+
+      // 2. 내가 저장한 피드 조회
+      const res = await fetch("/api/feed/bookmark");
+      const data = await res.json();
+      if (data.success) {
+        setSavedPosts(data.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadComments = async (postId: string) => {
+    try {
+      setCommentsLoading(true);
+      const res = await fetch(`/api/feed/comment?feedPostId=${postId}`);
+      const data = await res.json();
+      if (data.success) {
+        setComments(data.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const handlePostClick = (post: any) => {
+    setSelectedPost(post);
+    loadComments(post.id);
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !selectedPost || !userId) return;
+    setCommenting(true);
+    try {
+      const res = await fetch("/api/feed/comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedPostId: selectedPost.id, content: newComment.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setComments(prev => [...prev, data.data]);
+        setNewComment("");
+        setMyPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, comment_count: data.commentCount } : p));
+        setSavedPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, comment_count: data.commentCount } : p));
+        setSelectedPost((p: any) => p ? { ...p, comment_count: data.commentCount } : null);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCommenting(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!selectedPost) return;
+    try {
+      const res = await fetch(`/api/feed/comment?commentId=${commentId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setComments(prev => prev.filter(c => c.id !== commentId));
+        setMyPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, comment_count: data.commentCount } : p));
+        setSavedPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, comment_count: data.commentCount } : p));
+        setSelectedPost((p: any) => p ? { ...p, comment_count: data.commentCount } : null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleLikePost = async () => {
+    if (!selectedPost || !userId) return;
+    try {
+      const res = await fetch("/api/feed/like", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedPostId: selectedPost.id })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMyPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, like_count: data.likeCount } : p));
+        setSavedPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, like_count: data.likeCount } : p));
+        setSelectedPost((p: any) => p ? { ...p, like_count: data.likeCount } : null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeletePost = (postId: string) => {
+    setConfirmModal({
+      title: "게시물을 삭제할까요?",
+      desc: "삭제된 게시물은 복구할 수 없습니다.",
+      confirmLabel: "삭제",
+      confirmColor: "#f87171",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/feed?postId=${postId}`, { method: "DELETE" });
+          const data = await res.json();
+          if (data.success) {
+            setMyPosts(prev => prev.filter(p => p.id !== postId));
+            setSavedPosts(prev => prev.filter(p => p.id !== postId));
+            setSelectedPost(null);
+            setToastMsg("게시물이 삭제되었습니다.");
+            setTimeout(() => setToastMsg(""), 3000);
+          }
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setConfirmModal(null);
+        }
+      }
+    });
   };
 
   const fetchJobs = async (uid: string) => {
@@ -930,6 +1069,16 @@ function MyPageContent() {
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
           </button>
         </div>
+
+        {/* 전체 채팅 보관함 바로가기 */}
+        <button onClick={() => router.push("/chat")}
+          style={{ width: "100%", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 10 }}>
+          <span style={{ fontSize: 22 }}>💬</span>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>전체 채팅 보관함</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>진행 중인 모든 대화방 전체 목록</p>
+          </div>
+        </button>
 
         {/* 급여 명세서 바로가기 */}
         <button onClick={() => router.push("/payslip/list")}
@@ -1284,8 +1433,203 @@ function MyPageContent() {
             onCancel={() => setConfirmModal(null)}
           />
         )}
+        {/* 📸 피드 및 북마크 탭 섹션 */}
+        <div style={{ marginTop: 24, background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 20, padding: 20 }}>
+          <div style={{ display: "flex", gap: 12, borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 14 }}>
+            <button onClick={() => setFeedTab("posts")}
+              style={{ paddingBottom: 6, borderBottom: feedTab === "posts" ? "2px solid var(--primary)" : "none", color: feedTab === "posts" ? "var(--text)" : "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer", background: "none", borderLeft: "none", borderRight: "none", borderTop: "none" }}>
+              내 스토리 ({myPosts.length})
+            </button>
+            <button onClick={() => setFeedTab("saved")}
+              style={{ paddingBottom: 6, borderBottom: feedTab === "saved" ? "2px solid var(--primary)" : "none", color: feedTab === "saved" ? "var(--text)" : "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer", background: "none", borderLeft: "none", borderRight: "none", borderTop: "none" }}>
+              저장됨 ({savedPosts.length})
+            </button>
+          </div>
+
+          {feedTab === "posts" ? (
+            myPosts.length === 0 ? (
+              <p style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)", padding: "20px 0" }}>올린 피드가 없습니다.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5">
+                {myPosts.map(post => (
+                  <button key={post.id} onClick={() => handlePostClick(post)}
+                    className="aspect-square bg-zinc-900 rounded-xl relative overflow-hidden group focus:outline-none border border-border/20">
+                    {post.media_type === "video" ? (
+                      <div className="w-full h-full relative">
+                        <video src={post.media_urls[0]} className="w-full h-full object-cover" />
+                        <div className="absolute top-1.5 right-1.5 bg-black/60 w-5 h-5 rounded-full flex items-center justify-center">
+                          <i className="ti ti-video text-white text-[10px]" aria-hidden="true" />
+                        </div>
+                      </div>
+                    ) : (
+                      <img src={post.media_urls[0]} alt="my-post" className="w-full h-full object-cover" />
+                    )}
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-2.5 text-xs font-bold text-white">
+                      <span>❤️ {post.like_count || 0}</span>
+                      <span>💬 {post.comment_count || 0}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            savedPosts.length === 0 ? (
+              <p style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)", padding: "20px 0" }}>저장된 피드가 없습니다.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5">
+                {savedPosts.map(post => (
+                  <button key={post.id} onClick={() => handlePostClick(post)}
+                    className="aspect-square bg-zinc-900 rounded-xl relative overflow-hidden group focus:outline-none border border-border/20">
+                    {post.media_type === "video" ? (
+                      <div className="w-full h-full relative">
+                        <video src={post.media_urls[0]} className="w-full h-full object-cover" />
+                        <div className="absolute top-1.5 right-1.5 bg-black/60 w-5 h-5 rounded-full flex items-center justify-center">
+                          <i className="ti ti-video text-white text-[10px]" aria-hidden="true" />
+                        </div>
+                      </div>
+                    ) : (
+                      <img src={post.media_urls[0]} alt="saved-post" className="w-full h-full object-cover" />
+                    )}
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-2.5 text-xs font-bold text-white">
+                      <span>❤️ {post.like_count || 0}</span>
+                      <span>💬 {post.comment_count || 0}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+
       </div>
       </div>
+
+      {/* 피드 라이트박스 상세 모달 */}
+      {selectedPost && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-3xl border border-border shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
+            {/* 헤더 */}
+            <div className="flex justify-between items-center px-4 py-3 border-b border-border bg-surface2/40">
+              <span className="font-bold text-xs text-text-sub">상세 보기</span>
+              <div className="flex items-center gap-2">
+                {selectedPost.user_id === userId && (
+                  <button onClick={() => handleDeletePost(selectedPost.id)} className="text-text-muted hover:text-red-500 mr-2 focus:outline-none">
+                    <i className="ti ti-trash text-base" aria-hidden="true" />
+                  </button>
+                )}
+                <button onClick={() => setSelectedPost(null)} className="text-text-muted hover:text-text focus:outline-none">
+                  <i className="ti ti-x text-lg" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            {/* 바디 (스크롤 가능) */}
+            <div className="flex-1 overflow-y-auto">
+              {/* 미디어 */}
+              {selectedPost.media_urls && selectedPost.media_urls.length > 0 && (
+                <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
+                  {selectedPost.media_type === "video" ? (
+                    <video src={selectedPost.media_urls[0]} controls playsInline className="w-full h-full object-contain" />
+                  ) : (
+                    <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
+                      {selectedPost.media_urls.map((url: string, idx: number) => (
+                        <div key={idx} className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center">
+                          <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 본문 텍스트 */}
+              <div className="p-4 flex flex-col gap-2.5">
+                <div className="flex gap-2 items-center">
+                  <span className="font-bold text-xs bg-primary-light px-2 py-0.5 rounded text-primary">본문</span>
+                  <span className="text-[10px] text-text-muted">
+                    {selectedPost.created_at ? new Date(selectedPost.created_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" }) : ""}
+                  </span>
+                </div>
+                {selectedPost.content ? (
+                  <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{selectedPost.content}</p>
+                ) : (
+                  <span className="text-xs text-text-muted italic">본문 텍스트가 없습니다.</span>
+                )}
+
+                {/* 좋아요 단추 */}
+                <div className="flex items-center gap-3 mt-1.5 border-t border-b border-border py-2">
+                  <button onClick={handleLikePost} className="flex items-center gap-1.5 text-text-sub focus:outline-none">
+                    <i className="ti ti-heart-filled text-pink-500 text-lg" aria-hidden="true" />
+                    <span className="text-xs font-bold">{selectedPost.like_count || 0}</span>
+                  </button>
+                  <div className="flex items-center gap-1.5 text-text-sub">
+                    <i className="ti ti-message-2 text-lg text-text" aria-hidden="true" />
+                    <span className="text-xs font-bold">{selectedPost.comment_count || 0}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 댓글 섹션 */}
+              <div className="bg-surface2/30 p-4 border-t border-border flex flex-col gap-3">
+                <span className="font-bold text-[11px] text-text-muted">댓글 ({comments.length})</span>
+                {commentsLoading ? (
+                  <span className="text-[10px] text-text-muted text-center py-1">댓글 로딩 중...</span>
+                ) : comments.length === 0 ? (
+                  <span className="text-[10px] text-text-muted text-center py-1">댓글이 없습니다.</span>
+                ) : (
+                  <div className="flex flex-col gap-2.5 max-h-44 overflow-y-auto">
+                    {comments.map(comment => (
+                      <div key={comment.id} className="flex gap-2 items-start text-xs">
+                        <div className="w-6 h-6 rounded-full overflow-hidden bg-surface flex-shrink-0 border border-border flex items-center justify-center">
+                          {comment.authorAvatar ? (
+                            <img src={comment.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-xs">👤</span>
+                          )}
+                        </div>
+                        <div className="flex-1 bg-surface rounded-xl px-2.5 py-1.5 shadow-sm border border-border relative">
+                          <div className="flex justify-between items-center mb-0.5">
+                            <span className="font-bold text-[10px] text-text">{comment.authorName}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[8px] text-text-muted">
+                                {comment.created_at ? new Date(comment.created_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" }) : ""}
+                              </span>
+                              {comment.user_id === userId && (
+                                <button onClick={() => handleDeleteComment(comment.id)}
+                                  className="text-text-muted hover:text-red-500 font-bold p-0.5">
+                                  <i className="ti ti-trash text-[10px]" aria-hidden="true" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-text-sub leading-normal">{comment.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 댓글 작성 푸터 */}
+            {userId && (
+              <div className="p-3 border-t border-border bg-surface2 flex gap-1.5">
+                <input type="text" placeholder="댓글을 입력하세요..."
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleAddComment(); }}
+                  disabled={commenting}
+                  className="flex-1 bg-surface border border-border text-xs px-3 py-2 rounded-xl focus:outline-none" />
+                <button onClick={handleAddComment} disabled={commenting || !newComment.trim()}
+                  className="bg-primary text-white text-xs font-bold px-3.5 py-2 rounded-xl active:scale-95 transition disabled:opacity-50">
+                  등록
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <InviteBottomSheet isOpen={inviteOpen} onClose={() => setInviteOpen(false)} />
     </main>
   );
