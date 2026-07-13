@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getTrustGrade } from "@/lib/utils";
-import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
 export default function ChatRoomPage() {
   const router = useRouter();
@@ -24,7 +23,6 @@ export default function ChatRoomPage() {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showHireProposalModal, setShowHireProposalModal] = useState(false);
   const [showContractModal, setShowContractModal] = useState(false);
-  const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const [contractData, setContractData] = useState<any>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
@@ -620,9 +618,9 @@ export default function ChatRoomPage() {
             <i className="ti ti-arrow-left" style={{ fontSize: 18, display: "block" }} aria-hidden="true" />
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-            {/* 아바타 영역: 퀵 프로필 팝업 */}
+            {/* 아바타 영역: 프로필 페이지 이동 */}
             <div onClick={() => {
-              if (counterpart?.id) setActiveQuickProfile(counterpart.id);
+              if (counterpart?.id) router.push(`/profile/${counterpart.id}`);
             }} style={{ position: "relative", flexShrink: 0, cursor: "pointer" }}>
               <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 18, boxShadow: "0 0 0 2px var(--border)" }}>
                 {counterpartAvatar ? (
@@ -879,7 +877,7 @@ export default function ChatRoomPage() {
                 <div style={{ display: "flex", gap: 9, marginBottom: 3, alignItems: "flex-end" }}>
                   {/* 아바타 */}
                   <button onClick={() => {
-                    if (counterpart?.id) setActiveQuickProfile(counterpart.id);
+                    if (counterpart?.id) router.push(`/profile/${counterpart.id}`);
                   }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
                     {counterpartAvatar ? (
                       <img src={counterpartAvatar} alt="avatar"
@@ -1515,12 +1513,6 @@ export default function ChatRoomPage() {
             )}
           </div>
         </div>
-      )}
-      {activeQuickProfile && (
-        <UserProfileBottomSheet
-          userId={activeQuickProfile}
-          onClose={() => setActiveQuickProfile(null)}
-        />
       )}
     </main>
   );

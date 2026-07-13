@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getMatchLevel } from "@/lib/utils";
+import { getMatchLevel, getTrustGrade } from "@/lib/utils";
+import { useToast } from "@/lib/useToast";
 
 const GRADE_INFO: Record<string, { label: string; emoji: string; color: string }> = {
   bronze: { label: "브론즈", emoji: "🥉", color: "#fb923c" },
@@ -16,6 +17,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const params = useParams();
   const targetId = params.userId as string;
+  const { showToast, ToastUI } = useToast();
 
   const [myId, setMyId] = useState<string | null>(null);
   const [targetUser, setTargetUser] = useState<any>(null);
@@ -34,6 +36,17 @@ export default function ProfilePage() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [commenting, setCommenting] = useState(false);
+
+  // ⋯ 메뉴 상태
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blocking, setBlocking] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [hasMatchHistory, setHasMatchHistory] = useState(false);
+
+  // 풀스크린 라이트박스
+  const [zoomedIndex, setZoomedIndex] = useState(0);
 
   useEffect(() => { init(); }, [targetId]);
 
@@ -111,6 +124,26 @@ export default function ProfilePage() {
         .or(`and(employer_id.eq.${targetId},worker_id.eq.${session.user.id}),and(employer_id.eq.${session.user.id},worker_id.eq.${targetId})`)
         .maybeSingle();
       if (match) setExistingMatch(match);
+
+      // 차단 여부
+      if (session.user.id !== targetId) {
+        const { data: blockData } = await supabase
+          .from("user_blocks")
+          .select("id")
+          .eq("blocker_id", session.user.id)
+          .eq("blocked_id", targetId)
+          .maybeSingle();
+        setIsBlocked(!!blockData);
+      }
+
+      // 매칭 완료 이력 (hired 이상)
+      const { data: matchHistory } = await supabase
+        .from("matches")
+        .select("id")
+        .or(`employer_id.eq.${targetId},worker_id.eq.${targetId}`)
+        .in("progress_status", ["hired", "accepted", "completed"])
+        .limit(1);
+      setHasMatchHistory(!!(matchHistory && matchHistory.length > 0));
     }
 
     setLoading(false);
@@ -133,6 +166,7 @@ export default function ProfilePage() {
 
   const handlePostClick = (post: any) => {
     setSelectedPost(post);
+    setZoomedIndex(0);
     loadComments(post.id);
   };
 
@@ -192,6 +226,34 @@ export default function ProfilePage() {
     }
   };
 
+  const handleChat = async () => {
+    if (!myId) { router.push("/login"); return; }
+    const res = await fetch(`/api/dm?targetId=${targetId}`);
+    const data = await res.json();
+    if (!res.ok || !data.matchId) { showToast(data.error || "채팅방을 열 수 없어요.", "error"); return; }
+    router.push(`/chat/${data.matchId}`);
+  };
+
+  const handleBlock = async () => {
+    if (!myId) return;
+    if (!isBlocked) { setShowBlockConfirm(true); return; }
+    setBlocking(true);
+    const { error } = await supabase.from("user_blocks").delete().eq("blocker_id", myId).eq("blocked_id", targetId);
+    if (!error) { setIsBlocked(false); showToast("차단이 해제되었습니다."); }
+    else showToast("차단 해제 실패", "error");
+    setBlocking(false);
+  };
+
+  const confirmBlock = async () => {
+    if (!myId) return;
+    setShowBlockConfirm(false);
+    setBlocking(true);
+    const { error } = await supabase.from("user_blocks").insert({ blocker_id: myId, blocked_id: targetId });
+    if (!error) { setIsBlocked(true); showToast("사용자가 차단되었습니다."); }
+    else showToast("차단 처리 실패", "error");
+    setBlocking(false);
+  };
+
   const isMe = myId === targetId;
   const hasWorker = !!workerProfile;
   const hasEmployer = employerProfiles.length > 0;
@@ -215,13 +277,59 @@ export default function ProfilePage() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 100 }}>
+      {ToastUI}
+
+      {/* 차단 확인 모달 */}
+      {showBlockConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "var(--surface)", borderRadius: 20, padding: 24, width: "100%", maxWidth: 340 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", margin: "0 0 8px" }}>🚫 차단하기</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
+              차단 시 이 사용자의 대타 공고 지원이 제한되며 메시지 수신이 차단됩니다.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowBlockConfirm(false)}
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "var(--text)", cursor: "pointer" }}>
+                취소
+              </button>
+              <button onClick={confirmBlock}
+                style={{ flex: 1, background: "#ef4444", border: "none", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+                차단하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 헤더 */}
       <div style={{ position: "sticky", top: 0, zIndex: 20, background: "var(--nav-bg)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => router.back()}
           style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 18, width: 36, height: 36, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
           ←
         </button>
-        <span style={{ fontSize: 16, fontWeight: 700 }}>프로필</span>
+        <span style={{ fontSize: 16, fontWeight: 700, flex: 1 }}>프로필</span>
+        {/* 본인이 아닐 때만 ⋯ 메뉴 표시 */}
+        {!isMe && myId && (
+          <div ref={menuRef} style={{ position: "relative" }}>
+            <button onClick={() => setShowActionMenu(p => !p)}
+              style={{ background: showActionMenu ? "var(--surface)" : "none", border: showActionMenu ? "1px solid var(--border)" : "none", color: "var(--text-muted)", cursor: "pointer", width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <i className="ti ti-dots-vertical" style={{ fontSize: 20 }} aria-hidden="true" />
+            </button>
+            {showActionMenu && (
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", width: 190, boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 50 }}
+                onClick={() => setShowActionMenu(false)}>
+                <button onClick={handleChat}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>💬</span> 1:1 메시지 보내기
+                </button>
+                <button onClick={handleBlock} disabled={blocking}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: isBlocked ? "#ef4444" : "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>🚫</span> {isBlocked ? "차단 해제" : "차단하기"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "20px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -276,6 +384,75 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+
+        {/* 신뢰도 + 안심 스펙 배지 */}
+        {!isMe && (() => {
+          const trustScore = targetUser?.trust_score ?? 50;
+          const trust = getTrustGrade(trustScore);
+          const hasIdCard = !!workerProfile?.is_verified;
+          const hasBankbook = !!targetUser?.bank_verified;
+          const hasPersonality = !!(workerProfile?.big5_data || employerProfiles[0]?.bio5_data);
+          const jobCategories: string[] = workerProfile?.job_categories || [];
+
+          // 역할별 배지 분기
+          const badges = hasWorker
+            ? [
+                { label: "신원 인증", on: hasIdCard, emoji: "🛡️" },
+                { label: "계좌 검증", on: hasBankbook, emoji: "🏦" },
+                { label: "성향 분석", on: hasPersonality, emoji: "🔬" },
+                { label: "매칭 완료", on: hasMatchHistory, emoji: "🤝" },
+              ]
+            : [
+                { label: "신원 인증", on: hasIdCard, emoji: "🛡️" },
+                { label: "성향 분석", on: hasPersonality, emoji: "🔬" },
+                { label: "매칭 완료", on: hasMatchHistory, emoji: "🤝" },
+              ];
+
+          return (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* 신뢰도 게이지 */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>신뢰도 점수</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: trust.color }}>{trustScore}점 · {trust.emoji} {trust.label}등급</span>
+                </div>
+                <div style={{ width: "100%", height: 6, background: "var(--progress-track)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ width: `${trustScore}%`, height: "100%", background: trust.color, borderRadius: 3, transition: "width 0.6s ease" }} />
+                </div>
+              </div>
+              {/* 배지 */}
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 10px" }}>🛡️ 신뢰 검증 현황</p>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${badges.length}, 1fr)`, gap: 8 }}>
+                  {badges.map(badge => (
+                    <div key={badge.label} style={{
+                      background: badge.on ? "rgba(16,185,129,0.06)" : "var(--surface2)",
+                      border: `1px solid ${badge.on ? "rgba(16,185,129,0.3)" : "var(--border)"}`,
+                      borderRadius: 12, padding: "10px 4px", textAlign: "center", display: "flex", flexDirection: "column", gap: 4, alignItems: "center"
+                    }}>
+                      <span style={{ fontSize: 20, opacity: badge.on ? 1 : 0.35 }}>{badge.emoji}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: badge.on ? "#10b981" : "var(--text-muted)" }}>{badge.label}</span>
+                      <span style={{ fontSize: 9, color: badge.on ? "#10b981" : "var(--text-muted)", opacity: 0.8 }}>
+                        {badge.on ? "완료" : "미완료"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* 선호 업종 칩 (알바생만) */}
+              {hasWorker && jobCategories.length > 0 && (
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 8px" }}>💼 선호 업종</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {jobCategories.map((c: string) => (
+                      <span key={c} style={{ fontSize: 11, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px", color: "var(--text)" }}>{c}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 성향 분석 결과 */}
         {(personalityType || big5) && (
@@ -450,118 +627,98 @@ export default function ProfilePage() {
 
       </div>
 
-      {/* 피드 라이트박스 상세 모달 */}
+      {/* 풀스크린 라이트박스 (인스타 스타일) */}
       {selectedPost && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-3xl border border-border shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
-            {/* 헤더 */}
-            <div className="flex justify-between items-center px-4 py-3 border-b border-border bg-surface2/40">
-              <span className="font-bold text-xs text-text-sub">상세 보기</span>
-              <button onClick={() => setSelectedPost(null)} className="text-text-muted hover:text-text focus:outline-none">
-                <i className="ti ti-x text-lg" aria-hidden="true" />
-              </button>
-            </div>
-
-            {/* 바디 (스크롤 가능) */}
-            <div className="flex-1 overflow-y-auto">
-              {/* 미디어 */}
-              {selectedPost.media_urls && selectedPost.media_urls.length > 0 && (
-                <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
-                  {selectedPost.media_type === "video" ? (
-                    <video src={selectedPost.media_urls[0]} controls playsInline className="w-full h-full object-contain" />
-                  ) : (
-                    <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
-                      {selectedPost.media_urls.map((url: string, idx: number) => (
-                        <div key={idx} className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center">
-                          <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 본문 텍스트 */}
-              <div className="p-4 flex flex-col gap-2.5">
-                <div className="flex gap-2 items-center">
-                  <span className="font-bold text-xs bg-primary-light px-2 py-0.5 rounded text-primary">본문</span>
-                  <span className="text-[10px] text-text-muted">
-                    {selectedPost.created_at ? new Date(selectedPost.created_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" }) : ""}
-                  </span>
-                </div>
-                {selectedPost.content ? (
-                  <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{selectedPost.content}</p>
+        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col" onClick={() => setSelectedPost(null)}>
+          {/* 상단 바 */}
+          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-surface2 border border-white/20 flex items-center justify-center flex-shrink-0">
+                {targetUser?.avatar_url ? (
+                  <img src={targetUser.avatar_url} alt="avatar" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-xs text-text-muted italic">본문 텍스트가 없습니다.</span>
+                  <span className="text-sm">{hasEmployer ? "🏪" : "👤"}</span>
                 )}
+              </div>
+              <span className="text-white text-xs font-bold truncate">{targetUser?.nickname || targetUser?.name}</span>
+            </div>
+            <button onClick={() => setSelectedPost(null)}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center flex-shrink-0">
+              <i className="ti ti-x" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
+            </button>
+          </div>
 
-                {/* 좋아요 단추 */}
-                <div className="flex items-center gap-3 mt-1.5 border-t border-b border-border py-2">
-                  <button onClick={handleLikePost} className="flex items-center gap-1.5 text-text-sub focus:outline-none">
-                    <i className="ti ti-heart-filled text-pink-500 text-lg" aria-hidden="true" />
-                    <span className="text-xs font-bold">{selectedPost.like_count || 0}</span>
+          {/* 미디어 */}
+          <div className="flex-1 relative flex items-center justify-center min-h-0" onClick={e => e.stopPropagation()}>
+            {selectedPost.media_type === "video" ? (
+              <video src={selectedPost.media_urls?.[0]} controls playsInline className="max-w-full max-h-full object-contain" />
+            ) : selectedPost.media_urls?.length > 0 ? (
+              <>
+                <img src={selectedPost.media_urls[zoomedIndex]} alt="확대 이미지" className="max-w-full max-h-full object-contain" />
+                {selectedPost.media_urls.length > 1 && zoomedIndex > 0 && (
+                  <button onClick={() => setZoomedIndex(i => i - 1)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+                    <i className="ti ti-chevron-left" style={{ fontSize: 22, color: "#fff" }} aria-hidden="true" />
                   </button>
-                  <div className="flex items-center gap-1.5 text-text-sub">
-                    <i className="ti ti-message-2 text-lg text-text" aria-hidden="true" />
-                    <span className="text-xs font-bold">{selectedPost.comment_count || 0}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* 댓글 섹션 */}
-              <div className="bg-surface2/30 p-4 border-t border-border flex flex-col gap-3">
-                <span className="font-bold text-[11px] text-text-muted">댓글 ({comments.length})</span>
-                {commentsLoading ? (
-                  <span className="text-[10px] text-text-muted text-center py-1">댓글 로딩 중...</span>
-                ) : comments.length === 0 ? (
-                  <span className="text-[10px] text-text-muted text-center py-1">댓글이 없습니다.</span>
-                ) : (
-                  <div className="flex flex-col gap-2.5 max-h-44 overflow-y-auto">
-                    {comments.map(comment => (
-                      <div key={comment.id} className="flex gap-2 items-start text-xs">
-                        <div className="w-6 h-6 rounded-full overflow-hidden bg-surface flex-shrink-0 border border-border flex items-center justify-center">
-                          {comment.authorAvatar ? (
-                            <img src={comment.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-xs">👤</span>
-                          )}
-                        </div>
-                        <div className="flex-1 bg-surface rounded-xl px-2.5 py-1.5 shadow-sm border border-border relative">
-                          <div className="flex justify-between items-center mb-0.5">
-                            <span className="font-bold text-[10px] text-text">{comment.authorName}</span>
-                            <div className="flex items-center gap-1">
-                              <span className="text-[8px] text-text-muted">
-                                {comment.created_at ? new Date(comment.created_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" }) : ""}
-                              </span>
-                              {comment.user_id === myId && (
-                                <button onClick={() => handleDeleteComment(comment.id)}
-                                  className="text-text-muted hover:text-red-500 font-bold p-0.5">
-                                  <i className="ti ti-trash text-[10px]" aria-hidden="true" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-[11px] text-text-sub leading-normal">{comment.content}</p>
-                        </div>
-                      </div>
-                    ))}
+                )}
+                {selectedPost.media_urls.length > 1 && zoomedIndex < selectedPost.media_urls.length - 1 && (
+                  <button onClick={() => setZoomedIndex(i => i + 1)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+                    <i className="ti ti-chevron-right" style={{ fontSize: 22, color: "#fff" }} aria-hidden="true" />
+                  </button>
+                )}
+                {selectedPost.media_urls.length > 1 && (
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/50 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+                    {zoomedIndex + 1}/{selectedPost.media_urls.length}
                   </div>
                 )}
+              </>
+            ) : (
+              <p className="text-white/50 text-sm">미디어 없음</p>
+            )}
+          </div>
+
+          {/* 하단: 캡션 + 좋아요/댓글 + 댓글 목록 */}
+          <div className="flex-shrink-0 bg-black/60" onClick={e => e.stopPropagation()}>
+            <div className="px-4 pt-3 pb-1 flex flex-col gap-2">
+              {selectedPost.content && (
+                <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">{selectedPost.content}</p>
+              )}
+              <div className="flex items-center gap-4">
+                <button onClick={handleLikePost} className="flex items-center gap-1.5">
+                  <i className="ti ti-heart text-lg" style={{ color: "#fff" }} aria-hidden="true" />
+                  <span className="text-white text-xs font-bold">{selectedPost.like_count || 0}</span>
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <i className="ti ti-message-2 text-lg" style={{ color: "#fff" }} aria-hidden="true" />
+                  <span className="text-white text-xs font-bold">{selectedPost.comment_count || 0}</span>
+                </div>
               </div>
             </div>
-
-            {/* 댓글 작성 푸터 */}
+            {/* 댓글 목록 (최대 3줄) */}
+            {comments.length > 0 && (
+              <div className="px-4 pb-2 flex flex-col gap-1 max-h-24 overflow-y-auto">
+                {comments.slice(0, 5).map(c => (
+                  <div key={c.id} className="flex gap-1.5 items-start">
+                    <span className="text-white/70 text-[11px] font-bold flex-shrink-0">{c.authorName}</span>
+                    <span className="text-white/80 text-[11px] leading-snug">{c.content}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 댓글 입력 */}
             {myId && (
-              <div className="p-3 border-t border-border bg-surface2 flex gap-1.5">
-                <input type="text" placeholder="댓글을 입력하세요..."
+              <div className="px-4 pb-4 pt-2 border-t border-white/10 flex gap-2">
+                <input type="text" placeholder="댓글 달기..."
                   value={newComment}
                   onChange={e => setNewComment(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter") handleAddComment(); }}
                   disabled={commenting}
-                  className="flex-1 bg-surface border border-border text-xs px-3 py-2 rounded-xl focus:outline-none" />
+                  className="flex-1 bg-white/10 border border-white/20 text-white text-xs placeholder-white/40 px-3 py-2 rounded-xl focus:outline-none" />
                 <button onClick={handleAddComment} disabled={commenting || !newComment.trim()}
-                  className="bg-primary text-white text-xs font-bold px-3.5 py-2 rounded-xl active:scale-95 transition disabled:opacity-50">
-                  등록
+                  style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", color: "#fff", fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 12, cursor: "pointer" }}
+                  className="disabled:opacity-50">
+                  게시
                 </button>
               </div>
             )}
