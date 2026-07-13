@@ -371,12 +371,19 @@ export default function JobDetailPage() {
           </div>
           <h1 style={{ fontSize: 26, fontWeight: 900, margin: "0 0 4px", color: "#fff", letterSpacing: "-0.5px", lineHeight: 1.2 }}>{String(job.business_name || "")}</h1>
           <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", margin: "0 0 10px" }}>📍 {String(job.region || "").split(" ").slice(0, 3).join(" ")}</p>
-          <button onClick={() => router.push(`/employer/${job.user_id}`)} style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "6px 12px", cursor: "pointer" }}>
-            <div style={{ width: 24, height: 24, borderRadius: "50%", background: job.employer_avatar ? `url(${job.employer_avatar}) center/cover` : "linear-gradient(135deg,#ec4899,#be185d)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>
-              {!job.employer_avatar && "🏪"}
-            </div>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: 600 }}>{String(job.employer_nickname || "사장님")} 프로필 보기 →</span>
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => router.push(`/employer/${job.user_id}`)} style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "6px 12px", cursor: "pointer" }}>
+              <div style={{ width: 24, height: 24, borderRadius: "50%", background: job.employer_avatar ? `url(${job.employer_avatar}) center/cover` : "linear-gradient(135deg,#ec4899,#be185d)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>
+                {!job.employer_avatar && "🏪"}
+              </div>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: 600 }}>{String(job.employer_nickname || "사장님")} 프로필 보기 →</span>
+            </button>
+            {!!job.employer_profile_id && (
+              <button onClick={() => router.push(`/store/${job.employer_profile_id}`)} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(139,92,246,0.25)", backdropFilter: "blur(8px)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: 20, padding: "6px 12px", cursor: "pointer" }}>
+                <span style={{ fontSize: 12, color: "#fff", fontWeight: 700 }}>🏪 매장 홈 보기 →</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

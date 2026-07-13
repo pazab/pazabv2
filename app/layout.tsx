@@ -31,7 +31,6 @@ export const viewport: Viewport = {
 import AuthGuard from "@/components/AuthGuard";
 import BottomNav from "@/components/BottomNav";
 import PazFloatingButton from "@/components/PazFloatingButton";
-import FloatingChatWidget from "@/components/FloatingChatWidget";
 
 export default function RootLayout({
   children,
@@ -45,7 +44,6 @@ export default function RootLayout({
         <AuthGuard />
         {children}
         <PazFloatingButton />
-        <FloatingChatWidget />
         <BottomNav />
       </body>
     </html>

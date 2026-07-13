@@ -29,6 +29,8 @@ export type NotificationType =
   | "attendance"    // 출퇴근 확인
   | "payslip"       // 급여명세서
   | "contract"      // 계약서
+  | "feed_new_post" // 팔로우한 매장 새 소식
+  | "store_follow"  // 매장 팔로우 알림
   | "system";       // 시스템
 
 export interface CreateNotificationParams {

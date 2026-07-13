@@ -21,6 +21,7 @@ export default function ProfilePage() {
   const [targetUser, setTargetUser] = useState<any>(null);
   const [workerProfile, setWorkerProfile] = useState<any>(null);
   const [employerProfiles, setEmployerProfiles] = useState<any[]>([]);
+  const [activeJobMap, setActiveJobMap] = useState<Record<string, string>>({}); // employer_profile_id -> job id
   const [matchScore, setMatchScore] = useState<number | null>(null);
   const [existingMatch, setExistingMatch] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -56,12 +57,27 @@ export default function ProfilePage() {
       .maybeSingle();
     setWorkerProfile(wp);
 
-    // 사장님 공고
+    // 사장님 매장 목록 (삭제된/테스트용 매장 제외)
     const { data: eps } = await supabase
       .from("employer_profiles")
       .select("*")
-      .eq("user_id", targetId);
+      .eq("user_id", targetId)
+      .or("is_deleted.is.null,is_deleted.eq.false")
+      .not("business_name", "is", null);
     setEmployerProfiles(eps || []);
+
+    // 매장별 실제 진행중인 공고 여부 (없으면 "공고 상세 보기" 버튼 숨김)
+    if (eps && eps.length > 0) {
+      const { data: activeJobs } = await supabase
+        .from("jobs")
+        .select("id, employer_profile_id")
+        .in("employer_profile_id", eps.map(e => e.id))
+        .eq("is_active", true)
+        .eq("job_status", "active");
+      const jobMap: Record<string, string> = {};
+      (activeJobs || []).forEach(j => { jobMap[j.employer_profile_id] = j.id; });
+      setActiveJobMap(jobMap);
+    }
 
     // 피드 게시글 조회
     const { data: posts } = await supabase
@@ -198,11 +214,11 @@ export default function ProfilePage() {
   );
 
   return (
-    <main style={{ minHeight: "100vh", background: "linear-gradient(to bottom, #181528 0%, #09090b 60%)", color: "var(--text)", paddingBottom: 100 }}>
+    <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 100 }}>
       {/* 헤더 */}
-      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(24,24,27,0.85)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "var(--nav-bg)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => router.back()}
-          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text)", fontSize: 18, width: 36, height: 36, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 18, width: 36, height: 36, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
           ←
         </button>
         <span style={{ fontSize: 16, fontWeight: 700 }}>프로필</span>
@@ -211,10 +227,10 @@ export default function ProfilePage() {
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "20px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* 프로필 상단 */}
-        <div style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(236,72,153,0.06))", backdropFilter: "blur(12px)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 20, padding: 20 }}>
+        <div style={{ background: "linear-gradient(135deg, var(--primary-light), var(--primary-light))", backdropFilter: "blur(12px)", border: "1px solid var(--primary-border)", borderRadius: 20, padding: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
             {/* 아바타 */}
-            <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {targetUser.avatar_url ? (
                 <img src={targetUser.avatar_url} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
@@ -231,8 +247,8 @@ export default function ProfilePage() {
               {/* 닉네임 */}
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
                 <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0 }}>{targetUser.nickname || targetUser.name}</h2>
-                {hasWorker && <span style={{ fontSize: 11, background: "rgba(139,92,246,0.15)", color: "#c4b5fd", padding: "2px 8px", borderRadius: 20, border: "1px solid rgba(139,92,246,0.3)" }}>⚡ 알바생</span>}
-                {hasEmployer && <span style={{ fontSize: 11, background: "rgba(236,72,153,0.15)", color: "#f9a8d4", padding: "2px 8px", borderRadius: 20, border: "1px solid rgba(236,72,153,0.3)" }}>🏪 사장님</span>}
+                {hasWorker && <span style={{ fontSize: 11, background: "var(--chip-purple-bg)", color: "var(--purple-text)", padding: "2px 8px", borderRadius: 20, border: "1px solid var(--chip-purple-border)" }}>⚡ 알바생</span>}
+                {hasEmployer && <span style={{ fontSize: 11, background: "var(--chip-pink-bg)", color: "var(--pink-text)", padding: "2px 8px", borderRadius: 20, border: "1px solid var(--chip-pink-border)" }}>🏪 사장님</span>}
               </div>
               {/* 등급 + 신뢰점수 */}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -254,9 +270,9 @@ export default function ProfilePage() {
 
           {/* 성향 유형 한줄 요약만 */}
           {personalityType && (
-            <div style={{ background: "rgba(0,0,0,0.25)", borderRadius: 12, padding: "8px 14px", border: "1px solid rgba(255,255,255,0.04)" }}>
+            <div style={{ background: "var(--card-inner)", borderRadius: 12, padding: "8px 14px", border: "1px solid var(--card-inner-border)" }}>
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>성향 유형 · </span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#c4b5fd" }}>{personalityType}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)" }}>{personalityType}</span>
             </div>
           )}
         </div>
@@ -265,9 +281,9 @@ export default function ProfilePage() {
         {(personalityType || big5) && (
           <>
             {/* 성향 유형 카드 */}
-            <div style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 20, padding: 20, textAlign: "center" }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.2)", borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
-                <span style={{ fontSize: 11, color: "#c4b5fd", fontWeight: 600 }}>🔬 행동심리 분석 결과</span>
+            <div style={{ background: "var(--surface)", backdropFilter: "blur(12px)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, textAlign: "center" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--card-inner)", borderRadius: 20, padding: "4px 12px", marginBottom: 12 }}>
+                <span style={{ fontSize: 11, color: "var(--purple-text)", fontWeight: 600 }}>🔬 행동심리 분석 결과</span>
               </div>
               {personalityType && (
                 <>
@@ -281,7 +297,7 @@ export default function ProfilePage() {
               {(workerProfile?.strengths || employerProfiles[0]?.tags) && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 12 }}>
                   {(workerProfile?.strengths || []).map((s: string) => (
-                    <span key={s} style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "#c4b5fd", fontSize: 12, borderRadius: 20, padding: "5px 12px" }}>{s}</span>
+                    <span key={s} style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontSize: 12, borderRadius: 20, padding: "5px 12px" }}>{s}</span>
                   ))}
                 </div>
               )}
@@ -289,10 +305,10 @@ export default function ProfilePage() {
 
             {/* Big5 성향 분석 */}
             {big5 && (
-              <div style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 20, padding: 20 }}>
+              <div style={{ background: "var(--surface)", backdropFilter: "blur(12px)", border: "1px solid var(--border)", borderRadius: 20, padding: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
                   <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>📊 행동심리 성향 분석</h3>
-                  <span style={{ fontSize: 11, background: "rgba(34,197,94,0.1)", color: "#86efac", padding: "2px 8px", borderRadius: 20, border: "1px solid rgba(34,197,94,0.2)" }}>과학적 근거</span>
+                  <span style={{ fontSize: 11, background: "var(--chip-green-bg)", color: "var(--green-text)", padding: "2px 8px", borderRadius: 20, border: "1px solid var(--chip-green-border)" }}>과학적 근거</span>
                 </div>
                 {[
                   { label: "성실성", desc: "약속·책임감", value: big5.conscientiousness },
@@ -309,7 +325,7 @@ export default function ProfilePage() {
                       </div>
                       <span style={{ color: "var(--text-muted)" }}>{item.value}/5</span>
                     </div>
-                    <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 4, height: 6 }}>
+                    <div style={{ background: "var(--progress-track)", borderRadius: 4, height: 6 }}>
                       <div style={{ background: item.value >= 4 ? "linear-gradient(90deg, #8b5cf6, #ec4899)" : "var(--primary)", height: 6, borderRadius: 4, width: `${(item.value / 5) * 100}%`, transition: "width 0.8s ease" }} />
                     </div>
                   </div>
@@ -321,11 +337,11 @@ export default function ProfilePage() {
         {hasWorker && hasEmployer && (
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setActiveTab("worker")}
-              style={{ flex: 1, padding: "12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.05)", fontSize: 13, fontWeight: 600, cursor: "pointer", background: activeTab === "worker" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.04)", color: activeTab === "worker" ? "#fff" : "var(--text-muted)" }}>
+              style={{ flex: 1, padding: "12px", borderRadius: 12, border: "1px solid var(--border)", fontSize: 13, fontWeight: 600, cursor: "pointer", background: activeTab === "worker" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)", color: activeTab === "worker" ? "#fff" : "var(--text-muted)" }}>
               ⚡ 알바생 정보
             </button>
             <button onClick={() => setActiveTab("employer")}
-              style={{ flex: 1, padding: "12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.05)", fontSize: 13, fontWeight: 600, cursor: "pointer", background: activeTab === "employer" ? "linear-gradient(135deg, #ec4899, #be185d)" : "rgba(255,255,255,0.04)", color: activeTab === "employer" ? "#fff" : "var(--text-muted)" }}>
+              style={{ flex: 1, padding: "12px", borderRadius: 12, border: "1px solid var(--border)", fontSize: 13, fontWeight: 600, cursor: "pointer", background: activeTab === "employer" ? "linear-gradient(135deg, #ec4899, #be185d)" : "var(--surface2)", color: activeTab === "employer" ? "#fff" : "var(--text-muted)" }}>
               🏪 사장님 정보
             </button>
           </div>
@@ -333,8 +349,8 @@ export default function ProfilePage() {
 
         {/* 알바생 정보 */}
         {((hasWorker && !hasEmployer) || (hasWorker && activeTab === "worker")) && workerProfile && (
-          <div style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 20, padding: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "#c4b5fd" }}>⚡ 구직 정보</h3>
+          <div style={{ background: "var(--surface)", backdropFilter: "blur(12px)", border: "1px solid var(--border)", borderRadius: 20, padding: 20 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--purple-text)" }}>⚡ 구직 정보</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {workerProfile.desired_type && (
                 <div style={{ display: "flex", gap: 8 }}>
@@ -375,67 +391,42 @@ export default function ProfilePage() {
                 </div>
               )}
               <button onClick={() => router.push(`/worker/${targetId}`)}
-                style={{ marginTop: 4, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", color: "#c4b5fd", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
+                style={{ marginTop: 4, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
                 구직 정보 상세 보기 →
               </button>
             </div>
           </div>
         )}
 
-        {/* 사장님 정보 */}
+        {/* 사장님 정보 — 매장 상세는 각 매장 홈에서만, 여기선 목록/링크만 */}
         {((hasEmployer && !hasWorker) || (hasEmployer && activeTab === "employer")) && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {employerProfiles.map(ep => (
-              <div key={ep.id} style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 20, padding: 20 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "#f9a8d4" }}>🏪 {ep.business_name}</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {ep.business_type && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)", width: 60, flexShrink: 0 }}>업종</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{ep.business_type}</span>
+          <div style={{ background: "var(--surface)", backdropFilter: "blur(12px)", border: "1px solid var(--border)", borderRadius: 20, padding: 20 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--pink-text)" }}>🏪 운영중인 매장 ({employerProfiles.length})</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {employerProfiles.map(ep => (
+                <button key={ep.id} onClick={() => router.push(`/store/${ep.id}`)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ep.business_name}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                      {ep.business_type}{ep.region ? ` · 📍 ${ep.region}` : ""}
+                      {activeJobMap[ep.id] && <span style={{ color: "var(--pink-text)", fontWeight: 700 }}> · 📢 채용중</span>}
                     </div>
-                  )}
-                  {ep.region && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)", width: 60, flexShrink: 0 }}>위치</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>📍 {ep.region}</span>
-                    </div>
-                  )}
-                  {ep.wage && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)", width: 60, flexShrink: 0 }}>시급</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>💰 {ep.wage.toLocaleString()}원</span>
-                    </div>
-                  )}
-                  {ep.work_days && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)", width: 60, flexShrink: 0 }}>근무요일</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>📅 {ep.work_days}</span>
-                    </div>
-                  )}
-                  {ep.work_hours && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)", width: 60, flexShrink: 0 }}>근무시간</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>⏰ {ep.work_hours}</span>
-                    </div>
-                  )}
-                  <button onClick={() => router.push(`/job/${ep.id}`)}
-                    style={{ marginTop: 4, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.2)", color: "#f9a8d4", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
-                    공고 상세 보기 →
-                  </button>
-                </div>
-              </div>
-            ))}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--purple-text)", fontWeight: 700, flexShrink: 0 }}>매장 홈 →</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {/* 📸 피드 스토리 그리드 섹션 */}
         {userPosts.length > 0 && (
-          <div style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 20, padding: 20 }}>
+          <div style={{ background: "var(--surface)", backdropFilter: "blur(12px)", border: "1px solid var(--border)", borderRadius: 20, padding: 20 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--primary)" }}>📸 피드 스토리</h3>
             <div className="grid grid-cols-3 gap-1.5">
               {userPosts.map(post => (
                 <button key={post.id} onClick={() => handlePostClick(post)}
-                  className="aspect-square bg-zinc-900 rounded-xl relative overflow-hidden group focus:outline-none border border-border/20">
+                  className="aspect-square bg-surface2 rounded-xl relative overflow-hidden group focus:outline-none border border-border/20">
                   {post.media_type === "video" ? (
                     <div className="w-full h-full relative">
                       <video src={post.media_urls[0]} className="w-full h-full object-cover" />

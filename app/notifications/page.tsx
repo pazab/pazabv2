@@ -24,6 +24,8 @@ const TYPE_ICON: Record<string, string> = {
   attendance:    "ti-clock",
   payslip:       "ti-receipt",
   contract:      "ti-file-description",
+  feed_new_post: "ti-news",
+  store_follow:  "ti-heart",
   system:        "ti-info-circle",
 };
 
@@ -37,6 +39,8 @@ const TYPE_COLOR: Record<string, string> = {
   attendance:    "#06b6d4",
   payslip:       "#22c55e",
   contract:      "#a78bfa",
+  feed_new_post: "#ec4899",
+  store_follow:  "#f472b6",
   system:        "#71717a",
 };
 

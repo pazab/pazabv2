@@ -106,6 +106,10 @@ export default function AppHeader({
                   style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fb923c", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 16 }}>🔥</span> 대타 SOS
                 </button>
+                <button onClick={() => { setMenuOpen(false); router.push("/feed"); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#ec4899", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>📰</span> 피드
+                </button>
                 <button onClick={() => { setMenuOpen(false); router.push("/sudoku"); }}
                   style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#a78bfa", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 16 }}>🔢</span> 스도쿠

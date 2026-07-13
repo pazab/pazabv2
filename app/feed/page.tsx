@@ -23,6 +23,12 @@ interface Post {
   likedByMe: boolean;
   bookmarkedByMe: boolean;
   authorRegion: string | null;
+  storeId: string | null;
+}
+
+interface MyStore {
+  id: string;
+  business_name: string;
 }
 
 interface Comment {
@@ -47,8 +53,9 @@ export default function FeedPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterTab, setFilterTab] = useState<"all" | "nearby" | "employer" | "worker">("all");
+  const [filterTab, setFilterTab] = useState<"all" | "following" | "nearby" | "employer" | "worker">("all");
   const [userRegion, setUserRegion] = useState<string | null>(null);
+  const [followedStoreIds, setFollowedStoreIds] = useState<Set<string>>(new Set());
 
   // 작성 모달 상태
   const [writeModalOpen, setWriteModalOpen] = useState(false);
@@ -57,12 +64,58 @@ export default function FeedPage() {
   const [newMediaType, setNewMediaType] = useState<"image" | "video">("image");
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [myStores, setMyStores] = useState<MyStore[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
 
   // 댓글 창 관리 (postId -> boolean)
   const [openCommentsMap, setOpenCommentsMap] = useState<Record<string, boolean>>({});
   const [commentsMap, setCommentsMap] = useState<Record<string, Comment[]>>({});
   const [loadingCommentsMap, setLoadingCommentsMap] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+
+  // 다중 이미지 캐러셀 (PC 화살표 버튼용 현재 인덱스 + 스크롤 컨테이너 참조)
+  const [mediaIndexMap, setMediaIndexMap] = useState<Record<string, number>>({});
+  const mediaRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // 풀스크린 이미지 뷰어 (인스타 스타일 확대보기)
+  const [zoomedPost, setZoomedPost] = useState<Post | null>(null);
+  const [zoomedIndex, setZoomedIndex] = useState(0);
+
+  // 동영상 스크롤 자동재생/정지 (인스타/틱톡 스타일 — 화면에 들어오면 재생, 벗어나면 정지)
+  const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const [mutedMap, setMutedMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          const video = entry.target as HTMLVideoElement;
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+            video.play().catch(() => {});
+          } else {
+            video.pause();
+          }
+        });
+      },
+      { threshold: [0, 0.6, 1] }
+    );
+    videoRefs.current.forEach(video => observer.observe(video));
+    return () => observer.disconnect();
+  }, [posts, filterTab]);
+
+  const scrollMedia = (postId: string, dir: -1 | 1) => {
+    const el = mediaRefs.current.get(postId);
+    if (!el) return;
+    const nextIdx = Math.max(0, (mediaIndexMap[postId] || 0) + dir);
+    el.scrollTo({ left: nextIdx * el.clientWidth, behavior: "smooth" });
+  };
+
+  const handleMediaScroll = (postId: string, e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (!el.clientWidth) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setMediaIndexMap(prev => (prev[postId] === idx ? prev : { ...prev, [postId]: idx }));
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -80,6 +133,27 @@ export default function FeedPage() {
         .eq("id", session.user.id)
         .maybeSingle();
       if (u?.region) setUserRegion(u.region);
+
+      // 내 매장 목록 로딩 (사장님/both — 피드 작성 시 매장 귀속 선택용)
+      const { data: eps } = await supabase
+        .from("employer_profiles")
+        .select("id, business_name")
+        .eq("user_id", session.user.id)
+        .not("business_name", "is", null)
+        .or("is_deleted.is.null,is_deleted.eq.false");
+      if (eps && eps.length > 0) {
+        setMyStores(eps as MyStore[]);
+        setSelectedStoreId(eps[0].id);
+      }
+
+      // 내가 팔로우한 매장 목록 ("팔로잉" 탭 필터용)
+      const { data: follows } = await supabase
+        .from("store_follows")
+        .select("employer_profile_id")
+        .eq("user_id", session.user.id);
+      if (follows) {
+        setFollowedStoreIds(new Set(follows.map(f => f.employer_profile_id)));
+      }
 
       fetchPosts();
     });
@@ -283,7 +357,8 @@ export default function FeedPage() {
         body: JSON.stringify({
           content: newContent,
           media_urls: mediaUrls,
-          media_type: newMediaType
+          media_type: newMediaType,
+          employerProfileId: selectedStoreId
         })
       });
 
@@ -321,6 +396,9 @@ export default function FeedPage() {
   };
 
   const displayedPosts = posts.filter(post => {
+    if (filterTab === "following") {
+      return !!post.storeId && followedStoreIds.has(post.storeId);
+    }
     if (filterTab === "nearby") {
       if (!userRegion || !post.authorRegion) return true;
       const userCity = userRegion.split(" ")[0]; // 예: "충청남도"
@@ -345,13 +423,16 @@ export default function FeedPage() {
       <div className="flex gap-2 mb-4 border-b border-border pb-2 overflow-x-auto scrollbar-none">
         {[
           { id: "all", label: "전체" },
+          { id: "following", label: "❤️ 팔로잉" },
           { id: "nearby", label: "내 주변 📍" },
           { id: "employer", label: "🏪 매장 소식" },
           { id: "worker", label: "👤 구직 피드" }
         ].map(tab => (
           <button key={tab.id} onClick={() => setFilterTab(tab.id as any)}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition flex-shrink-0
-              ${filterTab === tab.id ? "bg-primary text-white" : "bg-surface2 text-text-sub"}`}>
+            className="px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition flex-shrink-0"
+            style={filterTab === tab.id
+              ? { background: "var(--primary)", color: "#fff" }
+              : { background: "var(--surface2)", color: "var(--text-sub)" }}>
             {tab.label}
           </button>
         ))}
@@ -364,15 +445,28 @@ export default function FeedPage() {
         </div>
       ) : displayedPosts.length === 0 ? (
         <div className="text-center py-20 px-4 bg-surface rounded-2xl border border-border shadow-sm">
-          <div className="text-4xl mb-3">📸</div>
-          <h4 className="text-base font-bold mb-1">피드가 비어있어요</h4>
+          <div className="text-4xl mb-3">{filterTab === "following" ? "❤️" : "📸"}</div>
+          <h4 className="text-base font-bold mb-1">
+            {filterTab === "following" ? "아직 팔로우한 매장이 없어요" : "피드가 비어있어요"}
+          </h4>
           <p className="text-xs text-text-muted mb-4">
-            선택한 필터에 해당하는 피드가 존재하지 않습니다.
+            {filterTab === "following"
+              ? "관심 있는 매장 글에서 팔로우하면 여기 모아볼 수 있어요"
+              : "선택한 필터에 해당하는 피드가 존재하지 않습니다."}
           </p>
-          <button onClick={() => setWriteModalOpen(true)}
-            className="bg-primary text-white font-bold text-xs px-5 py-2.5 rounded-xl hover:scale-105 active:scale-95 transition">
-            ✨ 첫 피드 남기기
-          </button>
+          {filterTab === "following" ? (
+            <button onClick={() => setFilterTab("all")}
+              className="font-bold text-xs px-5 py-2.5 rounded-xl hover:scale-105 active:scale-95 transition"
+              style={{ background: "var(--primary)", color: "#fff" }}>
+              🔍 전체 피드 둘러보기
+            </button>
+          ) : (
+            <button onClick={() => setWriteModalOpen(true)}
+              className="font-bold text-xs px-5 py-2.5 rounded-xl hover:scale-105 active:scale-95 transition"
+              style={{ background: "var(--primary)", color: "#fff" }}>
+              ✨ 첫 피드 남기기
+            </button>
+          )}
         </div>
       ) : (
           <div className="flex flex-col gap-4">
@@ -384,7 +478,9 @@ export default function FeedPage() {
               return (
                 <div key={post.id} className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden flex flex-col">
                   {/* 작성자 정보 */}
-                  <div className="flex items-center gap-3 p-3 border-b border-border">
+                  <button
+                    onClick={() => router.push(post.storeId ? `/store/${post.storeId}` : `/profile/${post.user_id}`)}
+                    className="flex items-center gap-3 p-3 border-b border-border text-left w-full cursor-pointer focus:outline-none hover:bg-surface2/40 transition">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-surface2 border border-border flex items-center justify-center flex-shrink-0">
                       {post.authorAvatar ? (
                         <img src={post.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
@@ -396,6 +492,9 @@ export default function FeedPage() {
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-sm text-text truncate">{post.authorName}</span>
                         <span className="text-xs" title={post.grade}>{GRADE_EMOJI[post.grade] || "🥉"}</span>
+                        {post.storeId && (
+                          <span className="text-[9px] text-primary bg-primary-light px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">매장홈 →</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[10px] text-text-muted bg-surface2 px-1.5 py-0.5 rounded">
@@ -406,27 +505,80 @@ export default function FeedPage() {
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </button>
 
                   {/* 미디어 영역 */}
                   {post.media_urls && post.media_urls.length > 0 && (
                     <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
                       {post.media_type === "video" ? (
-                        <video src={post.media_urls[0]} controls playsInline className="w-full h-full object-contain" />
+                        <>
+                          <video
+                            ref={el => { if (el) videoRefs.current.set(post.id, el); else videoRefs.current.delete(post.id); }}
+                            src={post.media_urls[0]}
+                            muted={mutedMap[post.id] !== false}
+                            loop
+                            playsInline
+                            onClick={e => {
+                              const v = e.currentTarget;
+                              v.paused ? v.play().catch(() => {}) : v.pause();
+                            }}
+                            className="w-full h-full object-contain cursor-pointer" />
+                          <button
+                            onClick={() => setMutedMap(prev => ({ ...prev, [post.id]: prev[post.id] === false }))}
+                            className="absolute bottom-2.5 right-2.5 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
+                            aria-label="음소거 전환">
+                            <i className={`ti ${mutedMap[post.id] !== false ? "ti-volume-3" : "ti-volume"}`}
+                              style={{ fontSize: 14, color: "#fff" }} aria-hidden="true" />
+                          </button>
+                        </>
                       ) : (
-                        <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
+                        <div
+                          ref={el => { if (el) mediaRefs.current.set(post.id, el); else mediaRefs.current.delete(post.id); }}
+                          onScroll={e => handleMediaScroll(post.id, e)}
+                          className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
                           {post.media_urls.map((url, idx) => (
-                            <div key={idx} className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center">
+                            <div key={idx}
+                              onClick={() => { setZoomedPost(post); setZoomedIndex(idx); }}
+                              className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center cursor-zoom-in">
                               <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
                             </div>
                           ))}
                         </div>
                       )}
-                      
+
+                      {/* 확대보기 힌트 아이콘 (PC에서도 클릭 가능함을 알림) */}
+                      {post.media_type === "image" && (
+                        <button onClick={() => { setZoomedPost(post); setZoomedIndex(mediaIndexMap[post.id] || 0); }}
+                          className="absolute bottom-2.5 right-2.5 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
+                          aria-label="크게 보기">
+                          <i className="ti ti-maximize" style={{ fontSize: 14, color: "#fff" }} aria-hidden="true" />
+                        </button>
+                      )}
+
+                      {/* PC용 좌우 화살표 버튼 (제스처 없어도 이미지 전환 가능) */}
+                      {post.media_type === "image" && post.media_urls.length > 1 && (
+                        <>
+                          {(mediaIndexMap[post.id] || 0) > 0 && (
+                            <button onClick={() => scrollMedia(post.id, -1)}
+                              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
+                              aria-label="이전 사진">
+                              <i className="ti ti-chevron-left" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
+                            </button>
+                          )}
+                          {(mediaIndexMap[post.id] || 0) < post.media_urls.length - 1 && (
+                            <button onClick={() => scrollMedia(post.id, 1)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
+                              aria-label="다음 사진">
+                              <i className="ti ti-chevron-right" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
+                            </button>
+                          )}
+                        </>
+                      )}
+
                       {/* 이미지 개수 표시 인디케이터 */}
                       {post.media_type === "image" && post.media_urls.length > 1 && (
                         <div className="absolute top-3 right-3 bg-black/60 text-[10px] text-white px-2 py-0.5 rounded-full font-bold">
-                          1/{post.media_urls.length}
+                          {(mediaIndexMap[post.id] || 0) + 1}/{post.media_urls.length}
                         </div>
                       )}
                     </div>
@@ -505,7 +657,8 @@ export default function FeedPage() {
                           onKeyDown={e => { if (e.key === "Enter") handleAddComment(post.id); }}
                           className="flex-1 bg-surface border border-border text-xs px-3 py-2 rounded-xl focus:outline-none focus:ring-1 focus:ring-primary" />
                         <button onClick={() => handleAddComment(post.id)}
-                          className="bg-primary text-white text-xs font-bold px-3.5 py-2 rounded-xl active:scale-95 transition">
+                          className="text-xs font-bold px-3.5 py-2 rounded-xl active:scale-95 transition"
+                          style={{ background: "var(--primary)", color: "#fff" }}>
                           전송
                         </button>
                       </div>
@@ -520,8 +673,14 @@ export default function FeedPage() {
 
       {/* 새 피드 등록 FAB */}
       <button onClick={() => setWriteModalOpen(true)}
-        className="fixed bottom-[92px] right-4 w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-accent text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition z-40">
-        <i className="ti ti-plus text-2xl" aria-hidden="true" />
+        className="fixed bottom-[92px] right-4 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform z-40"
+        style={{
+          width: 56, height: 56, borderRadius: "50%",
+          background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
+          boxShadow: "0 6px 20px rgba(139,92,246,0.55)",
+          border: "2px solid rgba(255,255,255,0.25)",
+        }}>
+        <i className="ti ti-plus" style={{ fontSize: 26, color: "#fff" }} aria-hidden="true" />
       </button>
 
       {/* 작성 모달 */}
@@ -538,6 +697,34 @@ export default function FeedPage() {
 
             {/* 본문 */}
             <div className="p-4 flex flex-col gap-4">
+              {/* 매장 귀속 선택 (사장님/both만 노출) */}
+              {myStores.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-bold text-text-sub">이 소식을 어디에 올릴까요?</span>
+                  <div className="flex gap-1.5 overflow-x-auto scrollbar-none">
+                    <button onClick={() => setSelectedStoreId(null)}
+                      className="px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition flex-shrink-0"
+                      style={selectedStoreId === null
+                        ? { background: "var(--primary)", color: "#fff" }
+                        : { background: "var(--surface2)", color: "var(--text-sub)" }}>
+                      👤 개인 소식
+                    </button>
+                    {myStores.map(store => (
+                      <button key={store.id} onClick={() => setSelectedStoreId(store.id)}
+                        className="px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition flex-shrink-0"
+                        style={selectedStoreId === store.id
+                          ? { background: "var(--primary)", color: "#fff" }
+                          : { background: "var(--surface2)", color: "var(--text-sub)" }}>
+                        🏪 {store.business_name}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedStoreId && (
+                    <span className="text-[10px] text-text-muted">매장 페이지에 계속 쌓여서 팔로워에게 알림이 가요</span>
+                  )}
+                </div>
+              )}
+
               <textarea placeholder="오늘의 일터 이야기나 일상 소식을 들려주세요... ✨"
                 value={newContent}
                 onChange={e => setNewContent(e.target.value)}
@@ -579,17 +766,87 @@ export default function FeedPage() {
             {/* 푸터 */}
             <div className="px-4 py-3 border-t border-border flex gap-2 justify-end bg-surface2">
               <button onClick={closeWriteModal} disabled={uploading}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-surface border border-border text-text-sub hover:bg-surface2 transition active:scale-95">
+                className="px-4 py-2 rounded-xl text-xs font-bold transition active:scale-95"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-sub)" }}>
                 취소
               </button>
               <button onClick={handleCreatePost} disabled={uploading || (!newContent.trim() && newMediaFiles.length === 0)}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-white transition active:scale-95 disabled:opacity-50">
+                className="px-4 py-2 rounded-xl text-xs font-bold transition active:scale-95 disabled:opacity-50"
+                style={{ background: "var(--primary)", color: "#fff" }}>
                 {uploading ? "업로드 중..." : "공유하기"}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* 풀스크린 이미지 뷰어 (인스타 스타일) */}
+      {zoomedPost && (() => {
+        const liveZoomedPost = posts.find(p => p.id === zoomedPost.id) || zoomedPost;
+        return (
+        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col" onClick={() => setZoomedPost(null)}>
+          {/* 상단 바 */}
+          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-surface2 border border-white/20 flex items-center justify-center flex-shrink-0">
+                {liveZoomedPost.authorAvatar ? (
+                  <img src={liveZoomedPost.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-sm">{liveZoomedPost.authorType === "employer" ? "🏪" : "👤"}</span>
+                )}
+              </div>
+              <span className="text-white text-xs font-bold truncate">{liveZoomedPost.authorName}</span>
+            </div>
+            <button onClick={() => setZoomedPost(null)}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center flex-shrink-0">
+              <i className="ti ti-x" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
+            </button>
+          </div>
+
+          {/* 이미지 (핀치/스크롤 확대는 브라우저 기본 동작에 위임, contain으로 전체 노출) */}
+          <div className="flex-1 relative flex items-center justify-center min-h-0" onClick={e => e.stopPropagation()}>
+            <img src={liveZoomedPost.media_urls[zoomedIndex]} alt="확대 이미지"
+              className="max-w-full max-h-full object-contain" />
+
+            {liveZoomedPost.media_urls.length > 1 && zoomedIndex > 0 && (
+              <button onClick={() => setZoomedIndex(i => i - 1)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center">
+                <i className="ti ti-chevron-left" style={{ fontSize: 22, color: "#fff" }} aria-hidden="true" />
+              </button>
+            )}
+            {liveZoomedPost.media_urls.length > 1 && zoomedIndex < liveZoomedPost.media_urls.length - 1 && (
+              <button onClick={() => setZoomedIndex(i => i + 1)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center">
+                <i className="ti ti-chevron-right" style={{ fontSize: 22, color: "#fff" }} aria-hidden="true" />
+              </button>
+            )}
+            {liveZoomedPost.media_urls.length > 1 && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/50 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+                {zoomedIndex + 1}/{liveZoomedPost.media_urls.length}
+              </div>
+            )}
+          </div>
+
+          {/* 하단 캡션 + 좋아요/댓글 */}
+          <div className="flex-shrink-0 px-4 py-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+            {liveZoomedPost.content && (
+              <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">{liveZoomedPost.content}</p>
+            )}
+            <div className="flex items-center gap-4">
+              <button onClick={() => handleLike(liveZoomedPost.id)} className="flex items-center gap-1.5">
+                <i className={`ti ${liveZoomedPost.likedByMe ? "ti-heart-filled text-pink-500" : "ti-heart"} text-lg`}
+                  style={!liveZoomedPost.likedByMe ? { color: "#fff" } : undefined} aria-hidden="true" />
+                <span className="text-white text-xs font-bold">{liveZoomedPost.like_count}</span>
+              </button>
+              <div className="flex items-center gap-1.5">
+                <i className="ti ti-message-2 text-lg" style={{ color: "#fff" }} aria-hidden="true" />
+                <span className="text-white text-xs font-bold">{liveZoomedPost.comment_count}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
     </main>
   );
 }

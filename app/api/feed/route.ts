@@ -44,17 +44,24 @@ export async function GET(req: NextRequest) {
     const employerUserIds = (users || []).filter(u => u.user_type === "employer" || u.user_type === "both").map(u => u.id);
     const workerUserIds = (users || []).filter(u => u.user_type === "worker" || u.user_type === "both").map(u => u.id);
 
-    const [employerProfiles, workerProfiles] = await Promise.all([
+    // 게시물이 특정 매장에 귀속된 경우, 해당 매장 정보를 우선 사용 (다중 매장 사장님 대응)
+    const storeIds = Array.from(new Set(posts.map(p => p.employer_profile_id).filter(Boolean)));
+
+    const [employerProfiles, workerProfiles, storeProfiles] = await Promise.all([
       employerUserIds.length > 0
         ? supabaseAdmin.from("employer_profiles").select("user_id, business_name, image_url").in("user_id", employerUserIds)
         : Promise.resolve({ data: [] }),
       workerUserIds.length > 0
         ? supabaseAdmin.from("worker_profiles").select("user_id, image_url").in("user_id", workerUserIds)
+        : Promise.resolve({ data: [] }),
+      storeIds.length > 0
+        ? supabaseAdmin.from("employer_profiles").select("id, business_name, image_url").in("id", storeIds)
         : Promise.resolve({ data: [] })
     ]);
 
     const empProfileMap = new Map((employerProfiles.data || []).map(p => [p.user_id, p]));
     const wrkProfileMap = new Map((workerProfiles.data || []).map(p => [p.user_id, p]));
+    const storeProfileMap = new Map((storeProfiles.data || []).map(p => [p.id, p]));
 
     // 3. 내가 좋아요 및 북마크 한 항목 매핑
     let likedPostIds = new Set<string>();
@@ -78,18 +85,21 @@ export async function GET(req: NextRequest) {
     // 4. 데이터 조립
     const enriched = posts.map(post => {
       const writer = (users || []).find(u => u.id === post.user_id);
+      const storeProfile = post.employer_profile_id ? storeProfileMap.get(post.employer_profile_id) : null;
       const empProfile = empProfileMap.get(post.user_id);
       const wrkProfile = wrkProfileMap.get(post.user_id);
 
-      // 이름 결정 (매장 이름이 있으면 매장 이름 노출, 없으면 닉네임)
-      const authorName = empProfile?.business_name 
-        ? `${empProfile.business_name} 사장님` 
+      // 매장에 귀속된 글이면 해당 매장 정보 우선 (다중 매장 사장님 대응), 없으면 기존 방식 폴백
+      const businessName = storeProfile?.business_name || empProfile?.business_name;
+      const authorName = businessName
+        ? `${businessName} 사장님`
         : (writer?.nickname || "알 수 없음");
 
       // 프로필 아바타 결정
-      const authorAvatar = empProfile?.image_url 
-        || wrkProfile?.image_url 
-        || writer?.avatar_url 
+      const authorAvatar = storeProfile?.image_url
+        || empProfile?.image_url
+        || wrkProfile?.image_url
+        || writer?.avatar_url
         || null;
 
       return {
@@ -101,7 +111,8 @@ export async function GET(req: NextRequest) {
         grade: writer?.grade || "bronze",
         likedByMe: likedPostIds.has(post.id),
         bookmarkedByMe: bookmarkedPostIds.has(post.id),
-        authorRegion: writer?.region || null
+        authorRegion: writer?.region || null,
+        storeId: post.employer_profile_id || null
       };
     });
 
@@ -127,7 +138,22 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { content, media_urls, media_type } = body;
+    const { content, media_urls, media_type, employerProfileId } = body;
+
+    // 매장 지정 시 본인 소유 매장인지 검증
+    let store: { id: string; business_name: string | null; image_url: string | null } | null = null;
+    if (employerProfileId) {
+      const { data: ownedStore } = await supabaseAdmin
+        .from("employer_profiles")
+        .select("id, business_name, image_url")
+        .eq("id", employerProfileId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!ownedStore) {
+        return NextResponse.json({ success: false, error: "본인 소유 매장이 아닙니다." }, { status: 403 });
+      }
+      store = ownedStore;
+    }
 
     const { data: newPost, error: insertErr } = await supabaseAdmin
       .from("feed_posts")
@@ -135,7 +161,8 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         content,
         media_urls: media_urls || [],
-        media_type: media_type || "image"
+        media_type: media_type || "image",
+        employer_profile_id: store?.id || null
       })
       .select("*")
       .single();
@@ -149,23 +176,25 @@ export async function POST(req: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    let businessName = "";
-    let profilePic = "";
-    if (writer?.user_type === "employer" || writer?.user_type === "both") {
-      const { data: emp } = await supabaseAdmin
-        .from("employer_profiles")
-        .select("business_name, image_url")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      businessName = emp?.business_name || "";
-      profilePic = emp?.image_url || "";
-    } else {
-      const { data: wrk } = await supabaseAdmin
-        .from("worker_profiles")
-        .select("image_url")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      profilePic = wrk?.image_url || "";
+    let businessName = store?.business_name || "";
+    let profilePic = store?.image_url || "";
+    if (!store) {
+      if (writer?.user_type === "employer" || writer?.user_type === "both") {
+        const { data: emp } = await supabaseAdmin
+          .from("employer_profiles")
+          .select("business_name, image_url")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        businessName = emp?.business_name || "";
+        profilePic = emp?.image_url || "";
+      } else {
+        const { data: wrk } = await supabaseAdmin
+          .from("worker_profiles")
+          .select("image_url")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        profilePic = wrk?.image_url || "";
+      }
     }
 
     const authorName = businessName ? `${businessName} 사장님` : (writer?.nickname || "알 수 없음");
@@ -178,8 +207,29 @@ export async function POST(req: NextRequest) {
       authorType: writer?.user_type || "worker",
       trustScore: writer?.trust_score || 50,
       grade: writer?.grade || "bronze",
-      likedByMe: false
+      likedByMe: false,
+      bookmarkedByMe: false,
+      storeId: store?.id || null
     };
+
+    // 매장에 올린 글이면 팔로워들에게 새 소식 알림 발송 (자연 유입 루프)
+    if (store) {
+      const { data: followers } = await supabaseAdmin
+        .from("store_follows")
+        .select("user_id")
+        .eq("employer_profile_id", store.id);
+
+      if (followers && followers.length > 0) {
+        const { createNotification } = await import("@/lib/notify");
+        await Promise.all(followers.map(f => createNotification({
+          userId: f.user_id,
+          type: "feed_new_post",
+          title: `📰 ${store!.business_name} 새 소식`,
+          body: content ? String(content).slice(0, 60) : "새로운 소식이 올라왔어요",
+          url: `/store/${store!.id}`
+        })));
+      }
+    }
 
     return NextResponse.json({ success: true, data: enrichedPost });
   } catch (error: any) {
