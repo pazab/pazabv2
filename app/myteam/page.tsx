@@ -1054,6 +1054,10 @@ function MyTeamPageContent() {
   const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
   const [resignTarget, setResignTarget] = useState<{ member: any; name: string; hasWorkedThisMonth: boolean } | null>(null);
+  const [selectedTimetableDay, setSelectedTimetableDay] = useState<string>(() => {
+    const days = ["일", "월", "화", "수", "목", "금", "토"];
+    return days[new Date().getDay()];
+  });
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
@@ -1184,7 +1188,7 @@ function MyTeamPageContent() {
   async function loadTeam(uid: string) {
     // 모든 매장 로드 (순수 매장 정보만)
     const { data: stores } = await supabase.from("employer_profiles")
-      .select("id, business_name, business_type, region, image_url")
+      .select("*")
       .eq("user_id", uid).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null)
       .order("created_at", { ascending: false });
     const storeList = stores || [];
@@ -1440,7 +1444,7 @@ function MyTeamPageContent() {
 
   async function loadMyWork(uid: string) {
     const { data: activeData } = await supabase.from("team_members")
-      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, role_desc, invite_status, created_at, contract_status,
+      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, employer_profile_id, role_desc, invite_status, created_at, contract_status,
         users!team_members_employer_id_fkey (nickname, avatar_url)`)
       .eq("worker_id", uid).eq("status", "active")
       .order("created_at", { ascending: false });
@@ -1462,17 +1466,22 @@ function MyTeamPageContent() {
       }
     }
 
-    const empIds = (activeData||[]).map((d: any) => d.employer_id);
+    const profileIds = [...new Set((activeData||[]).map((d: any) => d.employer_profile_id).filter(Boolean))];
+    const empIdFallbacks = [...new Set((activeData||[]).filter((d: any) => !d.employer_profile_id).map((d: any) => d.employer_id))];
     const profiles: any[] = [];
-    if (empIds.length > 0) {
-      for (const empId of [...new Set(empIds)]) {
-        const { data: ep } = await supabase.from("employer_profiles")
-          .select("user_id, business_name, business_type, region")
-          .eq("user_id", empId)
-          .order("created_at", { ascending: false })
-          .limit(1).maybeSingle();
-        if (ep) profiles.push(ep);
-      }
+    if (profileIds.length > 0) {
+      const { data: eps } = await supabase.from("employer_profiles")
+        .select("id, user_id, business_name, business_type, region")
+        .in("id", profileIds);
+      if (eps) profiles.push(...eps);
+    }
+    for (const empId of empIdFallbacks) {
+      const { data: ep } = await supabase.from("employer_profiles")
+        .select("id, user_id, business_name, business_type, region")
+        .eq("user_id", empId)
+        .order("created_at", { ascending: false })
+        .limit(1).maybeSingle();
+      if (ep) profiles.push(ep);
     }
 
     const mapped = (activeData||[]).map((d: any) => {
@@ -1517,7 +1526,7 @@ function MyTeamPageContent() {
         work_days,
         work_hours,
         employer: d.users,
-        profile: profiles.find((p: any) => p.user_id === d.employer_id),
+        profile: profiles.find((p: any) => d.employer_profile_id ? p.id === d.employer_profile_id : p.user_id === d.employer_id),
         contractStatus,
       };
     });
@@ -2085,6 +2094,180 @@ function MyTeamPageContent() {
                             </div>
                           ))}
                         </div>
+
+                        {/* 📅 요일별 근무 시간표 타임라인 */}
+                        <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "14px 16px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>📅 요일별 근무 시간표</span>
+                            {/* 요일 선택 칩 */}
+                            <div style={{ display: "flex", gap: 3 }}>
+                              {["월", "화", "수", "목", "금", "토", "일"].map(day => {
+                                const isSelected = selectedTimetableDay === day;
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => setSelectedTimetableDay(day)}
+                                    style={{
+                                      width: 24,
+                                      height: 24,
+                                      borderRadius: "50%",
+                                      border: "none",
+                                      fontSize: 10,
+                                      fontWeight: 800,
+                                      cursor: "pointer",
+                                      background: isSelected ? "linear-gradient(135deg, #7c3aed, #ec4899)" : "var(--surface2)",
+                                      color: isSelected ? "#fff" : "var(--text-muted)",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      transition: "all 0.15s"
+                                    }}
+                                  >
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* 시간표 본체 */}
+                          {(() => {
+                            const isWorkingOnDay = (member: any, dayKo: string) => {
+                              const daysMap: Record<string, string> = {
+                                "월": "mon", "화": "tue", "수": "wed", "목": "thu", "금": "fri", "토": "sat", "일": "sun"
+                              };
+                              const engDay = daysMap[dayKo];
+                              const workDaysStr = (member.work_days || "").toLowerCase();
+                              if (workDaysStr.includes(dayKo) || (engDay && workDaysStr.includes(engDay))) return true;
+                              if (workDaysStr.includes("주5일") && ["월", "화", "수", "목", "금"].includes(dayKo)) return true;
+                              if (workDaysStr.includes("주6일") && ["월", "화", "수", "목", "금", "토"].includes(dayKo)) return true;
+                              if (workDaysStr.includes("매일") || workDaysStr.includes("월~일")) return true;
+                              return false;
+                            };
+
+                            const parseHours = (hoursStr: string) => {
+                              const match = (hoursStr || "").match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
+                              if (match) {
+                                const startHour = parseInt(match[1]);
+                                const startMin = parseInt(match[2]);
+                                const endHour = parseInt(match[3]);
+                                const endMin = parseInt(match[4]);
+                                return {
+                                  start: startHour + startMin / 60,
+                                  end: endHour + endMin / 60,
+                                  label: `${match[1]}:${match[2]}~${match[3]}:${match[4]}`
+                                };
+                              }
+                              return null;
+                            };
+
+                            const dayMembers = activeMembers.filter(m => isWorkingOnDay(m, selectedTimetableDay));
+
+                            if (dayMembers.length === 0) {
+                              return (
+                                <div style={{ padding: "16px 0", textAlign: "center", background: "rgba(255,255,255,0.01)", borderRadius: 10, border: "1px dashed rgba(255,255,255,0.05)" }}>
+                                  <p style={{ color: "var(--text-muted)", fontSize: 11, margin: 0 }}>이 요일에는 예정된 근무자가 없어요</p>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div style={{ position: "relative", paddingBottom: 6 }}>
+                                {/* 시간 축 피드 (08시 ~ 24시, 8구간) */}
+                                <div style={{ display: "flex", marginLeft: 72, marginBottom: 8, paddingBottom: 4, position: "relative", height: 14 }}>
+                                  {Array.from({ length: 9 }).map((_, idx) => {
+                                    const hour = 8 + idx * 2;
+                                    const leftPercent = (idx / 8) * 100;
+                                    return (
+                                      <span key={hour} style={{ position: "absolute", left: `${leftPercent}%`, transform: "translateX(-50%)", fontSize: 9, color: "var(--text-muted)", fontWeight: 700 }}>
+                                        {String(hour).padStart(2, "0")}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+
+                                {/* 타임라인 그리드 세로 가이드라인 */}
+                                <div style={{ position: "absolute", top: 14, bottom: 0, left: 72, right: 0, pointerEvents: "none", zIndex: 0 }}>
+                                  {Array.from({ length: 9 }).map((_, idx) => {
+                                    const leftPercent = (idx / 8) * 100;
+                                    return (
+                                      <div
+                                        key={idx}
+                                        style={{
+                                          position: "absolute",
+                                          left: `${leftPercent}%`,
+                                          top: 0,
+                                          bottom: 0,
+                                          width: 1,
+                                          borderLeft: "1px dashed rgba(255,255,255,0.04)"
+                                        }}
+                                      />
+                                    );
+                                  })}
+                                </div>
+
+                                {/* 근무자 리스트 행 */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8, position: "relative", zIndex: 1 }}>
+                                  {dayMembers.map(m => {
+                                    const parsed = parseHours(m.work_hours);
+                                    let left = 0;
+                                    let width = 0;
+                                    if (parsed) {
+                                      const startClamp = Math.max(8, Math.min(24, parsed.start));
+                                      const endClamp = Math.max(8, Math.min(24, parsed.end));
+                                      left = ((startClamp - 8) / 16) * 100;
+                                      width = ((endClamp - startClamp) / 16) * 100;
+                                    }
+
+                                    const name = m.worker?.nickname || "팀원";
+
+                                    return (
+                                      <div key={m.id} style={{ display: "flex", alignItems: "center" }}>
+                                        {/* 이름 */}
+                                        <div style={{ width: 64, fontSize: 11, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: 8 }}>
+                                          {name}
+                                        </div>
+                                        {/* 트랙 */}
+                                        <div style={{ flex: 1, height: 22, background: "rgba(255,255,255,0.02)", borderRadius: 12, position: "relative", overflow: "hidden", border: "1px solid rgba(255,255,255,0.03)" }}>
+                                          {parsed ? (
+                                            <div
+                                              style={{
+                                                position: "absolute",
+                                                left: `${left}%`,
+                                                width: `${width}%`,
+                                                height: "100%",
+                                                background: "linear-gradient(90deg, #7c3aed, #ec4899)",
+                                                borderRadius: 10,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                fontSize: 9,
+                                                color: "#fff",
+                                                fontWeight: 800,
+                                                boxShadow: "0 2px 6px rgba(124,58,237,0.25)",
+                                                whiteSpace: "nowrap",
+                                                overflow: "hidden"
+                                              }}
+                                              title={`${name}: ${parsed.label}`}
+                                            >
+                                              {width > 15 && parsed.label}
+                                            </div>
+                                          ) : (
+                                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", paddingLeft: 8, fontSize: 9, color: "var(--text-muted)", fontStyle: "italic" }}>
+                                              시간 협의
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
                         {/* 초대 + 팀원 */}
                         <div style={{ background:"var(--surface)" }}>
                           <div style={{ padding:"10px 12px", borderBottom:"1px solid var(--border)", display:"flex", gap:8 }}>

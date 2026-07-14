@@ -393,18 +393,23 @@ export default function JobDetailPage() {
         {/* 핵심 조건 */}
         <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[
-              { icon: "₩", label: "시급", value: `${Number(job.wage || 0).toLocaleString()}원`, sub: job.wage_negotiable ? "협의 가능" : null, color: "#fca5a5" },
-              { icon: "📅", label: "근무요일", value: String(job.work_days || "협의"), sub: job.days_negotiable ? "협의 가능" : null, color: null },
-              { icon: "⏰", label: "근무시간", value: String(job.work_hours || "협의"), sub: null, color: null },
-              { icon: "👥", label: "모집인원", value: `${job.staff_count || 1}명`, sub: null, color: null },
-            ].map(item => (
-              <div key={item.label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "12px 14px" }}>
-                <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>{item.icon} {item.label}</p>
-                <p style={{ fontSize: 16, fontWeight: 800, margin: 0, color: item.color || "var(--text)" }}>{item.value}</p>
-                {item.sub && <p style={{ fontSize: 10, color: "#c4b5fd", margin: "3px 0 0" }}>💬 {item.sub}</p>}
-              </div>
-            ))}
+            {(() => {
+              const wageTypeTag = (job.tags as string[] | undefined)?.find((t: string) => t.startsWith("wage_type:"));
+              const wageType = wageTypeTag ? wageTypeTag.split(":")[1] : "hourly";
+              const wageLabel = wageType === "hourly" ? "시급" : wageType === "daily" ? "일급" : "월급";
+              return [
+                { icon: "₩", label: wageLabel, value: `${Number(job.wage || 0).toLocaleString()}원`, sub: job.wage_negotiable ? "협의 가능" : null, color: "#fca5a5" },
+                { icon: "📅", label: "근무요일", value: String(job.work_days || "협의"), sub: job.days_negotiable ? "협의 가능" : null, color: null },
+                { icon: "⏰", label: "근무시간", value: String(job.work_hours || "협의"), sub: null, color: null },
+                { icon: "👥", label: "모집인원", value: `${job.staff_count || 1}명`, sub: null, color: null },
+              ].map(item => (
+                <div key={item.label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "12px 14px" }}>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>{item.icon} {item.label}</p>
+                  <p style={{ fontSize: 16, fontWeight: 800, margin: 0, color: item.color || "var(--text)" }}>{item.value}</p>
+                  {item.sub && <p style={{ fontSize: 10, color: "#c4b5fd", margin: "3px 0 0" }}>💬 {item.sub}</p>}
+                </div>
+              ));
+            })()}
           </div>
         </div>
 
@@ -433,7 +438,7 @@ export default function JobDetailPage() {
         )}
 
         {/* 사장님 성향 */}
-        {!!job.employer_type && typeInfo && (
+        {!!job.employer_type && typeInfo ? (
           <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>👔 사장님 성향</p>
             <div style={{ background: `${typeInfo.color}12`, border: `1px solid ${typeInfo.color}30`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
@@ -462,6 +467,40 @@ export default function JobDetailPage() {
             <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.25)", color: "#f9a8d4", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               🤖 AI 봇에게 물어보기
             </button>
+          </div>
+        ) : (
+          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>👔 사장님 성향 분석</p>
+            <div style={{
+              background: "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.04))",
+              border: "1px solid rgba(139,92,246,0.15)",
+              borderRadius: 16,
+              padding: 20,
+              textAlign: "center"
+            }}>
+              <p style={{ fontSize: 32, margin: "0 0 10px" }}>🧠</p>
+              <h4 style={{ fontSize: 15, fontWeight: 800, margin: "0 0 6px" }}>아직 등록된 사장님의 성향 분석이 없어요</h4>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 16px", lineHeight: 1.5 }}>
+                재미삼아 5분 성향 분석을 완료하시면,<br />
+                어떤 알바생과 찰떡궁합인지 바로 확인할 수 있어요!
+              </p>
+              {isOwner ? (
+                <button
+                  onClick={() => router.push("/employer/interview")}
+                  style={{
+                    background: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                    border: "none", color: "#fff", fontWeight: 700,
+                    padding: "10px 18px", borderRadius: 12, cursor: "pointer", fontSize: 13
+                  }}
+                >
+                  🎯 5분 성향 분석 시작하기
+                </button>
+              ) : (
+                <div style={{ fontSize: 11, color: "var(--text-muted)", background: "rgba(0,0,0,0.15)", padding: "8px 12px", borderRadius: 10, display: "inline-block" }}>
+                  💡 사장님이 성향 분석을 완료하면 궁합 정보가 나타납니다.
+                </div>
+              )}
+            </div>
           </div>
         )}
 

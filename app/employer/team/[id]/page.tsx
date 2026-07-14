@@ -9,6 +9,7 @@ import { getTrustGrade } from "@/lib/utils";
 import DateWheelPicker from "@/components/DateWheelPicker";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 import { sendPushNotification } from "@/lib/usePush";
+import { fetchCredentialsWithFallback } from "@/lib/credentials";
 
 // ─────────────────────────────────────────────
 // 근태 이력 타임라인 (아코디언, 기본 접힘)
@@ -409,9 +410,9 @@ export default function TeamMemberPage() {
         const { data: ep } = await supabase.from("employer_profiles")
           .select("business_type").eq("id", data.employer_profile_id).maybeSingle();
         if (ep?.business_type) {
-          const { data: creds } = await supabase.from("job_credentials")
-            .select("id").eq("category_name", ep.business_type).eq("name", "보건증").eq("is_mandatory_by_law", true).limit(1);
-          setNeedsHealthCert((creds?.length ?? 0) > 0);
+          const creds = await fetchCredentialsWithFallback();
+          const hasMandatoryHealthCert = creds.some(c => c.category_name === ep.business_type && c.name === "보건증" && c.is_mandatory_by_law);
+          setNeedsHealthCert(hasMandatoryHealthCert);
         }
       }
 

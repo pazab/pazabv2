@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
       // jobs 테이블 + employer_profiles 조인으로 공고 조회
       const { data: allJobsRaw } = await supabaseAdmin
         .from("jobs")
-        .select(`*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, is_deleted, lat, lng), users!jobs_user_id_fkey(trust_score, avatar_url, name, nickname)`)
+        .select(`*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, is_deleted, lat, lng), users!jobs_user_id_fkey(trust_score, avatar_url, real_name, nickname)`)
         .eq("is_active", true)
         .neq("job_type", "urgent")
         .neq("user_id", userId)
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
           ...job,
           id: job.id || job.user_id,
           employer_avatar: empUser?.avatar_url,
-          employer_name: empUser?.nickname || empUser?.name,
+          employer_name: empUser?.nickname || empUser?.real_name,
           trust_score: trustScore,
           match_score: finalScoreWithNoise,
           is_liked: myLikes.includes(String(job.id)),
@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
       if (gugun) {
         const { data } = await supabaseAdmin
           .from("worker_profiles")
-          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname, worker_result)`)
+          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname, worker_result)`)
           .eq("is_active", true)
           .neq("user_id", userId)
           .ilike("desired_region", `%${gugun}%`)
@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
       } else if (sido) {
         const { data } = await supabaseAdmin
           .from("worker_profiles")
-          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname, worker_result)`)
+          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname, worker_result)`)
           .eq("is_active", true)
           .neq("user_id", userId)
           .ilike("desired_region", `%${sido}%`)
@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
 
       let otherQuery = supabaseAdmin
         .from("worker_profiles")
-        .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, name, nickname, worker_result)`)
+        .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname, worker_result)`)
         .eq("is_active", true)
         .neq("user_id", userId);
 
@@ -291,7 +291,7 @@ export async function POST(req: NextRequest) {
             ...worker,
             id: worker.user_id,
             worker_avatar: wrkUser?.avatar_url,
-            worker_name: wrkUser?.nickname || wrkUser?.name,
+            worker_name: wrkUser?.nickname || wrkUser?.real_name,
             trust_score: trustScore,
             match_score: finalScoreWithNoise,
             is_liked: myLikes.includes(String(worker.user_id)),

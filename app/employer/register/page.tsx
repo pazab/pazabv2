@@ -7,10 +7,13 @@ import { Suspense } from "react";
 import dynamic from "next/dynamic";
 import ImageCropperModal from "@/components/ImageCropperModal";
 
+import { fetchCredentialsWithFallback } from "@/lib/credentials";
+
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
 import { calcWorkPay } from "@/lib/utils";
 import { cardStyle, cardGradientStyle, btnPrimary, btnSecondary } from "@/lib/styles";
+
 
 const MIN_WAGE = 10030;
 const WORK_DAYS_OPTIONS = ["평일", "주말", "평일+주말", "협의"];
@@ -41,6 +44,7 @@ interface JobForm {
   lat: number | null;
   lng: number | null;
   wage: string;
+  wageType: string; // 'hourly' | 'daily' | 'monthly'
   wageNegotiable: boolean;
   workDays: string;
   daysNegotiable: boolean;
@@ -63,7 +67,7 @@ interface JobForm {
 const emptyForm = (): JobForm => ({
   businessName: "", categoryId: "", categoryIds: [], customCategory: "", businessType: "",
   sido: "", gugun: "", addressDetail: "", fullAddress: "", lat: null, lng: null,
-  wage: String(MIN_WAGE), wageNegotiable: false, workDays: "", daysNegotiable: false, workHours: "", workStartHour: null, workEndHour: null,
+  wage: "", wageType: "hourly", wageNegotiable: false, workDays: "", daysNegotiable: false, workHours: "", workStartHour: null, workEndHour: null,
   selectedTags: [], staffCount: "1", mealProvided: false, parking: false,
   breakHours: 0.5, weeklyHoliday: "일",
   isUrgent: false, expiresAt: "",
@@ -105,6 +109,7 @@ function EmployerRegisterContent() {
   const [success, setSuccess] = useState(false);
   const [newProfileId, setNewProfileId] = useState(""); // employer_profiles.id (봇 설정 진입용)
   const [step, setStep] = useState(1);
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoUploading, setVideoUploading] = useState(false);
@@ -195,6 +200,7 @@ function EmployerRegisterContent() {
   const [childCategories, setChildCategories] = useState<Category[]>([]);
   const [selectedParent, setSelectedParent] = useState<Category | null>(null);
   const [form, setForm] = useState<JobForm>(emptyForm());
+  const [myStores, setMyStores] = useState<any[]>([]);
   const [addressToast, setAddressToast] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
 
@@ -206,8 +212,8 @@ function EmployerRegisterContent() {
       setParentCategories(data.filter((c: { parent_id: string | null }) => !c.parent_id));
       setChildCategories(data.filter((c: { parent_id: string | null }) => c.parent_id));
     }
-    const { data: creds } = await supabase.from("job_credentials").select("*").order("is_mandatory_by_law", { ascending: false });
-    if (creds) setCredentialsMaster(creds);
+    const creds = await fetchCredentialsWithFallback();
+    setCredentialsMaster(creds);
   };
 
   const checkAuth = async () => {
@@ -215,12 +221,22 @@ function EmployerRegisterContent() {
     if (!session) { router.push("/login"); return; }
     setUserId(session.user.id);
 
+    // 사용자의 모든 매장 목록 로드
+    const { data: stores } = await supabase.from("employer_profiles")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false });
+    if (stores && stores.length > 0) {
+      setMyStores(stores);
+    }
+
     if (storeId) {
       // 내팀 "공고올리기/수정" 진입 — 매장 정보 + 최신 공고 자동채움
       const { data: store } = await supabase.from("employer_profiles").select("*").eq("id", storeId).single();
       if (store) {
         setStoreProfileId(storeId);
-        loadFormFromStore(store);
+        await loadFormFromStore(store);
         // 해당 매장의 최신 공고 로드
         const { data: job } = await supabase.from("jobs")
           .select("*").eq("employer_profile_id", storeId)
@@ -234,7 +250,7 @@ function EmployerRegisterContent() {
         setStoreProfileId(job.employer_profile_id);
         loadFormFromJob(job);
         const { data: store } = await supabase.from("employer_profiles").select("*").eq("id", job.employer_profile_id).single();
-        if (store) loadFormFromStore(store);
+        if (store) await loadFormFromStore(store);
       }
     } else if (isEdit && !editId) {
       // 가장 최근 공고 수정
@@ -245,35 +261,94 @@ function EmployerRegisterContent() {
         setStoreProfileId(job.employer_profile_id);
         loadFormFromJob(job);
         const { data: store } = await supabase.from("employer_profiles").select("*").eq("id", job.employer_profile_id).single();
-        if (store) loadFormFromStore(store);
+        if (store) await loadFormFromStore(store);
       }
     } else {
-      // 신규 매장 등록 — users.region으로 지역 자동채움
-      const { data: userData } = await supabase.from("users")
-        .select("region, name, phone").eq("id", session.user.id).maybeSingle();
-      if (userData?.region) {
-        const parts = userData.region.split(" ");
-        setForm(prev => ({ ...prev, sido: parts[0] || "", gugun: parts[1] || "" }));
+      // 신규 매장 등록 진입시 기존 매장이 있는지 먼저 확인
+      if (stores && stores.length > 0) {
+        const firstStore = stores[0];
+        setStoreProfileId(firstStore.id);
+        await loadFormFromStore(firstStore);
+        // 최신 공고 로드
+        const { data: job } = await supabase.from("jobs")
+          .select("*").eq("employer_profile_id", firstStore.id)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (job) loadFormFromJob(job);
+      } else {
+        const { data: userData } = await supabase.from("users")
+          .select("region, name, phone").eq("id", session.user.id).maybeSingle();
+        if (userData?.region) {
+          const parts = userData.region.split(" ");
+          setForm(prev => ({ ...prev, sido: parts[0] || "", gugun: parts[1] || "" }));
+        }
       }
     }
     setLoading(false);
   };
 
   // 매장 정보 (employer_profiles) → form 채움
-  const loadFormFromStore = (store: any) => {
+  const loadFormFromStore = async (store: any) => {
     const parts = (store.region || "").split(" ");
     setImageUrls(store.image_urls || (store.image_url ? [store.image_url] : []));
     setVideoUrl(store.video_url || null);
+
+    let matchedCatId = store.category_id || "";
+    let matchedCatIds = store.category_ids || [];
+    let catObj = null;
+
+    if (matchedCatId) {
+      const { data } = await supabase.from("job_categories").select("*").eq("id", matchedCatId).maybeSingle();
+      if (data) catObj = data;
+    } else if (store.business_type) {
+      const { data } = await supabase.from("job_categories")
+        .select("*")
+        .eq("name", store.business_type)
+        .is("parent_id", null)
+        .maybeSingle();
+      if (data) {
+        catObj = data;
+        matchedCatId = data.id;
+        matchedCatIds = [data.id];
+      }
+    }
+
+    if (catObj) {
+      setSelectedParent(catObj);
+    }
+
+    // 좌표 정보 복원 및 누락 시 자동 보정
+    let storeLat = store.lat || null;
+    let storeLng = store.lng || null;
+    const fullAddr = store.address || store.region || "";
+
+    if (!storeLat || !storeLng) {
+      if (fullAddr) {
+        try {
+          const res = await fetch(
+            `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(fullAddr)}`,
+            { headers: { Authorization: "KakaoAK 02e1711115a492598ea97b18764fc597" } }
+          );
+          const data = await res.json();
+          if (data.documents && data.documents.length > 0) {
+            storeLat = parseFloat(data.documents[0].y);
+            storeLng = parseFloat(data.documents[0].x);
+          }
+        } catch {}
+      }
+    }
+
     setForm(prev => ({
       ...prev,
       businessName: store.business_name || "",
       businessType: store.business_type || "",
+      categoryId: matchedCatId,
+      categoryIds: matchedCatIds,
       sido: parts[0] || "",
       gugun: parts[1] || "",
-      addressDetail: store.address_detail || parts.slice(2).join(" "),
-      fullAddress: store.address || store.region || "",
-      lat: store.lat || null,
-      lng: store.lng || null,
+      addressDetail: store.address_detail || "",
+      fullAddress: fullAddr,
+      lat: storeLat,
+      lng: storeLng,
     }));
   };
 
@@ -281,6 +356,8 @@ function EmployerRegisterContent() {
   const loadFormFromJob = (job: any) => {
     const parsed = parseWorkHours(job.work_hours || "");
     setSelectedCreds(Array.isArray(job.required_credentials) ? job.required_credentials : []);
+    const wageTypeTag = (job.tags || []).find((t: string) => t.startsWith("wage_type:"));
+    const wageType = wageTypeTag ? wageTypeTag.split(":")[1] : "hourly";
     setForm(prev => ({
       ...prev,
       id: job.id, // jobs.id
@@ -288,13 +365,19 @@ function EmployerRegisterContent() {
       categoryIds: job.category_ids || (job.category_id ? [job.category_id] : []),
       customCategory: job.custom_category || "",
       wage: String(job.wage || MIN_WAGE),
+      wageType,
       wageNegotiable: job.wage_negotiable || false,
       workDays: job.work_days || "",
       daysNegotiable: job.days_negotiable || false,
       workHours: parsed.clean || "",
       workStartHour: job.work_start_hour ?? null,
       workEndHour: job.work_end_hour ?? null,
-      selectedTags: Array.isArray(job.tags) ? job.tags : [],
+      selectedTags: (() => {
+        let tags = Array.isArray(job.tags) ? job.tags : [];
+        if (job.meal_provided && !tags.includes("식사제공")) tags = [...tags, "식사제공"];
+        if (job.parking && !tags.includes("주차가능")) tags = [...tags, "주차가능"];
+        return tags;
+      })(),
       staffCount: String(job.staff_count || 1),
       mealProvided: job.meal_provided || false,
       parking: job.parking || false,
@@ -334,17 +417,45 @@ function EmployerRegisterContent() {
   const geocodeAddress = async (fullAddress: string) => {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(fullAddress)}&format=json&limit=1`,
-        { headers: { "Accept-Language": "ko" } }
+        `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(fullAddress)}`,
+        { headers: { Authorization: "KakaoAK 02e1711115a492598ea97b18764fc597" } }
       );
       const data = await res.json();
-      if (data.length > 0) {
-        updateForm("lat", parseFloat(data[0].lat));
-        updateForm("lng", parseFloat(data[0].lon));
+      if (data.documents && data.documents.length > 0) {
+        updateForm("lat", parseFloat(data.documents[0].y));
+        updateForm("lng", parseFloat(data.documents[0].x));
         setAddressToast("✓ 주소가 저장됐어요!");
         setTimeout(() => setAddressToast(""), 2500);
+      } else {
+        // Fallback to Nominatim
+        const res2 = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(fullAddress)}&format=json&limit=1`,
+          { headers: { "Accept-Language": "ko" } }
+        );
+        const data2 = await res2.json();
+        if (data2.length > 0) {
+          updateForm("lat", parseFloat(data2[0].lat));
+          updateForm("lng", parseFloat(data2[0].lon));
+          setAddressToast("✓ 주소가 저장됐어요!");
+          setTimeout(() => setAddressToast(""), 2500);
+        }
       }
-    } catch {}
+    } catch {
+      // Nominatim fallback directly on catch
+      try {
+        const res2 = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(fullAddress)}&format=json&limit=1`,
+          { headers: { "Accept-Language": "ko" } }
+        );
+        const data2 = await res2.json();
+        if (data2.length > 0) {
+          updateForm("lat", parseFloat(data2[0].lat));
+          updateForm("lng", parseFloat(data2[0].lon));
+          setAddressToast("✓ 주소가 저장됐어요!");
+          setTimeout(() => setAddressToast(""), 2500);
+        }
+      } catch {}
+    }
   };
 
   const openAddressSearch = () => {
@@ -355,7 +466,7 @@ function EmployerRegisterContent() {
           const parts = fullAddress.split(" ");
           if (parts[0]) updateForm("sido", parts[0]);
           if (parts[1]) updateForm("gugun", parts[1]);
-          updateForm("addressDetail", parts.slice(2).join(" "));
+          updateForm("addressDetail", "");
           updateForm("fullAddress", fullAddress);
           geocodeAddress(fullAddress);
         }
@@ -385,14 +496,20 @@ function EmployerRegisterContent() {
     if (!form.businessName.trim()) { setError("매장명을 입력해주세요"); return; }
     if (!form.categoryIds.length && !form.categoryId) { setError("업종을 선택해주세요"); return; }
     if (!form.sido) { setError("지역을 선택해주세요"); return; }
-    if (parseInt(form.wage) < MIN_WAGE) { setError(`시급은 최저시급 ${MIN_WAGE.toLocaleString()}원 이상이어야 해요`); return; }
+    if (form.wageType === "hourly" && parseInt(form.wage) < MIN_WAGE) { setError(`시급은 최저시급 ${MIN_WAGE.toLocaleString()}원 이상이어야 해요`); return; }
     if (!form.workDays && form.jobType === "regular") { setError("근무요일을 선택해주세요"); return; }
     if (form.jobType === "short" && !form.workStartDate) { setError("근무 시작일을 선택해주세요"); return; }
     if (form.jobType === "urgent" && !form.workStartDate) { setError("필요한 날짜를 선택해주세요"); return; }
 
-    setSaving(true); setError("");
+    setError("");
+    setConfirmModalOpen(true);
+  };
 
-    const fullRegion = [form.sido, form.gugun, form.addressDetail].filter(Boolean).join(" ");
+  const executeSave = async () => {
+    setSaving(true);
+    setConfirmModalOpen(false);
+
+    const fullRegion = form.fullAddress || [form.sido, form.gugun, form.addressDetail].filter(Boolean).join(" ");
     const interviewResult = getInterviewResult();
     const parentCat = selectedParent;
     const businessType = form.customCategory || parentCat?.name || "";
@@ -409,6 +526,18 @@ function EmployerRegisterContent() {
     // 긴급대타는 is_urgent 자동 true
     const isUrgent = form.isUrgent || form.jobType === "urgent";
 
+    // 시도, 시군구, 읍면동 세분화 파싱
+    const sidoVal = form.sido || "";
+    const sigunguVal = form.gugun || "";
+    let eupmyeondongVal = "";
+    if (form.fullAddress) {
+      const addrParts = form.fullAddress.split(" ");
+      const thirdWord = addrParts[2] || "";
+      if (thirdWord.endsWith("동") || thirdWord.endsWith("읍") || thirdWord.endsWith("면") || thirdWord.endsWith("리") || thirdWord.endsWith("가")) {
+        eupmyeondongVal = thirdWord;
+      }
+    }
+
     // ── 매장 정보 (employer_profiles) ──
     const storeData: any = {
       business_name: form.businessName.trim(),
@@ -416,14 +545,21 @@ function EmployerRegisterContent() {
       region: fullRegion,
       address: form.fullAddress || fullRegion,
       address_detail: form.addressDetail,
+      sido: sidoVal || null,
+      sigungu: sigunguVal || null,
+      eupmyeondong: eupmyeondongVal || null,
       lat: form.lat,
       lng: form.lng,
       image_url: imageUrls[0] || null,
       image_urls: imageUrls,
       video_url: videoUrl || null,
+      is_active: true, // Mark store active
     };
 
     // ── 공고 정보 (jobs) ──
+    const cleanTags = (form.selectedTags || []).filter(t => !t.startsWith("wage_type:"));
+    const finalTags = [...cleanTags, `wage_type:${form.wageType}`];
+
     const jobData: any = {
       user_id: userId,
       wage: parseInt(form.wage),
@@ -436,10 +572,10 @@ function EmployerRegisterContent() {
       category_id: form.categoryIds[0] || form.categoryId || null,
       category_ids: form.categoryIds.length ? form.categoryIds : (form.categoryId ? [form.categoryId] : []),
       custom_category: form.customCategory || null,
-      tags: form.selectedTags,
+      tags: finalTags,
       staff_count: parseInt(form.staffCount) || 1,
-      meal_provided: form.mealProvided,
-      parking: form.parking,
+      meal_provided: (form.selectedTags || []).includes("식사제공"),
+      parking: (form.selectedTags || []).includes("주차가능"),
       is_active: true,
       is_urgent: isUrgent,
       expires_at: calcExpiresAt(),
@@ -461,13 +597,21 @@ function EmployerRegisterContent() {
 
     // 1) 매장 저장
     let epId = storeProfileId;
+    if (!epId) {
+      const { data: existingEp } = await supabase.from("employer_profiles").select("id").eq("user_id", userId).maybeSingle();
+      if (existingEp) {
+        epId = existingEp.id;
+        setStoreProfileId(epId);
+      }
+    }
+
     if (epId) {
       const { error: epErr } = await supabase.from("employer_profiles").update(storeData).eq("id", epId);
       if (epErr) { setError("매장 저장 오류: " + epErr.message); setSaving(false); return; }
     } else {
       // 새 매장 생성
       const { data: newStore, error: epErr } = await supabase.from("employer_profiles")
-        .insert({ ...storeData, user_id: userId, is_active: false }).select("id").single();
+        .insert({ ...storeData, user_id: userId }).select("id").single();
       if (epErr || !newStore) { setError("매장 생성 오류: " + epErr?.message); setSaving(false); return; }
       epId = newStore.id;
       setStoreProfileId(epId);
@@ -487,22 +631,22 @@ function EmployerRegisterContent() {
       if (newJob) setForm(prev => ({ ...prev, id: newJob.id }));
     }
 
-    if (saveError) { setError("공고 저장 오류: " + saveError.message); setSaving(false); return; }
-    if (epId) setNewProfileId(epId); // 봇 설정 진입용 (employer_profiles.id)
-    setSuccess(true);
-
-    if (isEdit) {
+    if (saveError) {
+      setError("공고 저장 오류: " + saveError.message);
+      setSaving(false);
+    } else {
       const tabParam = searchParams.get("tab") || "";
       const sectionParam = searchParams.get("section") || "";
       const mypageUrl = `/mypage${tabParam || sectionParam ? `?${tabParam ? `tab=${tabParam}` : ""}${tabParam && sectionParam ? "&" : ""}${sectionParam ? `section=${sectionParam}` : ""}` : ""}`;
       const decodedReturn = returnTo ? decodeURIComponent(returnTo) : "";
-      setTimeout(() => router.push(
-        returnTo === "mypage" ? mypageUrl :
-        returnTo === "interview" ? "/interview" :
-        returnTo === "result" ? "/result?type=employer&level=1" :
-        decodedReturn.startsWith("/") ? decodedReturn :
-        "/mypage?section=jobs"
-      ), 2000);
+
+      let targetUrl = "/explore";
+      if (returnTo === "mypage") targetUrl = mypageUrl;
+      else if (returnTo === "interview") targetUrl = "/interview";
+      else if (returnTo === "result") targetUrl = "/result?type=employer&level=1";
+      else if (decodedReturn.startsWith("/")) targetUrl = decodedReturn;
+
+      router.push(targetUrl);
     }
   };
 
@@ -530,28 +674,7 @@ function EmployerRegisterContent() {
       </div>
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 16px" }}>
-        {success ? (
-          <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
-            <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 8px" }}>
-              {isEdit ? "공고가 수정됐어요!" : "공고가 등록됐어요!"}
-            </h2>
-            <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 28, lineHeight: 1.6 }}>
-              {!isEdit && "매장봇을 설정하면 알바생들의\n궁금증을 24시간 자동으로 답해드려요!"}
-            </p>
-            {!isEdit && newProfileId && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "0 16px" }}>
-                <button onClick={() => router.push(`/employer/interview?profileId=${newProfileId}`)} style={{ ...btnPrimary, fontSize: 15 }}>
-                  🤖 매장봇 설정하기 (추천)
-                </button>
-                <button onClick={() => router.push("/mypage?section=jobs")} style={{ ...btnSecondary, fontSize: 14 }}>
-                  나중에 하기 → 내 공고로
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
+        <>
             {/* 진행 바 */}
             <div style={{ marginBottom: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -565,6 +688,76 @@ function EmployerRegisterContent() {
 
             {step === 1 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+                {/* 등록된 매장 선택 */}
+                {myStores.length > 0 && !isEdit && (
+                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "14px 16px", marginBottom: 4 }}>
+                    <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 10, color: "var(--text-muted)" }}>
+                      🏢 등록된 매장 불러오기
+                    </label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {myStores.map(store => {
+                        const isSelected = storeProfileId === store.id;
+                        return (
+                          <button
+                            key={store.id}
+                            type="button"
+                            onClick={async () => {
+                              setStoreProfileId(store.id);
+                              await loadFormFromStore(store);
+                              // 최신 공고 로드
+                              const { data: job } = await supabase.from("jobs")
+                                .select("*").eq("employer_profile_id", store.id)
+                                .order("created_at", { ascending: false }).limit(1).maybeSingle();
+                              if (job) {
+                                loadFormFromJob(job);
+                                setAddressToast("✓ 매장 정보와 최근 공고 내용을 불러왔어요!");
+                              } else {
+                                setAddressToast("✓ 매장 정보를 불러왔어요!");
+                              }
+                              setTimeout(() => setAddressToast(""), 2500);
+                            }}
+                            style={{
+                              padding: "8px 14px",
+                              borderRadius: 20,
+                              border: "none",
+                              fontSize: 13,
+                              cursor: "pointer",
+                              fontWeight: isSelected ? 700 : 400,
+                              background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)",
+                              color: isSelected ? "#fff" : "var(--text-muted)"
+                            }}
+                          >
+                            {store.business_name || "등록 대기 매장"}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStoreProfileId(null);
+                          setForm(emptyForm());
+                          setImageUrls([]);
+                          setVideoUrl(null);
+                          setAddressToast("✓ 새 매장 등록 모드로 전환했어요.");
+                          setTimeout(() => setAddressToast(""), 2500);
+                        }}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: 20,
+                          border: "none",
+                          fontSize: 13,
+                          cursor: "pointer",
+                          fontWeight: !storeProfileId ? 700 : 400,
+                          background: !storeProfileId ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)",
+                          color: !storeProfileId ? "#fff" : "var(--text-muted)"
+                        }}
+                      >
+                        ➕ 새 매장 등록
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* 공고 유형 선택 - 맨 위 */}
                 <div>
@@ -839,7 +1032,7 @@ function EmployerRegisterContent() {
                               const isMandatory = c.is_mandatory_by_law;
                               return (
                                 <button
-                                  key={c.id}
+                                  key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
                                   type="button"
                                   onClick={() => {
                                     if (isSelected) {
@@ -940,7 +1133,7 @@ function EmployerRegisterContent() {
                                   }}>
                                     {suggestions.map((c, i) => (
                                       <button
-                                        key={c.id}
+                                        key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
                                         type="button"
                                         onMouseDown={() => {
                                           setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
@@ -1030,27 +1223,46 @@ function EmployerRegisterContent() {
                 <div>
                   <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 8 }}>📍 위치 <span style={{ color: "#c4b5fd" }}>*</span></label>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <select value={form.sido} onChange={e => { updateForm("sido", e.target.value); updateForm("gugun", ""); }}
-                      style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: form.sido ? "var(--text)" : "var(--text-muted)", fontSize: 14, outline: "none" }}>
-                      <option value="">시/도 선택 *</option>
-                      {Object.keys(REGIONS).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    {form.sido && (
-                      <select value={form.gugun} onChange={e => updateForm("gugun", e.target.value)}
-                        style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: form.gugun ? "var(--text)" : "var(--text-muted)", fontSize: 14, outline: "none" }}>
-                        <option value="">구/군 선택</option>
-                        {REGIONS[form.sido]?.map(g => <option key={g} value={g}>{g}</option>)}
-                      </select>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        type="text"
+                        value={form.fullAddress}
+                        readOnly
+                        placeholder="주소 검색"
+                        style={{
+                          width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px",
+                          color: form.fullAddress ? "var(--text)" : "var(--text-muted)", fontSize: 14, outline: "none", flex: 1, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap"
+                        }}
+                      />
+                      <button
+                        onClick={openAddressSearch}
+                        type="button"
+                        style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.3)", color: "#c4b5fd", fontWeight: 600, padding: "0 16px", borderRadius: 12, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}
+                      >
+                        🔍 검색
+                      </button>
+                    </div>
+                    {form.fullAddress && (
+                      <div style={{ width: "100%" }}>
+                        <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>상세 주소 (건물명, 동/호수 등)</label>
+                        <input
+                          type="text"
+                          value={form.addressDetail}
+                          onChange={e => updateForm("addressDetail", e.target.value)}
+                          placeholder="예) 3층, 301호"
+                          style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+                        />
+                      </div>
                     )}
-                    <button onClick={openAddressSearch} type="button"
-                      style={{ width: "100%", background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "#c4b5fd", fontWeight: 600, padding: "12px", borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
-                      🔍 상세 주소 검색
-                    </button>
                     {addressToast && (
                       <div style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 10, padding: "8px 14px", fontSize: 13, color: "#86efac", textAlign: "center" }}>{addressToast}</div>
                     )}
                     {form.lat && form.lng && (
-                      <iframe src={`/map.html?lat=${form.lat}&lng=${form.lng}&addr=${encodeURIComponent([form.sido, form.gugun, form.addressDetail].filter(Boolean).join(" "))}`}
+                      <iframe src={`/map.html?lat=${form.lat}&lng=${form.lng}&addr=${encodeURIComponent(
+                        form.fullAddress 
+                          ? `${form.fullAddress} ${form.addressDetail || ""}`.trim() 
+                          : [form.sido, form.gugun, form.addressDetail].filter(Boolean).join(" ")
+                      )}`}
                         style={{ width: "100%", height: 180, borderRadius: 12, border: "none" }} />
                     )}
                   </div>
@@ -1166,17 +1378,63 @@ function EmployerRegisterContent() {
                   </div>
                 )}
 
-                {/* 시급 */}
+                {/* 급여 */}
                 <div>
-                  <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 8 }}>
-                    💰 시급 <span style={{ color: "#c4b5fd" }}>*</span>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>최저 {MIN_WAGE.toLocaleString()}원</span>
+                  <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 10 }}>
+                    💰 급여 형태 및 금액 <span style={{ color: "#c4b5fd" }}>*</span>
+                    {form.wageType === "hourly" && (
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>최저 {MIN_WAGE.toLocaleString()}원</span>
+                    )}
                   </label>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <input type="number" value={form.wage} onChange={e => updateForm("wage", e.target.value)}
-                      style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 14, outline: "none" }} />
-                    <span style={{ color: "var(--text-muted)", fontSize: 14 }}>원/시간</span>
+                  
+                  {/* 급여 유형 선택 */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                    {[
+                      { key: "hourly", label: "시급" },
+                      { key: "daily", label: "일급" },
+                      { key: "monthly", label: "월급" }
+                    ].map(type => {
+                      const isSelected = form.wageType === type.key;
+                      return (
+                        <button
+                          key={type.key}
+                          type="button"
+                          onClick={() => {
+                            updateForm("wageType", type.key);
+                            updateForm("wage", "");
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: "8px",
+                            borderRadius: 12,
+                            fontSize: 13,
+                            cursor: "pointer",
+                            border: "none",
+                            fontWeight: isSelected ? 700 : 400,
+                            background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)",
+                            color: isSelected ? "#fff" : "var(--text-muted)",
+                            transition: "all 0.15s"
+                          }}
+                        >
+                          {type.label}
+                        </button>
+                      );
+                    })}
                   </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <input
+                      type="number"
+                      value={form.wage}
+                      onChange={e => updateForm("wage", e.target.value)}
+                      placeholder={form.wageType === "hourly" ? String(MIN_WAGE) : "금액 입력"}
+                      style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 14, outline: "none" }}
+                    />
+                    <span style={{ color: "var(--text-muted)", fontSize: 14, minWidth: 45, textAlign: "right" }}>
+                      {form.wageType === "hourly" ? "원/시간" : form.wageType === "daily" ? "원/일" : "원/월"}
+                    </span>
+                  </div>
+
                   <button onClick={() => updateForm("wageNegotiable", !form.wageNegotiable)}
                     style={{ padding: "6px 14px", borderRadius: 20, fontSize: 12, cursor: "pointer", background: form.wageNegotiable ? "var(--primary-light)" : "var(--surface2)", color: form.wageNegotiable ? "#c4b5fd" : "var(--text-muted)", border: form.wageNegotiable ? "1px solid var(--primary-border)" : "1px solid transparent" }}>
                     💬 협의 가능 {form.wageNegotiable ? "✓" : ""}
@@ -1193,6 +1451,7 @@ function EmployerRegisterContent() {
                   const breakH = form.breakHours || 0;
                   const days = form.workDays && form.workDays !== "협의" ? form.workDays.split(",").filter(Boolean) : [];
                   const daysCount = days.length;
+                  
                   let dailyHours = 0;
                   if (startH != null && endH != null && startH !== endH) {
                     const startTotal = startH + startM / 60;
@@ -1200,15 +1459,35 @@ function EmployerRegisterContent() {
                     dailyHours = endTotal > startTotal ? endTotal - startTotal : 24 - startTotal + endTotal;
                     dailyHours = Math.max(0, dailyHours - breakH);
                   }
+                  
                   const weeklyHours = parseFloat((dailyHours * daysCount).toFixed(1));
-                  const hasWeeklyPay = weeklyHours >= 15;
+                  const hasWeeklyPay = form.wageType === "hourly" && weeklyHours >= 15;
                   const weeklyPayHours = hasWeeklyPay ? Math.min(weeklyHours / daysCount, 8) : 0;
                   const weeklyPay = weeklyPayHours * wage;
-                  const hasNight = startH != null && (startH >= 22 || endH! <= 6);
+                  const hasNight = form.wageType === "hourly" && startH != null && (startH >= 22 || endH! <= 6);
                   const nightExtra = hasNight ? dailyHours * wage * 0.5 * daysCount : 0;
-                  const monthlyBasic = wage * dailyHours * daysCount * 4.345;
-                  const monthlyTotal = Math.round(monthlyBasic + weeklyPay * 4.345 + nightExtra * 4.345);
-                  const isReady = dailyHours > 0 && daysCount > 0 && wage >= MIN_WAGE;
+                  
+                  let monthlyBasic = 0;
+                  let monthlyTotal = 0;
+                  let weeklyTotal = 0;
+                  
+                  if (form.wageType === "hourly") {
+                    monthlyBasic = wage * dailyHours * daysCount * 4.345;
+                    monthlyTotal = Math.round(monthlyBasic + weeklyPay * 4.345 + nightExtra * 4.345);
+                    weeklyTotal = Math.round(wage * dailyHours * daysCount + weeklyPay + nightExtra);
+                  } else if (form.wageType === "daily") {
+                    monthlyBasic = wage * daysCount * 4.345;
+                    monthlyTotal = Math.round(monthlyBasic);
+                    weeklyTotal = Math.round(wage * daysCount);
+                  } else if (form.wageType === "monthly") {
+                    monthlyBasic = wage;
+                    monthlyTotal = wage;
+                    weeklyTotal = Math.round(wage / 4.345);
+                  }
+
+                  const isReady = dailyHours > 0 && daysCount > 0 && wage > 0 && (form.wageType !== "hourly" || wage >= MIN_WAGE);
+                  const isReadyLabel = form.wageType === "hourly" ? "근무요일 · 시간 · 시급" : form.wageType === "daily" ? "근무요일 · 시간 · 일급" : "근무요일 · 시간 · 월급";
+
                   return (
                     <div style={{ ...cardGradientStyle, padding: 14 }}>
                       <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", fontWeight: 600 }}>📊 예상 급여 (세전)</p>
@@ -1216,7 +1495,7 @@ function EmployerRegisterContent() {
                         {[
                           { label: "일 근로", value: dailyHours > 0 ? `${dailyHours.toFixed(dailyHours % 1 ? 1 : 0)}시간` : "--" },
                           { label: "주 근로", value: weeklyHours > 0 ? `${weeklyHours}시간` : "--" },
-                          { label: "주휴수당", value: hasWeeklyPay ? "해당" : weeklyHours > 0 ? "미해당" : "--" },
+                          { label: "주휴수당", value: form.wageType !== "hourly" ? "해당무" : hasWeeklyPay ? "해당" : weeklyHours > 0 ? "미해당" : "--" },
                         ].map(item => (
                           <div key={item.label} style={{ background: "rgba(0,0,0,0.15)", borderRadius: 10, padding: "8px", textAlign: "center" }}>
                             <p style={{ fontSize: 9, color: "var(--text-muted)", margin: "0 0 2px" }}>{item.label}</p>
@@ -1229,17 +1508,30 @@ function EmployerRegisterContent() {
                           <>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                               <span style={{ fontSize: 13, fontWeight: 700 }}>주 예상 급여</span>
-                              <span style={{ fontSize: 17, fontWeight: 900, color: "#c4b5fd" }}>{Math.round(wage * dailyHours * daysCount + weeklyPay + nightExtra).toLocaleString()}원</span>
+                              <span style={{ fontSize: 17, fontWeight: 900, color: "#c4b5fd" }}>{weeklyTotal.toLocaleString()}원</span>
                             </div>
-                            {(hasWeeklyPay || hasNight) && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-muted)" }}>월 기본급</span><span style={{ fontSize: 12, fontWeight: 600 }}>{Math.round(monthlyBasic).toLocaleString()}원</span></div>}
-                            {hasWeeklyPay && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "#86efac" }}>+ 주휴수당</span><span style={{ fontSize: 12, color: "#86efac", fontWeight: 600 }}>+{Math.round(weeklyPay * 4.345).toLocaleString()}원</span></div>}
-                            {hasNight && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "#fbbf24" }}>+ 야간수당 🌙</span><span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>+{Math.round(nightExtra * 4.345).toLocaleString()}원</span></div>}
-                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-muted)" }}>월 평균 예상 (세전)</span><span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{monthlyTotal.toLocaleString()}원</span></div>
-                            {!hasWeeklyPay && weeklyHours > 0 && <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "4px 0 0" }}>※ 주 {weeklyHours}시간으로 주휴수당 미해당 (주 15시간↑ 시 발생)</p>}
+                            {form.wageType === "hourly" ? (
+                              <>
+                                {(hasWeeklyPay || hasNight) && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-muted)" }}>월 기본급</span><span style={{ fontSize: 12, fontWeight: 600 }}>{Math.round(monthlyBasic).toLocaleString()}원</span></div>}
+                                {hasWeeklyPay && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "#86efac" }}>+ 주휴수당</span><span style={{ fontSize: 12, color: "#86efac", fontWeight: 600 }}>+{Math.round(weeklyPay * 4.345).toLocaleString()}원</span></div>}
+                                {hasNight && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "#fbbf24" }}>+ 야간수당 🌙</span><span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>+{Math.round(nightExtra * 4.345).toLocaleString()}원</span></div>}
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-muted)" }}>월 평균 예상 (세전)</span><span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{monthlyTotal.toLocaleString()}원</span></div>
+                                {!hasWeeklyPay && weeklyHours > 0 && <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "4px 0 0" }}>※ 주 {weeklyHours}시간으로 주휴수당 미해당 (주 15시간↑ 시 발생)</p>}
+                              </>
+                            ) : form.wageType === "daily" ? (
+                              <>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-muted)" }}>일 근로 일수</span><span style={{ fontSize: 12, fontWeight: 600 }}>주 {daysCount}일</span></div>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-muted)" }}>월 평균 예상 (세전)</span><span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{monthlyTotal.toLocaleString()}원</span></div>
+                              </>
+                            ) : (
+                              <>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 12, color: "var(--text-muted)" }}>월 약정 급여</span><span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{monthlyTotal.toLocaleString()}원</span></div>
+                              </>
+                            )}
                             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "6px 0 0", lineHeight: 1.5, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 6 }}>※ 월 평균은 4.345주 기준 참고용이며 실제 급여는 근무일수에 따라 다를 수 있어요</p>
                           </>
                         ) : (
-                          <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", margin: 0 }}>근무요일 · 시간 · 시급을 입력하면 자동 계산돼요</p>
+                          <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", margin: 0 }}>{isReadyLabel}을 입력하면 자동 계산돼요</p>
                         )}
                       </div>
                     </div>
@@ -1258,16 +1550,6 @@ function EmployerRegisterContent() {
                 {/* 복지 */}
                 <div>
                   <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 10 }}>✨ 복지</label>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                    <button onClick={() => updateForm("mealProvided", !form.mealProvided)}
-                      style={{ flex: 1, padding: "10px", borderRadius: 12, border: "none", fontSize: 13, cursor: "pointer", background: form.mealProvided ? "rgba(34,197,94,0.15)" : "var(--surface2)", color: form.mealProvided ? "#86efac" : "var(--text-muted)", fontWeight: form.mealProvided ? 700 : 400 }}>
-                      🍱 식사 제공
-                    </button>
-                    <button onClick={() => updateForm("parking", !form.parking)}
-                      style={{ flex: 1, padding: "10px", borderRadius: 12, border: "none", fontSize: 13, cursor: "pointer", background: form.parking ? "rgba(34,197,94,0.15)" : "var(--surface2)", color: form.parking ? "#86efac" : "var(--text-muted)", fontWeight: form.parking ? 700 : 400 }}>
-                      🚗 주차 가능
-                    </button>
-                  </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {PRESET_TAGS.map(tag => (
                       <button key={tag} onClick={() => { const tags = form.selectedTags.includes(tag) ? form.selectedTags.filter(t => t !== tag) : [...form.selectedTags, tag]; updateForm("selectedTags", tags); }}
@@ -1289,8 +1571,84 @@ function EmployerRegisterContent() {
               </div>
             )}
           </>
-        )}
       </div>
+      {confirmModalOpen && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.85)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          backdropFilter: "blur(8px)"
+        }}>
+          <div style={{
+            background: "var(--surface)", border: "1px solid var(--border)",
+            borderRadius: 24, width: "100%", maxWidth: 400, padding: 24,
+            boxShadow: "0 10px 40px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", gap: 16
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, textAlign: "center" }}>
+              📢 공고 정보 확인
+            </h3>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, textAlign: "center" }}>
+              작성하신 공고 내용을 확인해주세요.
+            </p>
+
+            <div style={{
+              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
+              borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", gap: 10,
+              fontSize: 13
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>매장명</span>
+                <span style={{ fontWeight: 700 }}>{form.businessName}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>업종</span>
+                <span style={{ fontWeight: 700 }}>{form.customCategory || selectedParent?.name || "미정"}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>위치</span>
+                <span style={{ fontWeight: 700, textAlign: "right", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {form.fullAddress || "미입력"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>급여</span>
+                <span style={{ fontWeight: 700, color: "#c4b5fd" }}>
+                  {form.wageType === "hourly" ? "시급" : form.wageType === "daily" ? "일급" : "월급"} {parseInt(form.wage || "0").toLocaleString()}원
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>근무요일</span>
+                <span style={{ fontWeight: 700 }}>{form.workDays || "협의"}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>근무시간</span>
+                <span style={{ fontWeight: 700 }}>
+                  {form.workStartHour != null && form.workEndHour != null
+                    ? `${String(form.workStartHour).padStart(2,"0")}:${String((form as any).workStartMin || 0).padStart(2,"0")} ~ ${String(form.workEndHour).padStart(2,"0")}:${String((form as any).workEndMin || 0).padStart(2,"0")}`
+                    : "시간 협의"}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => setConfirmModalOpen(false)}
+                style={{ ...btnSecondary, flex: 1, padding: "12px", borderRadius: 12, fontSize: 14 }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={executeSave}
+                style={{ ...btnPrimary, flex: 2, padding: "12px", borderRadius: 12, fontSize: 14 }}
+              >
+                {isEdit ? "수정하기" : "등록하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {cropperOpen && tempImageSrc && (
         <ImageCropperModal imageSrc={tempImageSrc} onCrop={handleCropComplete} onClose={() => { setCropperOpen(false); setTempImageSrc(null); }} />
       )}

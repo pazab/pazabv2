@@ -92,9 +92,21 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
   const openDaumPostcode = () => {
     const load = () => {
       new (window as any).daum.Postcode({
-        oncomplete: (data: any) => {
-          setAddress(data.roadAddress || data.jibunAddress);
+        oncomplete: async (data: any) => {
+          const fullAddress = data.roadAddress || data.jibunAddress;
+          setAddress(fullAddress);
           setAddressDetail("");
+          try {
+            const res = await fetch(
+              `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(fullAddress)}`,
+              { headers: { Authorization: "KakaoAK 02e1711115a492598ea97b18764fc597" } }
+            );
+            const resData = await res.json();
+            if (resData.documents && resData.documents.length > 0) {
+              setLng(parseFloat(resData.documents[0].x));
+              setLat(parseFloat(resData.documents[0].y));
+            }
+          } catch {}
         },
       }).open();
     };
@@ -129,12 +141,42 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
     if (!bizType) { setError("업종을 선택해주세요"); return; }
     if (!address) { setError("주소를 입력해주세요"); return; }
     setSaving(true); setError("");
+    // 시도, 시군구, 읍면동 세분화 파싱
+    const addrParts = address.split(" ");
+    const sidoVal = addrParts[0] || null;
+    const sigunguVal = addrParts[1] || null;
+    let eupmyeondongVal = null;
+    const thirdWord = addrParts[2] || "";
+    if (thirdWord.endsWith("동") || thirdWord.endsWith("읍") || thirdWord.endsWith("면") || thirdWord.endsWith("리") || thirdWord.endsWith("가")) {
+      eupmyeondongVal = thirdWord;
+    }
+
+    // 업종 ID 매핑
+    let categoryId = null;
+    let categoryIds: string[] = [];
+    try {
+      const { data: catData } = await supabase.from("job_categories")
+        .select("id")
+        .eq("name", bizType)
+        .is("parent_id", null)
+        .maybeSingle();
+      if (catData) {
+        categoryId = catData.id;
+        categoryIds = [catData.id];
+      }
+    } catch {}
+
     const payload: any = {
       business_name: bizName.trim(),
       business_type: bizType,
       region: address,
       address: address,
       address_detail: addressDetail,
+      sido: sidoVal,
+      sigungu: sigunguVal,
+      eupmyeondong: eupmyeondongVal,
+      category_id: categoryId,
+      category_ids: categoryIds,
       lat, lng,
       biz_tel: bizTel,
       image_url: imageUrls[0] || null,

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
+import { fetchCredentialsWithFallback } from "@/lib/credentials";
 
 interface DaetaRegisterModalProps {
   userId: string;
@@ -164,8 +165,8 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       setParentCategories(cats.filter((c: { parent_id: string | null }) => !c.parent_id));
       setChildCategories(cats.filter((c: { parent_id: string | null }) => c.parent_id));
     }
-    const { data } = await supabase.from("job_credentials").select("*").order("is_mandatory_by_law", { ascending: false });
-    if (data) setCredentialsMaster(data);
+    const data = await fetchCredentialsWithFallback();
+    setCredentialsMaster(data);
   };
 
   useEffect(() => {
@@ -680,7 +681,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                           const isMandatory = c.is_mandatory_by_law;
                           return (
                             <button
-                              key={c.id}
+                              key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
                               type="button"
                               onClick={() => {
                                 if (isSelected) {
@@ -781,7 +782,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                             }}>
                               {suggestions.map((c, i) => (
                                 <button
-                                  key={c.id}
+                                  key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
                                   type="button"
                                   onMouseDown={() => {
                                     setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);

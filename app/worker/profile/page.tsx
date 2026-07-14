@@ -8,6 +8,7 @@ import { Suspense } from "react";
 import { cardStyle, btnPrimary, btnSecondary, toggleTrack, toggleThumb } from "@/lib/styles";
 import ImageCropperModal from "@/components/ImageCropperModal";
 import { REGIONS } from "@/lib/regions";
+import { fetchCredentialsWithFallback } from "@/lib/credentials";
 
 const MIN_WAGE = 10030;
 const WORK_DAYS = ["평일", "주말", "평일+주말", "협의 가능"];
@@ -280,8 +281,8 @@ function WorkerProfileContent() {
     }
 
     // 자격요건 마스터 데이터 로드
-    const { data: creds } = await supabase.from("job_credentials").select("*").order("is_mandatory_by_law", { ascending: false });
-    if (creds) setCredentialsMaster(creds);
+    const creds = await fetchCredentialsWithFallback();
+    setCredentialsMaster(creds);
 
     setLoading(false);
   };
@@ -917,7 +918,7 @@ function WorkerProfileContent() {
                               const isMandatory = c.is_mandatory_by_law;
                               return (
                                 <button
-                                  key={c.id}
+                                  key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
                                   type="button"
                                   onClick={() => {
                                     if (isSelected) {
@@ -1018,7 +1019,7 @@ function WorkerProfileContent() {
                                   }}>
                                     {suggestions.map((c, i) => (
                                       <button
-                                        key={c.id}
+                                        key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
                                         type="button"
                                         onMouseDown={() => {
                                           setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
