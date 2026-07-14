@@ -89,18 +89,16 @@ export async function GET(req: NextRequest) {
       const empProfile = empProfileMap.get(post.user_id);
       const wrkProfile = wrkProfileMap.get(post.user_id);
 
-      // 매장에 귀속된 글이면 해당 매장 정보 우선 (다중 매장 사장님 대응), 없으면 기존 방식 폴백
-      const businessName = storeProfile?.business_name || empProfile?.business_name;
-      const authorName = businessName
-        ? `${businessName} 사장님`
+      // 매장 귀속 글이면 매장 정보 우선, 개인 글이면 닉네임만
+      const isStorePost = !!post.employer_profile_id && !!storeProfile;
+      const authorName = isStorePost
+        ? (storeProfile!.business_name || writer?.nickname || "매장")
         : (writer?.nickname || "알 수 없음");
 
       // 프로필 아바타 결정
-      const authorAvatar = storeProfile?.image_url
-        || empProfile?.image_url
-        || wrkProfile?.image_url
-        || writer?.avatar_url
-        || null;
+      const authorAvatar = isStorePost
+        ? (storeProfile!.image_url || writer?.avatar_url || null)
+        : (wrkProfile?.image_url || writer?.avatar_url || null);
 
       return {
         ...post,
@@ -176,29 +174,19 @@ export async function POST(req: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    let businessName = store?.business_name || "";
-    let profilePic = store?.image_url || "";
-    if (!store) {
-      if (writer?.user_type === "employer" || writer?.user_type === "both") {
-        const { data: emp } = await supabaseAdmin
-          .from("employer_profiles")
-          .select("business_name, image_url")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        businessName = emp?.business_name || "";
-        profilePic = emp?.image_url || "";
-      } else {
-        const { data: wrk } = await supabaseAdmin
-          .from("worker_profiles")
-          .select("image_url")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        profilePic = wrk?.image_url || "";
-      }
-    }
+    let authorName: string;
+    let authorAvatar: string | null;
 
-    const authorName = businessName ? `${businessName} 사장님` : (writer?.nickname || "알 수 없음");
-    const authorAvatar = profilePic || writer?.avatar_url || null;
+    if (store) {
+      authorName = store.business_name || writer?.nickname || "매장";
+      authorAvatar = store.image_url || writer?.avatar_url || null;
+    } else {
+      // 개인 글 — 닉네임 + 개인 아바타
+      authorName = writer?.nickname || "알 수 없음";
+      const { data: wrk } = await supabaseAdmin
+        .from("worker_profiles").select("image_url").eq("user_id", user.id).maybeSingle();
+      authorAvatar = wrk?.image_url || writer?.avatar_url || null;
+    }
 
     const enrichedPost = {
       ...newPost,

@@ -290,6 +290,10 @@ export default function TeamMemberPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [batchContract, setBatchContract] = useState<{ id: string; startDate: string; endDate: string | null } | null>(null);
   const [monthBatchTarget, setMonthBatchTarget] = useState<{ id: string; startDate: string; endDate: string | null } | null>(null);
+  const [inlineEditDate, setInlineEditDate] = useState<string | null>(null);
+  const [inlineStart, setInlineStart] = useState("");
+  const [inlineEnd, setInlineEnd] = useState("");
+  const [inlineSaving, setInlineSaving] = useState(false);
 
   // 근무조건 수정 모달
   const [showWorkModal, setShowWorkModal] = useState(false);
@@ -1076,6 +1080,107 @@ export default function TeamMemberPage() {
               })}
             </div>
           </div>
+
+          {/* 날짜별 인라인 출퇴근 편집 리스트 */}
+          {monthAtt.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 8px" }}>이번달 근태 기록</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {[...monthAtt].sort((a, b) => a.work_date < b.work_date ? -1 : 1).map(att => {
+                  const isEditing = inlineEditDate === att.work_date;
+                  const statusMeta = ATTENDANCE_STATUS.find(s => s.id === att.status);
+                  const ciTime = att.check_in ? new Date(att.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+                  const coTime = att.check_out ? new Date(att.check_out).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+                  const dayLabel = new Date(att.work_date + "T00:00:00").toLocaleDateString("ko-KR", { month: "numeric", day: "numeric", weekday: "short" });
+                  return (
+                    <div key={att.id} style={{ background: "var(--surface)", border: `1px solid ${isEditing ? "#7c3aed60" : "var(--border)"}`, borderRadius: 10, overflow: "hidden" }}>
+                      <div
+                        onClick={() => {
+                          if (isResigned) return;
+                          if (isEditing) { setInlineEditDate(null); return; }
+                          setInlineEditDate(att.work_date);
+                          setInlineStart(ciTime);
+                          setInlineEnd(coTime);
+                        }}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", cursor: isResigned ? "default" : "pointer" }}
+                      >
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 72 }}>{dayLabel}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: statusMeta?.color || "var(--text-muted)", minWidth: 32 }}>{statusMeta?.label || att.status}</span>
+                        {["absent", "off"].includes(att.status) ? (
+                          <span style={{ fontSize: 11, color: "var(--text-muted)", flex: 1 }}>-</span>
+                        ) : (
+                          <span style={{ fontSize: 11, color: "var(--text)", flex: 1 }}>
+                            {ciTime || "미입력"} ~ {coTime || "미입력"}
+                            {att.actual_hours ? <span style={{ color: "var(--text-muted)", marginLeft: 4 }}>({att.actual_hours}h)</span> : null}
+                          </span>
+                        )}
+                        {!isResigned && <span style={{ fontSize: 11, color: "#7c3aed" }}>{isEditing ? "▴" : "✏️"}</span>}
+                      </div>
+                      {isEditing && !["absent", "off"].includes(att.status) && (
+                        <div style={{ borderTop: "1px solid var(--border)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <label style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 40 }}>출근</label>
+                            <input
+                              type="time"
+                              value={inlineStart}
+                              onChange={e => setInlineStart(e.target.value)}
+                              style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13, color: "var(--text)" }}
+                            />
+                            <label style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 40 }}>퇴근</label>
+                            <input
+                              type="time"
+                              value={inlineEnd}
+                              onChange={e => setInlineEnd(e.target.value)}
+                              style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13, color: "var(--text)" }}
+                            />
+                          </div>
+                          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                            <button onClick={() => setInlineEditDate(null)} style={{ padding: "5px 12px", fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-muted)", cursor: "pointer" }}>취소</button>
+                            <button
+                              disabled={inlineSaving}
+                              onClick={async () => {
+                                if (!member) return;
+                                setInlineSaving(true);
+                                const [sh, sm] = inlineStart.split(":").map(Number);
+                                const [eh, em] = inlineEnd.split(":").map(Number);
+                                const mins = (eh * 60 + em) - (sh * 60 + sm);
+                                const actualHours = mins > 0 ? Math.round(mins / 60 * 10) / 10 : null;
+                                await supabase.from("attendance").upsert({
+                                  team_member_id: member.id,
+                                  employer_id: member.employer_id,
+                                  worker_id: member.worker_id,
+                                  work_date: att.work_date,
+                                  status: att.status,
+                                  memo: att.memo,
+                                  check_in: inlineStart ? `${att.work_date}T${inlineStart}:00+09:00` : null,
+                                  check_out: inlineEnd ? `${att.work_date}T${inlineEnd}:00+09:00` : null,
+                                  actual_hours: actualHours,
+                                }, { onConflict: "team_member_id,work_date" });
+                                await supabase.from("attendance_logs").insert({
+                                  attendance_id: att.id,
+                                  team_member_id: member.id,
+                                  action: "update",
+                                  actor_id: member.employer_id,
+                                  actor_role: "employer",
+                                  after_data: { status: att.status, check_in: inlineStart, check_out: inlineEnd, actual_hours: actualHours, work_date: att.work_date },
+                                });
+                                await loadAttendance(member.id);
+                                setAttLogRefreshKey(k => k + 1);
+                                setInlineEditDate(null);
+                                setInlineSaving(false);
+                                showToast("저장됐어요");
+                              }}
+                              style={{ padding: "5px 16px", fontSize: 12, background: "#7c3aed", border: "none", borderRadius: 7, color: "#fff", cursor: "pointer", fontWeight: 700, opacity: inlineSaving ? 0.6 : 1 }}
+                            >저장</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 근태 수정 이력 */}
           <AttendanceLogs memberId={member.id} refreshKey={attLogRefreshKey} />

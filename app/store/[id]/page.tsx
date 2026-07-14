@@ -14,6 +14,7 @@ interface StoreInfo {
   image_url: string | null;
   region: string | null;
   address: string | null;
+  owner?: { nickname: string | null; avatar_url: string | null; trust_score: number | null } | null;
 }
 
 interface Job {
@@ -74,12 +75,21 @@ export default function StoreHomePage() {
     const uid = session?.user?.id || null;
     setMyId(uid);
 
-    const { data: storeData } = await supabase
+    const { data: storeRaw } = await supabase
       .from("employer_profiles")
       .select("id, user_id, business_name, business_type, description, image_url, region, address")
       .eq("id", storeId)
       .maybeSingle();
-    setStore(storeData);
+    if (storeRaw) {
+      const { data: ownerData } = await supabase
+        .from("users")
+        .select("nickname, avatar_url, trust_score")
+        .eq("id", storeRaw.user_id)
+        .maybeSingle();
+      setStore({ ...storeRaw, owner: ownerData ?? null });
+    } else {
+      setStore(null);
+    }
 
     const { data: jobsData } = await supabase
       .from("jobs")
@@ -264,7 +274,23 @@ export default function StoreHomePage() {
             {store.description && (
               <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{store.description}</p>
             )}
-            <span className="text-[11px] text-text-muted mt-1">👥 팔로워 {followerCount}명</span>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+              <span className="text-[11px] text-text-muted">👥 팔로워 {followerCount}명</span>
+              {store.owner && (
+                <button
+                  onClick={() => router.push(`/profile/${store.user_id}`)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "4px 10px", cursor: "pointer" }}
+                >
+                  {store.owner.avatar_url
+                    ? <img src={store.owner.avatar_url} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: 14 }}>👤</span>
+                  }
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+                    {store.owner.nickname || "운영자"} 신뢰도 보기 →
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

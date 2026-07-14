@@ -1043,7 +1043,7 @@ function MyTeamPageContent() {
   const [myStores, setMyStores] = useState<any[]>([]);
   const [membersByStore, setMembersByStore] = useState<Record<string, any[]>>({});
   const [statsByStore, setStatsByStore] = useState<Record<string, { today: number; pending: number }>>({});
-  const [teamOpen, setTeamOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(true);
   const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [storeModalOpen, setStoreModalOpen] = useState(false);
@@ -1062,7 +1062,7 @@ function MyTeamPageContent() {
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
   const [pastWorks, setPastWorks] = useState<any[]>([]);
-  const [workOpen, setWorkOpen] = useState(false);
+  const [workOpen, setWorkOpen] = useState(true);
 
   const hasStore = myStores.length > 0;
   const hasEmployee = hasStore && (myStores.some(s => s.activeJob !== null) || Object.values(membersByStore).flat().length > 0);
@@ -1639,7 +1639,7 @@ function MyTeamPageContent() {
   }[status] || { label:"⚠️ 미작성", color:"#ef4444", bg:"#ef444415" });
 
   return (
-    <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
+    <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:160 }}>
       <style>{`
         .team-member-row:active {
           background-color: var(--surface2) !important;
@@ -1770,9 +1770,11 @@ function MyTeamPageContent() {
                 <button onClick={() => setWorkOpen(v => !v)}
                   style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", margin:0 }}>내 소속</p>
-                    {current.length > 0 && <span style={{ fontSize:12, background:"rgba(236,72,153,0.15)", color:"#f9a8d4", borderRadius:20, padding:"2px 10px", fontWeight:700 }}>{current.length}곳</span>}
-                    {current.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)", opacity:0.6 }}>없음</span>}
+                    <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#ec4899,#f43f5e)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>💼</div>
+                    <div>
+                      <p style={{ fontSize:16, fontWeight:900, color:"var(--text)", margin:0, letterSpacing:"-0.3px" }}>내 직장</p>
+                      <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{current.length > 0 ? `${current.length}곳 재직 중` : "소속 없음"}</p>
+                    </div>
                   </div>
                   <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: workOpen ? "rotate(180deg)" : "none", display:"block" }}>⌄</span>
                 </button>
@@ -1844,7 +1846,7 @@ function MyTeamPageContent() {
               </section>
             )}
 
-            {userType === "worker" && (
+            {isWorker && !isEmployer && (
               <div style={{
                 ...cardStyle,
                 padding: "16px",
@@ -1852,24 +1854,23 @@ function MyTeamPageContent() {
                 border: "1px dashed rgba(124, 58, 237, 0.25)",
                 borderRadius: 16,
                 display: "flex",
-                flexDirection: "column",
-                gap: 10,
+                flexDirection: "row",
+                gap: 12,
                 alignItems: "center",
-                textAlign: "center",
                 marginTop: -10,
                 marginBottom: 10
               }}>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>💼 매장을 운영하고 계신가요?</p>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>사장님 역할을 추가하면 매장을 등록하고 직원을 구인할 수 있습니다.</p>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>💼 매장 운영하세요?</p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>사장님 역할을 추가하면 직원 구인이 가능해요</p>
                 </div>
                 <button onClick={() => upgradeToBoth("employer")}
                   style={{
                     background: "linear-gradient(135deg,#7c3aed,#ec4899)",
-                    border: "none", borderRadius: 20, padding: "6px 16px",
-                    color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer"
+                    border: "none", borderRadius: 20, padding: "6px 14px",
+                    color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0
                   }}>
-                  사장님 역할 추가하기 →
+                  추가하기 →
                 </button>
               </div>
             )}
@@ -1880,9 +1881,11 @@ function MyTeamPageContent() {
                 <button onClick={() => setTeamOpen(v => !v)}
                   style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", margin:0 }}>내 팀</p>
-                    {myStores.length > 0 && <span style={{ fontSize:12, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 10px", fontWeight:700 }}>매장 {myStores.length}곳</span>}
-                    {myStores.length === 0 && <span style={{ fontSize:12, color:"var(--text-muted)", opacity:0.6 }}>없음</span>}
+                    <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#7c3aed,#a855f7)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>🏪</div>
+                    <div>
+                      <p style={{ fontSize:16, fontWeight:900, color:"var(--text)", margin:0, letterSpacing:"-0.3px" }}>우리 매장</p>
+                      <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{myStores.length > 0 ? `${myStores.length}곳 운영 중` : "매장 없음"}</p>
+                    </div>
                   </div>
                   <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: teamOpen ? "rotate(180deg)" : "none", display:"block" }}>⌄</span>
                 </button>

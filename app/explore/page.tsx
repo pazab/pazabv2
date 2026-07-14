@@ -13,6 +13,7 @@ const SORT_OPTIONS = [
   { key: "추천순", icon: "✦" },
   { key: "인기순", icon: "❤" },
   { key: "긴급순", icon: "⚡" },
+  { key: "궁합순", icon: "💕" },
 ] as const;
 
 type SortKey = typeof SORT_OPTIONS[number]["key"];
@@ -68,6 +69,7 @@ function ExploreContent() {
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("추천순");
+  const [hasHexaco, setHasHexaco] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [fabScrolled, setFabScrolled] = useState(false);
   const [userType, setUserType] = useState<string | null>(null);
@@ -89,6 +91,7 @@ function ExploreContent() {
     grade?: string; tagline?: string;
     is_urgent?: boolean; expires_at?: string;
     job_type?: string; work_start_date?: string; work_end_date?: string;
+    employer_profile_id?: string;
   }
   const [bottomSheet, setBottomSheet] = useState<SheetItem | null>(null);
   const [bsActiveMediaIndex, setBsActiveMediaIndex] = useState(0);
@@ -156,22 +159,17 @@ function ExploreContent() {
       const { data: userData } = await supabase.from("users").select("user_type").eq("id", uid).single();
       const dbType = userData?.user_type;
       setUserType(dbType || null);
-      setShowBothTabs(dbType === "both" ||
-        (!!(localStorage.getItem("interview_result_basic_worker")) && !!(localStorage.getItem("interview_result_basic_employer"))));
-      const mode = typeParam || (dbType === "employer" ? "employer" : "worker");
-      setViewMode(mode as "worker" | "employer");
-      if (mode === "worker") {
-        const { data: wps } = await supabase.from("worker_profiles").select("desired_region").eq("user_id", uid).order("created_at", { ascending: false }).limit(1);
-        const wp = wps?.[0] || null;
-        setMyRegion(String(wp?.desired_region || ""));
-      } else {
-        const { data: eps } = await supabase.from("employer_profiles").select("region").eq("user_id", uid).order("created_at", { ascending: false }).limit(1);
-        const ep = eps?.[0] || null;
-        const { data: wps } = await supabase.from("worker_profiles").select("desired_region").eq("user_id", uid).order("created_at", { ascending: false }).limit(1);
-        const wp = wps?.[0] || null;
-        setMyRegion(String(ep?.region || wp?.desired_region || ""));
-      }
-      await fetchItems(mode as "worker" | "employer", uid);
+      const { data: hexacoData } = await supabase.from("hexaco_results").select("id").eq("user_id", uid).limit(1);
+      setHasHexaco(!!(hexacoData && hexacoData.length > 0));
+      setShowBothTabs(true);
+      const mode = (typeParam as "worker" | "employer") || "worker";
+      setViewMode(mode);
+      const [{ data: wps }, { data: eps }] = await Promise.all([
+        supabase.from("worker_profiles").select("desired_region").eq("user_id", uid).order("created_at", { ascending: false }).limit(1),
+        supabase.from("employer_profiles").select("region").eq("user_id", uid).order("created_at", { ascending: false }).limit(1),
+      ]);
+      setMyRegion(String(wps?.[0]?.desired_region || eps?.[0]?.region || ""));
+      await fetchItems(mode, uid);
     } else {
       setShowBothTabs(true);
       await fetchItems(typeParam || "worker", null);
@@ -213,6 +211,7 @@ function ExploreContent() {
           ...j.employer_profiles,
           ...j,
           id: j.id,
+          employer_profile_id: j.employer_profiles?.id || j.employer_profile_id,
           employer_avatar: j.users?.avatar_url,
           employer_name: j.users?.nickname || j.users?.real_name,
           match_score: null
@@ -229,6 +228,7 @@ function ExploreContent() {
     setViewMode(mode); setAllItems([]); setLoading(true); setShowAllSection(null); setSearchQuery(""); setBottomSheet(null);
     setSortBy("추천순");
     router.push(`/explore?type=${mode}`);
+    isFetching.current = false;
     await fetchItems(mode, userId);
     setLoading(false);
   };
@@ -360,6 +360,9 @@ function ExploreContent() {
     if (sortBy === "긴급순") {
       return sorted.filter(i => urgencyScore(i) >= 2).slice(0, 8); // 단기/긴급대타만
     }
+    if (sortBy === "궁합순") {
+      return sorted.filter(i => Number(i.match_score ?? -1) >= 80).slice(0, 8);
+    }
     return [];
   })();
 
@@ -368,6 +371,7 @@ function ExploreContent() {
     if (sortBy === "추천순") return "🔥 지금 인기 공고";
     if (sortBy === "인기순") return "❤ 많이 찜한 공고";
     if (sortBy === "긴급순") return "🚨 긴급 · 단기 모집";
+    if (sortBy === "궁합순") return "💕 궁합 80점 이상";
     return "";
   })();
 
@@ -450,12 +454,24 @@ function ExploreContent() {
             
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 4 }}>
-                {SORT_OPTIONS.map(opt => (
-                  <button key={opt.key} onClick={() => { setSortBy(opt.key); setShowAllSection(null); }}
-                    style={{ padding: "6px 10px", background: sortBy === opt.key ? (viewMode === "worker" ? "rgba(139,92,246,0.2)" : "rgba(236,72,153,0.2)") : "rgba(255,255,255,0.06)", border: `1px solid ${sortBy === opt.key ? (viewMode === "worker" ? "rgba(139,92,246,0.5)" : "rgba(236,72,153,0.5)") : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: sortBy === opt.key ? (viewMode === "worker" ? "#c4b5fd" : "#fbcfe8") : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s" }}>
-                    {opt.key === "긴급순" && sortBy !== "긴급순" ? <span style={{ color: "#f87171" }}>{opt.icon} {opt.key}</span> : `${opt.icon} ${opt.key}`}
-                  </button>
-                ))}
+                {SORT_OPTIONS.map(opt => {
+                  const isGunghap = opt.key === "궁합순";
+                  const isActive = sortBy === opt.key;
+                  return (
+                    <button key={opt.key} onClick={() => {
+                      if (isGunghap && !hasHexaco) {
+                        router.push("/interview?type=worker&from=explore_sort");
+                        return;
+                      }
+                      setSortBy(opt.key);
+                      setShowAllSection(null);
+                    }}
+                      style={{ padding: "6px 10px", background: isActive ? (isGunghap ? "rgba(236,72,153,0.2)" : viewMode === "worker" ? "rgba(139,92,246,0.2)" : "rgba(236,72,153,0.2)") : "rgba(255,255,255,0.06)", border: `1px solid ${isActive ? (isGunghap ? "rgba(236,72,153,0.5)" : viewMode === "worker" ? "rgba(139,92,246,0.5)" : "rgba(236,72,153,0.5)") : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: isActive ? (isGunghap ? "#fbcfe8" : viewMode === "worker" ? "#c4b5fd" : "#fbcfe8") : isGunghap && !hasHexaco ? "#f9a8d4" : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s", position: "relative" as const }}>
+                      {opt.key === "긴급순" && !isActive ? <span style={{ color: "#f87171" }}>{opt.icon} {opt.key}</span> : `${opt.icon} ${opt.key}`}
+                      {isGunghap && !hasHexaco && <span style={{ position: "absolute", top: -4, right: -4, background: "#ec4899", borderRadius: "50%", width: 8, height: 8, display: "block" }} />}
+                    </button>
+                  );
+                })}
               </div>
               
               {isFilterActive && (
@@ -504,7 +520,7 @@ function ExploreContent() {
             <div style={{ padding: "0 16px" }}>
               <SectionHeader
                 title={isLoggedIn
-                  ? `✦ ${sortBy === "인기순" ? "인기" : sortBy === "긴급순" ? "긴급" : "추천"} ${viewMode === "worker" ? "공고" : "구직자"}`
+                  ? `✦ ${sortBy === "인기순" ? "인기" : sortBy === "긴급순" ? "긴급" : sortBy === "궁합순" ? "궁합" : "추천"} ${viewMode === "worker" ? "공고" : "구직자"}`
                   : `전체 ${viewMode === "worker" ? "공고" : "구직자"}`}
                 count={sorted.length}
               />
@@ -602,7 +618,15 @@ function ExploreContent() {
             })()}
             <div style={{ padding: "16px 20px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <div onClick={() => { const uid = String(bottomSheet.user_id || ""); if (uid) { router.push(viewMode === "worker" ? `/employer/${uid}` : `/worker/${uid}`); setBottomSheet(null); } }} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
+                <div onClick={() => {
+                  if (viewMode === "worker") {
+                    const storeId = String(bottomSheet.employer_profile_id || bottomSheet.id || "");
+                    if (storeId) { router.push(`/store/${storeId}`); setBottomSheet(null); }
+                  } else {
+                    const uid = String(bottomSheet.user_id || bottomSheet.id || "");
+                    if (uid) { router.push(`/worker/${uid}`); setBottomSheet(null); }
+                  }
+                }} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
                   <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: (viewMode === "worker" ? bottomSheet.employer_avatar : bottomSheet.worker_avatar) ? `url(${viewMode === "worker" ? bottomSheet.employer_avatar : bottomSheet.worker_avatar}) center/cover` : "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
                     {!(viewMode === "worker" ? bottomSheet.employer_avatar : bottomSheet.worker_avatar) && (viewMode === "worker" ? "🏪" : "👤")}
                   </div>
@@ -617,10 +641,11 @@ function ExploreContent() {
                 </div>
                 {(() => { const grade = getGrade(Number(bottomSheet.trust_score ?? 50)); return <span style={{ fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: "4px 10px", color: "var(--text-muted)", flexShrink: 0 }}>{grade.emoji} {grade.name}</span>; })()}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: viewMode === "worker" ? "1fr 1fr 1fr" : "1fr 1fr", gap: 8, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
                 {viewMode === "worker" ? [
                   { icon: "₩", label: "시급", value: `${Number(bottomSheet.wage || 0).toLocaleString()}원` },
                   { icon: "📅", label: bottomSheet.job_type === "short" || bottomSheet.job_type === "urgent" ? "날짜" : "요일", value: bottomSheet.work_start_date ? formatDateBadge(bottomSheet.work_start_date, bottomSheet.work_end_date) : String(bottomSheet.work_days || "협의") },
+                  { icon: "🕐", label: "근무시간", value: String(bottomSheet.work_hours || "협의") },
                   { icon: "📍", label: "위치", value: String(bottomSheet.region || "") },
                 ].map(c => (
                   <div key={c.label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "10px 12px" }}>
@@ -651,7 +676,9 @@ function ExploreContent() {
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => { const id = String(bottomSheet.id || bottomSheet.user_id); router.push(viewMode === "worker" ? `/job/${id}` : `/worker/${id}`); }} style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "13px", color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>상세보기 →</button>
                 {isLoggedIn ? (
-                  <button onClick={() => { handleLovecall(String(bottomSheet.id || bottomSheet.user_id)); setBottomSheet(null); }} style={{ flex: 2, background: viewMode === "worker" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "linear-gradient(135deg, #ec4899, #be185d)", border: "none", borderRadius: 12, padding: "13px", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", letterSpacing: "-0.2px" }}>💌 러브콜 보내기</button>
+                  <button onClick={() => { handleLovecall(String(bottomSheet.id || bottomSheet.user_id)); setBottomSheet(null); }} style={{ flex: 2, background: viewMode === "worker" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "linear-gradient(135deg, #ec4899, #be185d)", border: "none", borderRadius: 12, padding: "13px", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", letterSpacing: "-0.2px" }}>
+                    {viewMode === "worker" ? "지원하기" : "💌 채용 제안하기"}
+                  </button>
                 ) : (
                   <button onClick={() => router.push("/login")} style={{ flex: 2, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "13px", color: "rgba(255,255,255,0.4)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>🔒 로그인하고 지원하기</button>
                 )}
@@ -841,19 +868,9 @@ function ExploreContent() {
         <button
           onClick={() => {
             if (viewMode === "worker") {
-              // 공고탭: 사장님만 공고 등록, 알바생은 본인 구직 프로필로
-              if (userType === "worker") {
-                router.push("/worker/profile?edit=true&new=true&return=explore");
-              } else {
-                router.push("/employer/register");
-              }
+              router.push("/employer/register");
             } else {
-              // 구직자탭: 알바생만 구직 프로필, 사장님은 공고 등록으로
-              if (userType === "employer") {
-                router.push("/employer/register");
-              } else {
-                router.push("/worker/profile?edit=true&new=true&return=explore");
-              }
+              router.push("/worker/profile?edit=true&new=true&return=explore");
             }
           }}
           style={{
@@ -868,13 +885,13 @@ function ExploreContent() {
             height: 48,
             minWidth: 48,
             padding: fabScrolled ? "0 14px" : "0 20px 0 14px",
-            background: (viewMode === "worker" && userType !== "worker") || (viewMode === "employer" && userType === "employer")
+            background: viewMode === "worker"
               ? "linear-gradient(135deg,#7c3aed,#a855f7)"
               : "linear-gradient(135deg,#ec4899,#f43f5e)",
             border: "none",
             borderRadius: 28,
             cursor: "pointer",
-            boxShadow: (viewMode === "worker" && userType !== "worker") || (viewMode === "employer" && userType === "employer")
+            boxShadow: viewMode === "worker"
               ? "0 4px 20px rgba(124,58,237,0.5)"
               : "0 4px 20px rgba(236,72,153,0.5)",
             color: "#fff",
@@ -892,7 +909,7 @@ function ExploreContent() {
             overflow: "hidden",
             transition: "max-width 0.3s cubic-bezier(.34,1.56,.64,1), opacity 0.2s",
           }}>
-            {(viewMode === "worker" && userType !== "worker") || (viewMode === "employer" && userType === "employer") ? "새 공고" : "새 구직"}
+            {viewMode === "worker" ? "새 공고" : "새 구직"}
           </span>
         </button>
       )}

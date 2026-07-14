@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
     if (userType === "worker") {
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
+      const { data: hexacoRow } = await supabaseAdmin.from("hexaco_results").select("id").eq("user_id", userId).limit(1);
+      const hasMyHexaco = !!(hexacoRow && hexacoRow.length > 0);
       if (myUser?.worker_result?.hexaco) myHexaco = parseHexaco(myUser.worker_result.hexaco);
       else if (myUser?.worker_result) myHexaco = parseHexaco(myUser.worker_result);
       myRegion = String(wp?.desired_region || "");
@@ -151,7 +153,7 @@ export async function POST(req: NextRequest) {
       // employer_profiles 정보 flatten + 삭제 매장 제외 + 지역 분류
       const allJobs = (allJobsRaw || [])
         .filter((j: any) => !j.employer_profiles?.is_deleted)
-        .map((j: any) => ({ ...j.employer_profiles, ...j, id: j.id, employer_profile_id: j.employer_profile_id, users: j.users }));
+        .map((j: any) => ({ ...j.employer_profiles, ...j, id: j.id, employer_profile_id: j.employer_profiles?.id || j.employer_profile_id, users: j.users }));
 
       const localJobs = allJobs.filter((j: any) => gugun ? (j.region || "").includes(gugun) : sido ? (j.region || "").includes(sido) : true);
       const otherJobs = allJobs.filter((j: any) => gugun ? !(j.region || "").includes(gugun) : sido ? !(j.region || "").includes(sido) : false);
@@ -193,7 +195,7 @@ export async function POST(req: NextRequest) {
           employer_avatar: empUser?.avatar_url,
           employer_name: empUser?.nickname || empUser?.real_name,
           trust_score: trustScore,
-          match_score: finalScoreWithNoise,
+          match_score: hasMyHexaco ? finalScoreWithNoise : null,
           is_liked: myLikes.includes(String(job.id)),
           hexaco_score: hexacoScore,
           condition_score: condScore,
@@ -201,7 +203,7 @@ export async function POST(req: NextRequest) {
         };
       });
 
-      results.sort((a, b) => b.match_score - a.match_score);
+      results.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
       return NextResponse.json({ success: true, results });
 
     } else {
@@ -211,6 +213,8 @@ export async function POST(req: NextRequest) {
       const latestJob = latestJobs?.[0] || null;
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("desired_region").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
+      const { data: hexacoRowEmp } = await supabaseAdmin.from("hexaco_results").select("id").eq("user_id", userId).limit(1);
+      const hasMyHexaco = !!(hexacoRowEmp && hexacoRowEmp.length > 0);
       if (latestJob?.hexaco_data) myHexaco = parseHexaco(latestJob.hexaco_data);
       else if (myUser?.employer_result) myHexaco = parseHexaco(myUser.employer_result);
       myRegion = String(latestJob?.employer_profiles?.region || wp?.desired_region || "");
@@ -293,12 +297,12 @@ export async function POST(req: NextRequest) {
             worker_avatar: wrkUser?.avatar_url,
             worker_name: wrkUser?.nickname || wrkUser?.real_name,
             trust_score: trustScore,
-            match_score: finalScoreWithNoise,
+            match_score: hasMyHexaco ? finalScoreWithNoise : null,
             is_liked: myLikes.includes(String(worker.user_id)),
           };
         });
 
-      results.sort((a, b) => b.match_score - a.match_score);
+      results.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
       return NextResponse.json({ success: true, results });
     }
 

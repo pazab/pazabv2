@@ -538,7 +538,7 @@ function MyPageContent() {
   const [userId, setUserId] = useState<string | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [loading, setLoading] = useState(true);
-  const [viewType, setViewType] = useState<"worker" | "employer">(tabParam || "worker");
+  const viewType = "worker";
   const [loveCalls, setLoveCalls] = useState<LoveCall[]>([]);
   const [loveCallLoading, setLoveCallLoading] = useState(false);
   const [respondingId, setRespondingId] = useState<string | null>(null);
@@ -550,6 +550,10 @@ function MyPageContent() {
   const [jobLoading, setJobLoading] = useState(false);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [showNicknameConfirm, setShowNicknameConfirm] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [avatarConfirm, setAvatarConfirm] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [nicknameInput, setNicknameInput] = useState("");
   const [confirmModal, setConfirmModal] = useState<{
     title: string; desc: string; confirmLabel: string; confirmColor?: string; onConfirm: () => void;
@@ -596,10 +600,7 @@ function MyPageContent() {
         userData = newUser as any;
       }
       setUser(userData);
-      const uType = userData?.user_type || "worker";
-      // tabParam 있으면 그걸로, 없으면 user_type으로
-      if (!tabParam) setViewType(uType === "both" ? "worker" : uType as "worker" | "employer");
-      loadResultsForType(tabParam || uType, session.user.id);
+      loadResultsForType("worker", session.user.id);
       const hw = !!(localStorage.getItem(`interview_result_basic_worker`) || localStorage.getItem(`interview_result_advanced_worker`));
       const he = !!(localStorage.getItem(`interview_result_basic_employer`) || localStorage.getItem(`interview_result_advanced_employer`));
 
@@ -610,7 +611,7 @@ function MyPageContent() {
 
       setHasWorkerInterview(hw || hwDb);
       setHasEmployerInterview(he || heDb);
-      fetchLoveCalls(session.user.id, uType);
+      fetchLoveCalls(session.user.id, "both");
       fetchJobs(session.user.id);
 
       // 구직 및 매장 공고 최신본 가져오기 (미리보기용)
@@ -979,7 +980,6 @@ function MyPageContent() {
   const grade = GRADE_INFO[user.grade || "bronze"];
   const mainResult = advancedResult || basicResult;
   const hasAny = !!(basicResult || advancedResult);
-  const showBothTabs = (hasWorkerInterview && hasEmployerInterview) || user?.user_type === "both";
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 120 }}>
@@ -993,23 +993,13 @@ function MyPageContent() {
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
             {/* 아바타 + 업로드 */}
             <label style={{ cursor: "pointer", flexShrink: 0, position: "relative" }}>
-              <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
+              <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (!file || !user) return;
-                const ext = file.name.split(".").pop();
-                const path = `${user.id}.${ext}`;
-                const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true });
-                console.log("upload error:", error);
-                if (!error) {
-                  const { data } = supabase.storage.from("media").getPublicUrl(path);
-                  const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
-                  console.log("publicUrl:", avatarUrl);
-                  const { error: dbErr } = await supabase.from("users").update({ avatar_url: avatarUrl }).eq("id", user.id);
-                  console.log("db error:", dbErr);
-                  await supabase.from("worker_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
-                  await supabase.from("employer_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
-                  setUser(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev);
-                }
+                if (!file) return;
+                const previewUrl = URL.createObjectURL(file);
+                setAvatarPreview({ file, previewUrl });
+                setAvatarConfirm(true);
+                e.target.value = "";
               }} />
                {(user as any).avatar_url ? (
                 <img src={(user as any).avatar_url} alt="avatar"
@@ -1090,8 +1080,8 @@ function MyPageContent() {
           </div>
         </button>
 
-        {/* ── 알바생 섹션 (worker / both) ── */}
-        {(user.user_type === "worker" || user.user_type === "both") && (() => {
+        {/* ── 알바생 섹션 ── */}
+        {(() => {
           const wReceived = loveCalls.filter(lc => lc.myRole === "worker" && !lc.isSent);
           const wSent = loveCalls.filter(lc => lc.myRole === "worker" && lc.isSent);
           const wTotal = wReceived.length + wSent.length;
@@ -1150,8 +1140,8 @@ function MyPageContent() {
           );
         })()}
 
-        {/* ── 사장님 섹션 (employer / both) ── */}
-        {(user.user_type === "employer" || user.user_type === "both") && (() => {
+        {/* ── 사장님 섹션 ── */}
+        {(() => {
           const eReceived = loveCalls.filter(lc => lc.myRole === "employer" && !lc.isSent);
           const eSent = loveCalls.filter(lc => lc.myRole === "employer" && lc.isSent);
           const eTotal = eReceived.length + eSent.length;
@@ -1275,17 +1265,6 @@ function MyPageContent() {
           로그아웃
         </button>
 
-        {/* 역할 추가 */}
-        {user?.user_type !== "both" && (
-          <button onClick={async () => {
-            const newType = "both";
-            await supabase.from("users").update({ user_type: newType }).eq("id", user?.id);
-            setUser((prev: any) => ({ ...prev, user_type: newType }));
-          }}
-            style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 13, cursor: "pointer", marginTop: 8 }}>
-            {user?.user_type === "worker" ? "🏪 사장님 역할 추가하기" : "⚡ 알바생 역할 추가하기"}
-          </button>
-        )}
         {/* 푸터 */}
         <div style={{ textAlign: "center", padding: "16px 0 0", display: "flex", justifyContent: "center", gap: 16 }}>
           <span onClick={() => router.push("/privacy")} style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>개인정보처리방침</span>
@@ -1325,43 +1304,105 @@ function MyPageContent() {
           </div>
         )}
 
-        {/* 닉네임 변경 모달 */}
+        {/* 닉네임 변경 모달 (입력 → 확인 인라인 전환) */}
         {showNicknameModal && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
+            <div style={{ ...modalSheet, maxWidth: 640, margin: "0 auto", transition: "all 0.2s" }}>
+              {!showNicknameConfirm ? (
+                <>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>닉네임 변경</h3>
+                  <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 14px" }}>다른 사용자에게 표시되는 이름이에요</p>
+                  <input
+                    type="text"
+                    value={nicknameInput}
+                    onChange={e => setNicknameInput(e.target.value.slice(0, 20))}
+                    placeholder="새 닉네임 입력 (최대 20자)"
+                    autoFocus
+                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--primary-border)", borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 15, outline: "none", boxSizing: "border-box", marginBottom: 6 }}
+                  />
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 16px", textAlign: "right" }}>{nicknameInput.length}/20</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setShowNicknameModal(false)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
+                    <button onClick={async () => {
+                      const next = nicknameInput.trim();
+                      if (!next || !user) return;
+                      const { data: dup } = await supabase.from("users")
+                        .select("id").ilike("nickname", next).neq("id", user.id).limit(1);
+                      if (dup && dup.length > 0) { setToastMsg("이미 사용 중인 닉네임이에요"); return; }
+                      setShowNicknameConfirm(true);
+                    }} style={{ ...btnPrimary, flex: 1 }}>변경하기</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>이 닉네임으로 변경할까요?</h3>
+                  <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px" }}>변경 후에도 다시 바꿀 수 있어요</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface2)", borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+                    <span style={{ flex: 1, fontSize: 14, color: "var(--text-muted)", textDecoration: "line-through" }}>{user?.nickname || user?.name}</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 18 }}>→</span>
+                    <span style={{ flex: 1, fontSize: 15, fontWeight: 800, color: "var(--text)", textAlign: "right" }}>{nicknameInput.trim()}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setShowNicknameConfirm(false)} style={{ ...btnSecondary, flex: 1 }}>돌아가기</button>
+                    <button onClick={async () => {
+                      const next = nicknameInput.trim();
+                      if (!next || !user) return;
+                      await supabase.from("users").update({ nickname: next }).eq("id", user.id);
+                      setUser(prev => prev ? { ...prev, nickname: next } : prev);
+                      setShowNicknameConfirm(false);
+                      setShowNicknameModal(false);
+                      setToastMsg("닉네임이 변경됐어요!");
+                    }} style={{ ...btnPrimary, flex: 1 }}>확인</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 사진 변경 확인 모달 */}
+        {avatarPreview && avatarConfirm && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
             <div style={{ ...modalSheet, maxWidth: 640, margin: "0 auto" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>닉네임 변경</h3>
-              <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px" }}>다른 사용자에게 표시되는 이름이에요</p>
-              <input
-                type="text"
-                value={nicknameInput}
-                onChange={e => setNicknameInput(e.target.value.slice(0, 20))}
-                placeholder="닉네임 입력 (최대 20자)"
-                autoFocus
-                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--primary-border)", borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 15, outline: "none", boxSizing: "border-box", marginBottom: 6 }}
-              />
-              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 16px", textAlign: "right" }}>{nicknameInput.length}/20</p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={async () => {
-                  const next = nicknameInput.trim();
-                  if (!next || !user) return;
-                  // 중복 체크 (본인 제외)
-                  const { data: dup } = await supabase.from("users")
-                    .select("id").ilike("nickname", next).neq("id", user.id).limit(1);
-                  if (dup && dup.length > 0) {
-                    setToastMsg("이미 사용 중인 닉네임이에요");
-                    return;
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>프로필 사진을 변경할까요?</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center", margin: "16px 0 20px" }}>
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 6px" }}>현재</p>
+                  {(user as any)?.avatar_url
+                    ? <img src={(user as any).avatar_url} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--border)" }} />
+                    : <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>👤</div>
                   }
-                  await supabase.from("users").update({ nickname: next }).eq("id", user.id);
-                  setUser(prev => prev ? { ...prev, nickname: next } : prev);
-                  setShowNicknameModal(false);
-                  setToastMsg("닉네임이 변경됐어요!");
-                }}
-                  style={{ ...btnPrimary, flex: 1 }}>
-                  변경하기
-                </button>
-                <button onClick={() => setShowNicknameModal(false)}
-                  style={{ ...btnSecondary, flex: 1 }}>
-                  취소
+                </div>
+                <span style={{ fontSize: 20, color: "var(--text-muted)" }}>→</span>
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 6px" }}>새 사진</p>
+                  <img src={avatarPreview.previewUrl} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid #7c3aed" }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { URL.revokeObjectURL(avatarPreview.previewUrl); setAvatarPreview(null); setAvatarConfirm(false); }} style={{ ...btnSecondary, flex: 1 }}>취소</button>
+                <button disabled={avatarUploading} onClick={async () => {
+                  if (!user) return;
+                  setAvatarUploading(true);
+                  const { file } = avatarPreview;
+                  const ext = file.name.split(".").pop();
+                  const path = `${user.id}.${ext}`;
+                  const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true });
+                  if (!error) {
+                    const { data } = supabase.storage.from("media").getPublicUrl(path);
+                    const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
+                    await supabase.from("users").update({ avatar_url: avatarUrl }).eq("id", user.id);
+                    await supabase.from("worker_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
+                    await supabase.from("employer_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
+                    setUser(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev);
+                    setToastMsg("프로필 사진이 변경됐어요!");
+                  }
+                  URL.revokeObjectURL(avatarPreview.previewUrl);
+                  setAvatarPreview(null);
+                  setAvatarConfirm(false);
+                  setAvatarUploading(false);
+                }} style={{ ...btnPrimary, flex: 1, opacity: avatarUploading ? 0.6 : 1 }}>
+                  {avatarUploading ? "업로드 중..." : "확인"}
                 </button>
               </div>
             </div>
