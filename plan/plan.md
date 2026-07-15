@@ -1,7 +1,24 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-15 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-16 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
+
+**구직자 상세·매장 홈·프로필 페이지 UI 통합 개선 (2026-07-16)**
+- **`/worker/[id]` 전면 재설계** (`app/worker/[id]/page.tsx`):
+  - `/job/[id]` 공고 상세 페이지를 기준으로 레이아웃·스타일 통일
+  - 히어로: 미디어 캐러셀 + 배지 + 지역 + 프로필 칩 버튼(이름+아바타) → `/profile/[id]` 연결
+  - 2×2 조건 그리드(희망 시급/근무요일/근무시간/경력), 보유 자격증·실무기술 배지 섹션
+  - **📸 최근 활동** 섹션 추가: `feed_posts` 테이블에서 해당 유저의 게시물 최신 2개를 매장 소식과 동일한 스타일로 표시
+  - 하단 CTA: 본인 → "구직정보 수정하기", 사장님/타인 → "채용 제안하기"
+  - 화면 너비 flex shrink-to-fit 버그 수정: `width: "100%", maxWidth: 480, margin: "0 auto"` 적용
+- **`/store/[id]` 신뢰도 보기 버튼 → 프로필 칩으로 교체** (`app/store/[id]/page.tsx`):
+  - 기존 텍스트 링크 "신뢰도 보기 →" 대신 아바타+이름 칩 형태로 표시
+  - 클릭 시 사장님 `/profile/[user_id]` 페이지 이동
+- **`/profile/[userId]` 너비 고정** (`app/profile/[userId]/page.tsx`):
+  - `width: "100%", maxWidth: 480, margin: "0 auto"` 추가 → 다른 페이지와 동일한 480px 중앙 컬럼으로 통일
+- **flex-column body shrink-to-fit 함정 정리**:
+  - `layout.tsx`의 `body { flex flex-col }`에서 자식 `<main>`에 `margin: 0 auto`만 주면 콘텐츠 크기로 축소됨
+  - 전 페이지 공통 해결책: `width: "100%"` 필수 병기
 
 **미디어 캐러셀 동적 비디오 판별 및 구직자 자격증 스텝 재배치 (2026-07-15)**
 - **동영상/사진 복합 미디어 캐러셀 고도화**:

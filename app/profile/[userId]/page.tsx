@@ -68,7 +68,7 @@ export default function ProfilePage() {
   const isWorker = user.user_type === "worker" || user.user_type === "both";
 
   return (
-    <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 100 }}>
+    <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 100, width: "100%", maxWidth: 480, margin: "0 auto" }}>
       <AppHeader title="프로필" showBack />
 
       <div style={{ padding: "16px" }}>

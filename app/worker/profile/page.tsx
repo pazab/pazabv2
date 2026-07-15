@@ -176,6 +176,8 @@ function WorkerProfileContent() {
       setParentCategories(data.filter((c: { parent_id: string | null }) => !c.parent_id));
       setChildCategories(data.filter((c: { parent_id: string | null }) => c.parent_id));
     }
+    const creds = await fetchCredentialsWithFallback();
+    setCredentialsMaster(creds);
   };
 
   const checkAuth = async () => {
@@ -250,7 +252,6 @@ function WorkerProfileContent() {
       // 카테고리 복원
       if (data.category_ids?.length) {
         setSelectedCategoryIds(data.category_ids);
-        // 소분류 → 대분류 역추적해서 selectedParents도 복원
         const { data: cats } = await supabase.from("job_categories").select("*");
         if (cats) {
           const children = cats.filter((c: any) => c.parent_id);
@@ -264,10 +265,8 @@ function WorkerProfileContent() {
         }
       }
       if (data.custom_categories?.length) setCustomCategories(data.custom_categories);
-
-      // 기존 desired_type 호환 (카테고리 없으면 텍스트로 표시)
       if (!data.category_ids?.length && data.desired_type) {
-        setCustomCategories(data.desired_type.split(","));
+        setCustomCategories(data.desired_type.split(",").filter(Boolean));
       }
 
       if (!currIsEdit && !currReturnTo.startsWith("%2F") && !currReturnTo.startsWith("/")) {
@@ -279,10 +278,6 @@ function WorkerProfileContent() {
         return;
       }
     }
-
-    // 자격요건 마스터 데이터 로드
-    const creds = await fetchCredentialsWithFallback();
-    setCredentialsMaster(creds);
 
     setLoading(false);
   };
@@ -393,7 +388,7 @@ function WorkerProfileContent() {
       work_type: workType,
       bio: bio.trim(),
       worker_type: interviewResult?.personalityType || null,
-      big5_data: interviewResult?.big5 || null,
+
       is_public: isPublic,
       image_url: imageUrls[0] || null,
       image_urls: imageUrls,
@@ -606,10 +601,10 @@ function WorkerProfileContent() {
                         const child = childCategories.find(c => c.id === catId);
                         if (!child) return null;
 
-                        // 대분류명(parentName)에 상관없이 소분류(duty_name) 매핑만으로 자격증을 필터링하도록 가드 완화
+                        const seen = new Set<string>();
                         const childCreds = [
-                          ...credentialsMaster.filter(c => c.duty_name === child.name && c.is_mandatory_by_law),
-                          ...credentialsMaster.filter(c => c.duty_name === child.name && !c.is_mandatory_by_law),
+                          ...credentialsMaster.filter(c => c.duty_name === child.name && c.is_mandatory_by_law && !seen.has(c.name) && (seen.add(c.name), true)),
+                          ...credentialsMaster.filter(c => c.duty_name === child.name && !c.is_mandatory_by_law && !seen.has(c.name) && (seen.add(c.name), true)),
                         ];
 
                         return (

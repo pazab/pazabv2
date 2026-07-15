@@ -279,14 +279,13 @@ export default function StoreHomePage() {
               {store.owner && (
                 <button
                   onClick={() => router.push(`/profile/${store.user_id}`)}
-                  style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "4px 10px", cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "5px 10px 5px 5px", cursor: "pointer" }}
                 >
-                  {store.owner.avatar_url
-                    ? <img src={store.owner.avatar_url} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover" }} />
-                    : <span style={{ fontSize: 14 }}>👤</span>
-                  }
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
-                    {store.owner.nickname || "운영자"} 신뢰도 보기 →
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: store.owner.avatar_url ? `url(${store.owner.avatar_url}) center/cover` : "linear-gradient(135deg,#8b5cf6,#7c3aed)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>
+                    {!store.owner.avatar_url && "👤"}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600 }}>
+                    {store.owner.nickname || "운영자"} 프로필 보기 →
                   </span>
                 </button>
               )}
