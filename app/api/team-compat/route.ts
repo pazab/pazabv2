@@ -6,8 +6,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-function calcHexacoScore(a: any, b: any): number {
-  if (!a || !b) return 60; // 기본값
+function calcHexacoScore(a: any, b: any): number | null {
+  if (!a || !b) return null; // 미분석 시 null 반환
   let score = 60;
 
   // 1. 성실성 차이 (핵심 갈등 요소)
@@ -112,13 +112,19 @@ export async function GET(req: NextRequest) {
     }));
 
     // 전체 대표 점수 (사장님 50% + 팀원 평균 50%)
-    const memberAvg = memberScores.length > 0
-      ? memberScores.reduce((s, m) => s + m.score, 0) / memberScores.length
+    const validMemberScores = memberScores.filter(m => m.score !== null) as { score: number }[];
+    const memberAvg = validMemberScores.length > 0
+      ? validMemberScores.reduce((s, m) => s + m.score, 0) / validMemberScores.length
       : null;
 
-    const totalScore = memberAvg !== null
-      ? Math.round(employerScore * 0.5 + memberAvg * 0.5)
-      : employerScore;
+    let totalScore: number | null = null;
+    if (employerScore !== null && memberAvg !== null) {
+      totalScore = Math.round(employerScore * 0.5 + memberAvg * 0.5);
+    } else if (employerScore !== null) {
+      totalScore = employerScore;
+    } else if (memberAvg !== null) {
+      totalScore = Math.round(memberAvg);
+    }
 
     return NextResponse.json({
       success: true,

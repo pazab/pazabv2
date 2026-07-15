@@ -85,7 +85,7 @@ function WorkerProfileContent() {
   const [credentialsMaster, setCredentialsMaster] = useState<any[]>([]);
   const [selectedCreds, setSelectedCreds] = useState<any[]>([]);
   const [customCredInput, setCustomCredInput] = useState("");
-  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [showCustomInput, setShowCustomInput] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [tempImageSrc, setTempImageSrc] = useState<string | null>(null);
   const [originalFileName, setOriginalFileName] = useState("");
@@ -563,6 +563,243 @@ function WorkerProfileContent() {
                   )}
                 </div>
 
+                {/* 자격 요건 / 보유 기술 등록 */}
+                <div>
+                  <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 8 }}>🏅 보유 자격증 및 실무기술</label>
+                  
+                  {/* 이미 등록된 자격증 칩 목록 */}
+                  {selectedCreds.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                      {selectedCreds.map(sc => (
+                        <span 
+                          key={sc.name} 
+                          style={{ 
+                            display: "inline-flex", 
+                            alignItems: "center", 
+                            gap: 6, 
+                            background: "rgba(139,92,246,0.15)", 
+                            border: "1px solid rgba(139,92,246,0.3)", 
+                            padding: "4px 10px", 
+                            borderRadius: 20, 
+                            fontSize: 11, 
+                            color: "#c4b5fd" 
+                          }}
+                        >
+                          {sc.name}
+                          <button 
+                            type="button" 
+                            onClick={() => setSelectedCreds(prev => prev.filter(x => x.name !== sc.name))}
+                            style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 10, padding: 0 }}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedCategoryIds.length > 0 ? (
+                    /* 희망 직무가 선택되었을 때: 직무별 추천 자격증 노출 */
+                    <div>
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 12px" }}>선택하신 직무와 매핑되는 보유 자격 요건들을 체크해 주세요!</p>
+                      {selectedCategoryIds.map(catId => {
+                        const child = childCategories.find(c => c.id === catId);
+                        if (!child) return null;
+
+                        // 대분류명(parentName)에 상관없이 소분류(duty_name) 매핑만으로 자격증을 필터링하도록 가드 완화
+                        const childCreds = [
+                          ...credentialsMaster.filter(c => c.duty_name === child.name && c.is_mandatory_by_law),
+                          ...credentialsMaster.filter(c => c.duty_name === child.name && !c.is_mandatory_by_law),
+                        ];
+
+                        return (
+                          <div key={catId} style={{ marginBottom: 14 }}>
+                            <p style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", margin: "0 0 6px" }}>
+                              {child.emoji} {child.name} 관련 자격 추천
+                            </p>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                              {childCreds.map(c => {
+                                const isSelected = selectedCreds.some(sc => sc.name === c.name);
+                                const isMandatory = c.is_mandatory_by_law;
+                                return (
+                                  <button
+                                    key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
+                                    type="button"
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setSelectedCreds(prev => prev.filter(sc => sc.name !== c.name));
+                                      } else {
+                                        setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
+                                      }
+                                    }}
+                                    style={{
+                                      padding: "6px 12px",
+                                      borderRadius: 20,
+                                      border: "none",
+                                      fontSize: 11,
+                                      cursor: "pointer",
+                                      fontWeight: isSelected ? 700 : 400,
+                                      background: isSelected
+                                        ? (isMandatory ? "linear-gradient(135deg, #db2777, #ec4899)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)")
+                                        : (isMandatory ? "rgba(236,72,153,0.15)" : "var(--surface2)"),
+                                      color: isSelected ? "#fff" : (isMandatory ? "#fbcfe8" : "var(--text-muted)"),
+                                      outline: "none"
+                                    }}
+                                  >
+                                    {isMandatory && "⚠️ "}{c.name}
+                                  </button>
+                                );
+                              })}
+                              
+                              {/* 인라인 직접입력 */}
+                              {showCustomInput === catId ? (
+                                <div style={{ position: "relative", display: "inline-block" }}>
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    value={customCredInput}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setCustomCredInput(val);
+                                      if (!val.trim()) { setSuggestions([]); return; }
+                                      const matched = credentialsMaster.filter(c =>
+                                        c.duty_name === child.name &&
+                                        c.name.toLowerCase().includes(val.toLowerCase()) &&
+                                        !selectedCreds.some(sc => sc.name === c.name)
+                                      );
+                                      setSuggestions(matched.slice(0, 5));
+                                    }}
+                                    onBlur={() => {
+                                      setTimeout(() => {
+                                        if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
+                                          const presetMatch = credentialsMaster.find(c => c.duty_name === child.name && c.name === customCredInput.trim());
+                                          setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
+                                        }
+                                        setCustomCredInput("");
+                                        setSuggestions([]);
+                                        setShowCustomInput(null);
+                                      }, 200);
+                                    }}
+                                    onKeyDown={e => {
+                                      if (e.key === "Enter") {
+                                        if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
+                                          const presetMatch = credentialsMaster.find(c => c.duty_name === child.name && c.name === customCredInput.trim());
+                                          setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
+                                        }
+                                        setCustomCredInput("");
+                                        setSuggestions([]);
+                                        setShowCustomInput(null);
+                                      }
+                                    }}
+                                    placeholder="직접 입력..."
+                                    style={{ padding: "6px 12px", borderRadius: 20, border: "1px solid #c4b5fd", background: "var(--surface)", color: "#fff", fontSize: 11, width: 100, outline: "none" }}
+                                  />
+                                  {suggestions.length > 0 && (
+                                    <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, width: 180, background: "#1e1e24", border: "1px solid var(--border)", borderRadius: 10, zIndex: 100, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                                      {suggestions.map((c, i) => (
+                                        <button key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`} type="button"
+                                          onMouseDown={() => {
+                                            setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
+                                            setCustomCredInput("");
+                                            setSuggestions([]);
+                                            setShowCustomInput(null);
+                                          }}
+                                          style={{ width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: i < suggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none", textAlign: "left", cursor: "pointer", color: "#fff", fontSize: 11, display: "block" }}
+                                          onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.1)"}
+                                          onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                                          {c.name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => { setShowCustomInput(catId); setCustomCredInput(""); setSuggestions([]); }}
+                                  style={{ padding: "6px 12px", borderRadius: 20, border: "none", fontSize: 11, cursor: "pointer", background: "var(--surface2)", color: "var(--text-muted)", outline: "none" }}>
+                                  ✏️ 직접입력
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* 희망 직무를 아직 선택하지 않았을 때: 전체 직접입력 단추 제공 */
+                    <div>
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 10px" }}>아래 직접입력 버튼을 통해 보유하신 자격증이나 기술을 적어주세요.</p>
+                      {showCustomInput === "general" ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={customCredInput}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setCustomCredInput(val);
+                              if (!val.trim()) { setSuggestions([]); return; }
+                              // 전체 텍스트 검색 지원
+                              const matched = credentialsMaster.filter(c =>
+                                c.name.toLowerCase().includes(val.toLowerCase()) &&
+                                !selectedCreds.some(sc => sc.name === c.name)
+                              );
+                              setSuggestions(matched.slice(0, 5));
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
+                                  const presetMatch = credentialsMaster.find(c => c.name === customCredInput.trim());
+                                  setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
+                                }
+                                setCustomCredInput("");
+                                setSuggestions([]);
+                                setShowCustomInput(null);
+                              }, 200);
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
+                                  const presetMatch = credentialsMaster.find(c => c.name === customCredInput.trim());
+                                  setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
+                                }
+                                setCustomCredInput("");
+                                setSuggestions([]);
+                                setShowCustomInput(null);
+                              }
+                            }}
+                            placeholder="예: 보건증, 지게차"
+                            style={{ padding: "8px 16px", borderRadius: 20, border: "1px solid #c4b5fd", background: "var(--surface)", color: "#fff", fontSize: 12, width: 180, outline: "none" }}
+                          />
+                          {suggestions.length > 0 && (
+                            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, width: 180, background: "#1e1e24", border: "1px solid var(--border)", borderRadius: 10, zIndex: 100, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                              {suggestions.map((c, i) => (
+                                <button key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`} type="button"
+                                  onMouseDown={() => {
+                                    setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
+                                    setCustomCredInput("");
+                                    setSuggestions([]);
+                                    setShowCustomInput(null);
+                                  }}
+                                  style={{ width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: i < suggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none", textAlign: "left", cursor: "pointer", color: "#fff", fontSize: 11, display: "block" }}
+                                  onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.1)"}
+                                  onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                                  {c.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => { setShowCustomInput("general"); setCustomCredInput(""); setSuggestions([]); }}
+                          style={{ padding: "8px 16px", borderRadius: 12, border: "none", fontSize: 12, cursor: "pointer", fontWeight: 600, background: "var(--surface2)", color: "var(--text-sub)", outline: "none" }}>
+                          ➕ 자격증/기술 직접 추가
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+
                 {/* 희망 지역 */}
                 <div>
                   <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 8 }}>📍 희망 지역 <span style={{ color: "#c4b5fd" }}>*</span></label>
@@ -838,19 +1075,6 @@ function WorkerProfileContent() {
                   </button>
                 </div>
 
-                {/* 근무 기간 */}
-                <div>
-                  <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 10 }}>📆 근무 기간</label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {(["단기", "장기", "무관"] as const).map(t => (
-                      <button key={t} onClick={() => setWorkType(t)}
-                        style={{ flex: 1, padding: "10px", borderRadius: 12, fontSize: 13, cursor: "pointer", border: "none", fontWeight: 600, background: workType === t ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)", color: workType === t ? "#fff" : "var(--text-muted)" }}>
-                        {t === "단기" ? "⚡ 단기" : t === "장기" ? "🌿 장기" : "🤝 무관"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* 즉시 가능 */}
                 <div>
                   <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 10 }}>⚡ 즉시 근무 가능</label>
@@ -887,223 +1111,21 @@ function WorkerProfileContent() {
                   )}
                 </div>
 
-                {/* 자격 요건 / 보유 기술 등록 */}
-                {selectedCategoryIds.length > 0 && (
-                  <div>
-                    <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 8 }}>🏅 보유 자격증 및 실무기술</label>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 12px" }}>선택하신 직무와 매핑되는 보유 자격 요건들을 체크해 주세요!</p>
- 
-                    {/* 선택된 각 소분류 직무별 루프 */}
-                    {selectedCategoryIds.map(catId => {
-                      const child = childCategories.find(c => c.id === catId);
-                      if (!child) return null;
-
-                      const parent = parentCategories.find(p => p.id === child.parent_id);
-                      const parentName = parent?.name || "";
-
-                      // 이 직무(소분류)에 매핑되는 자격 요건들
-                      const childCreds = [
-                        ...credentialsMaster.filter(c => c.category_name === parentName && c.duty_name === child.name && c.is_mandatory_by_law),
-                        ...credentialsMaster.filter(c => c.category_name === parentName && c.duty_name === child.name && !c.is_mandatory_by_law),
-                      ];
-
-                      return (
-                        <div key={catId} style={{ marginBottom: 14 }}>
-                          <p style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)", margin: "0 0 6px" }}>
-                            {child.emoji} {child.name} 보유 기술/자격
-                          </p>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                            {childCreds.map(c => {
-                              const isSelected = selectedCreds.some(sc => sc.name === c.name);
-                              const isMandatory = c.is_mandatory_by_law;
-                              return (
-                                <button
-                                  key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
-                                  type="button"
-                                  onClick={() => {
-                                    if (isSelected) {
-                                      setSelectedCreds(prev => prev.filter(sc => sc.name !== c.name));
-                                    } else {
-                                      setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
-                                    }
-                                  }}
-                                  style={{
-                                    padding: "6px 12px",
-                                    borderRadius: 20,
-                                    border: "none",
-                                    fontSize: 11,
-                                    cursor: "pointer",
-                                    fontWeight: isSelected ? 700 : 400,
-                                    background: isSelected
-                                      ? (isMandatory ? "linear-gradient(135deg, #db2777, #ec4899)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)")
-                                      : (isMandatory ? "rgba(236,72,153,0.15)" : "var(--surface2)"),
-                                    color: isSelected ? "#fff" : (isMandatory ? "#fbcfe8" : "var(--text-muted)"),
-                                    boxShadow: "none",
-                                    outline: "none",
-                                    transition: "all 0.15s"
-                                  }}
-                                >
-                                  {isMandatory && "⚠️ "}{c.name}
-                                </button>
-                              );
-                            })}
-
-                            {/* 인라인 직접입력 칩 */}
-                            {showCustomInput ? (
-                              <div style={{ position: "relative", display: "inline-block" }}>
-                                <input
-                                  type="text"
-                                  autoFocus
-                                  value={customCredInput}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setCustomCredInput(val);
-                                    if (!val.trim()) {
-                                      setSuggestions([]);
-                                      return;
-                                    }
-                                    const matched = credentialsMaster.filter(c =>
-                                      c.category_name === parentName &&
-                                      c.duty_name === child.name &&
-                                      c.name.toLowerCase().includes(val.toLowerCase()) &&
-                                      !selectedCreds.some(sc => sc.name === c.name)
-                                    );
-                                    setSuggestions(matched.slice(0, 5));
-                                  }}
-                                  onBlur={() => {
-                                    setTimeout(() => {
-                                      if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
-                                        const presetMatch = credentialsMaster.find(c => c.category_name === parentName && c.duty_name === child.name && c.name === customCredInput.trim());
-                                        setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
-                                      }
-                                      setCustomCredInput("");
-                                      setSuggestions([]);
-                                      setShowCustomInput(false);
-                                    }, 200);
-                                  }}
-                                  onKeyDown={e => {
-                                    if (e.key === "Enter") {
-                                      if (customCredInput.trim() && !selectedCreds.some(sc => sc.name === customCredInput.trim())) {
-                                        const presetMatch = credentialsMaster.find(c => c.category_name === parentName && c.duty_name === child.name && c.name === customCredInput.trim());
-                                        setSelectedCreds(prev => [...prev, { id: presetMatch ? presetMatch.id : null, name: customCredInput.trim(), is_preset: !!presetMatch }]);
-                                      }
-                                      setCustomCredInput("");
-                                      setSuggestions([]);
-                                      setShowCustomInput(false);
-                                    }
-                                  }}
-                                  placeholder="직접 입력..."
-                                  style={{
-                                    padding: "6px 12px",
-                                    borderRadius: 20,
-                                    border: "1px solid #c4b5fd",
-                                    background: "var(--surface)",
-                                    color: "#fff",
-                                    fontSize: 11,
-                                    width: 100,
-                                    outline: "none"
-                                  }}
-                                />
-                                {suggestions.length > 0 && (
-                                  <div style={{
-                                    position: "absolute",
-                                    top: "calc(100% + 4px)",
-                                    left: 0,
-                                    width: 180,
-                                    background: "#1e1e24",
-                                    border: "1px solid var(--border)",
-                                    borderRadius: 10,
-                                    zIndex: 100,
-                                    overflow: "hidden",
-                                    boxShadow: "0 8px 24px rgba(0,0,0,0.5)"
-                                  }}>
-                                    {suggestions.map((c, i) => (
-                                      <button
-                                        key={c.id || `${c.category_name}_${c.duty_name}_${c.name}`}
-                                        type="button"
-                                        onMouseDown={() => {
-                                          setSelectedCreds(prev => [...prev, { id: c.id, name: c.name, is_preset: true }]);
-                                          setCustomCredInput("");
-                                          setSuggestions([]);
-                                          setShowCustomInput(false);
-                                        }}
-                                        style={{
-                                          width: "100%",
-                                          padding: "8px 12px",
-                                          background: "none",
-                                          border: "none",
-                                          borderBottom: i < suggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-                                          textAlign: "left",
-                                          cursor: "pointer",
-                                          color: "#fff",
-                                          fontSize: 11,
-                                          display: "block"
-                                        }}
-                                        onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.1)"}
-                                        onMouseLeave={e => e.currentTarget.style.background = "none"}
-                                      >
-                                        {c.name}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowCustomInput(true);
-                                  setCustomCredInput("");
-                                  setSuggestions([]);
-                                }}
-                                style={{
-                                  padding: "6px 12px",
-                                  borderRadius: 20,
-                                  border: "none",
-                                  fontSize: 11,
-                                  cursor: "pointer",
-                                  fontWeight: 400,
-                                  background: "var(--surface2)",
-                                  color: "var(--text-muted)",
-                                  boxShadow: "none",
-                                  outline: "none",
-                                  transition: "all 0.15s"
-                                }}
-                              >
-                                ✏️ 직접입력
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {/* 직접 입력한 칩 토글/삭제 */}
-                    {selectedCreds.filter(sc => !sc.is_preset).length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                        {selectedCreds
-                          .filter(sc => !sc.is_preset)
-                          .map(sc => (
-                            <span
-                              key={sc.name}
-                              onClick={() => setSelectedCreds(prev => prev.filter(p => p.name !== sc.name))}
-                              style={{
-                                fontSize: 11,
-                                background: "rgba(236,72,153,0.1)",
-                                border: "1px solid rgba(236,72,153,0.3)",
-                                color: "#fbcfe8",
-                                padding: "4px 10px",
-                                borderRadius: 10,
-                                cursor: "pointer"
-                              }}
-                            >
-                              {sc.name} ✕
-                            </span>
-                          ))}
-                      </div>
-                    )}
+                {/* 근무 기간 */}
+                <div>
+                  <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 10 }}>📆 근무 기간</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {(["단기", "장기", "무관"] as const).map(t => (
+                      <button key={t} onClick={() => setWorkType(t)}
+                        style={{ flex: 1, padding: "10px", borderRadius: 12, fontSize: 13, cursor: "pointer", border: "none", fontWeight: 600, background: workType === t ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)", color: workType === t ? "#fff" : "var(--text-muted)" }}>
+                        {t === "단기" ? "⚡ 단기" : t === "장기" ? "🌿 장기" : "🤝 무관"}
+                      </button>
+                    ))}
                   </div>
-                )}
+                </div>
+
+
+
 
                 {/* 공개 여부 */}
                 <div style={{ ...cardStyle }}>

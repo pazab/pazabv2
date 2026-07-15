@@ -104,7 +104,7 @@ export default function SettingsPage() {
 
         {/* 알림 */}
         <Section title="알림">
-          <Row icon="💌" label="러브콜 알림" sub="새 러브콜 도착 시 알림"
+          <Row icon="📋" label="지원/채용 알림" sub="새 지원 및 채용 제안 도착 시 알림"
             right={<Toggle value={notifyLovecall} onChange={v => { setNotifyLovecall(v); saveNotify("notify_lovecall", v); }} />} />
           <Row icon="💬" label="채팅 알림" sub="새 메시지 도착 시 알림"
             right={<Toggle value={notifyChat} onChange={v => { setNotifyChat(v); saveNotify("notify_chat", v); }} />} />

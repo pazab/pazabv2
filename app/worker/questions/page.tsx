@@ -77,7 +77,7 @@ function WorkerQuestionsContent() {
             <div style={{ fontSize: 48, marginBottom: 12 }}>🤖</div>
             <p style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.7 }}>
               아직 사장님들이 질문하지 않았어요.<br />
-              러브콜을 받으면 사장님들이<br />AI 봇으로 먼저 물어볼 수 있어요 😊
+              채용 제안을 받으면 사장님들이<br />AI 봇으로 먼저 물어볼 수 있어요 😊
             </p>
           </div>
         ) : (

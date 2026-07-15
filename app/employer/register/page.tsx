@@ -62,6 +62,7 @@ interface JobForm {
   jobType: JobType;
   workStartDate: string;
   workEndDate: string;
+  description: string;
 }
 
 const emptyForm = (): JobForm => ({
@@ -72,6 +73,7 @@ const emptyForm = (): JobForm => ({
   breakHours: 0.5, weeklyHoliday: "일",
   isUrgent: false, expiresAt: "",
   jobType: "regular", workStartDate: "", workEndDate: "",
+  description: "",
 });
 
 const parseWorkHours = (workHoursStr: string) => {
@@ -388,6 +390,7 @@ function EmployerRegisterContent() {
       jobType: job.job_type || "regular",
       workStartDate: job.work_start_date || "",
       workEndDate: job.work_end_date || "",
+      description: job.description || "",
     }));
     const catId = job.category_id;
     if (catId) {
@@ -577,12 +580,14 @@ function EmployerRegisterContent() {
       meal_provided: (form.selectedTags || []).includes("식사제공"),
       parking: (form.selectedTags || []).includes("주차가능"),
       is_active: true,
+      job_status: "active",
       is_urgent: isUrgent,
       expires_at: calcExpiresAt(),
       job_type: form.jobType,
       work_start_date: form.workStartDate || null,
       work_end_date: form.workEndDate || null,
       required_credentials: selectedCreds,
+      description: form.description || null,
       employer_type: interviewResult?.personalityType || null,
       bio5_data: interviewResult?.big5 || null,
       hexaco_data: interviewResult?.hexaco || null,
@@ -1265,6 +1270,18 @@ function EmployerRegisterContent() {
                       )}`}
                         style={{ width: "100%", height: 180, borderRadius: 12, border: "none" }} />
                     )}
+
+                    {/* 매장 소개 / 구인 상세 설명 추가 */}
+                    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>🏪 매장 소개 및 상세 설명 (선택)</label>
+                      <textarea
+                        value={form.description}
+                        onChange={e => updateForm("description", e.target.value)}
+                        placeholder="매장 분위기, 주로 맡게 될 업무, 혹은 구직자에게 바라는 점 등을 자유롭게 작성해주세요. (예: 초보자 환영, 가족같은 분위기, 단골 위주 손님 등)"
+                        rows={4}
+                        style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box", resize: "vertical", lineHeight: 1.5 }}
+                      />
+                    </div>
                   </div>
                 </div>
 

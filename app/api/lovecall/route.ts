@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (existing) {
-      return NextResponse.json({ error: "이미 진행 중인 러브콜이 있어요", status: existing.progress_status, success: false }, { status: 409 });
+      return NextResponse.json({ error: "이미 진행 중인 지원/채용 제안이 있어요", status: existing.progress_status, success: false }, { status: 409 });
     }
 
     const { data, error } = await supabase

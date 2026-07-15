@@ -145,6 +145,7 @@ export async function POST(req: NextRequest) {
         .from("jobs")
         .select(`*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, is_deleted, lat, lng), users!jobs_user_id_fkey(trust_score, avatar_url, real_name, nickname)`)
         .eq("is_active", true)
+        .eq("job_status", "active")
         .neq("job_type", "urgent")
         .neq("user_id", userId)
         .gte("expires_at", new Date().toISOString())

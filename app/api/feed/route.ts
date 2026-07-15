@@ -282,3 +282,58 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll() } }
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: "인증 필요" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { postId, content, mediaUrls, mediaType } = body;
+
+    if (!postId) {
+      return NextResponse.json({ success: false, error: "postId 필요" }, { status: 400 });
+    }
+
+    // 1. 해당 포스트의 소유주 확인
+    const { data: post, error: getErr } = await supabaseAdmin
+      .from("feed_posts")
+      .select("user_id")
+      .eq("id", postId)
+      .single();
+
+    if (getErr) throw getErr;
+    if (!post) {
+      return NextResponse.json({ success: false, error: "포스트를 찾을 수 없음" }, { status: 404 });
+    }
+    if (post.user_id !== user.id) {
+      return NextResponse.json({ success: false, error: "수정 권한이 없음" }, { status: 403 });
+    }
+
+    // 2. 포스트 업데이트
+    const { error: updErr } = await supabaseAdmin
+      .from("feed_posts")
+      .update({
+        content,
+        media_urls: mediaUrls,
+        media_type: mediaType,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", postId);
+
+    if (updErr) throw updErr;
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("Error updating post:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+

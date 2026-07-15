@@ -133,7 +133,7 @@ export default function ChatListPage() {
             <div style={{ fontSize: 48, marginBottom: 16 }}>💬</div>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>아직 채팅이 없어요</h3>
             <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 20 }}>
-              러브콜이 수락되면 채팅이 시작돼요
+              지원이 수락되면 채팅이 시작돼요
             </p>
             <button onClick={() => router.push("/explore")}
               style={{ ...btnPrimary, width: "auto", padding: "12px 24px" }}>
@@ -300,7 +300,7 @@ export default function ChatListPage() {
                 <div style={{ fontSize: 36, marginBottom: 12 }}>💬</div>
                 <h4 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 6px", color: "var(--text)" }}>일반 채팅방이 아직 없어요</h4>
                 <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-                  러브콜이 수락되면 여기에 사장님/알바생과의 채팅창이 열려요.
+                  지원이 수락되면 여기에 사장님/알바생과의 채팅창이 열려요.
                 </p>
                 <button onClick={() => router.push("/explore")}
                   style={{ ...btnPrimary, width: "auto", padding: "8px 16px", fontSize: 12 }}>

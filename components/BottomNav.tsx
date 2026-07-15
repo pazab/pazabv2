@@ -67,7 +67,7 @@ export default function BottomNav() {
       const checkUpdates = async () => {
         const since = new Date(Date.now() - 8000).toISOString();
 
-        // 새 러브콜 받은 것 (pending)
+        // 새 지원/채용제안 받은 것 (pending)
         const { data: newPending } = await supabase
           .from("matches").select("id, progress_status, worker_id, employer_id, initiated_by")
           .eq("progress_status", "pending")
@@ -79,9 +79,9 @@ export default function BottomNav() {
           if (!shownPending.current.has(m.id)) {
             shownPending.current.add(m.id);
             if (m.initiated_by !== uid) {
-              showToast("💌 새 러브콜이 왔어요! MY에서 확인해보세요");
+              showToast("📥 새 지원이 왔어요! MY에서 확인해보세요");
             } else {
-              showToast("💌 러브콜을 보냈어요! 상대방의 수락을 기다려요");
+              showToast("📤 지원을 완료했어요! 수락을 기다려요");
             }
           }
         });

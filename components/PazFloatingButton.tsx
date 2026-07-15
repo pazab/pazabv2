@@ -53,7 +53,7 @@ export default function PazFloatingButton() {
   useEffect(() => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const defaultPos = { x: vw - BTN - 20, y: vh - BTN - 100 };
+    const defaultPos = { x: vw - BTN - 20, y: vh - BTN - 160 };
     const saved = localStorage.getItem("paz_btn_pos_ratio");
     if (saved) {
       // 비율로 저장된 위치를 현재 화면 크기에 맞게 변환
@@ -77,7 +77,7 @@ export default function PazFloatingButton() {
         const y = Math.min(Math.max(Math.round(ratio.ry * nvh), 0), nvh - BTN);
         setPos({ x, y });
       } else {
-        setPos({ x: nvw - BTN - 20, y: nvh - BTN - 100 });
+        setPos({ x: nvw - BTN - 20, y: nvh - BTN - 160 });
       }
     };
     window.addEventListener("resize", handleResize);

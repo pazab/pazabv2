@@ -34,7 +34,7 @@ export default function ModeSelectPage() {
             <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>알바생으로 시작</div>
             <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>나한테 딱 맞는 알바 찾기</div>
             <div style={{ display: "flex", gap: 8 }}>
-              {["궁합 높은 매장 탐색", "러브콜 받기", "조건 맞춤 추천"].map(t => (
+              {["궁합 높은 매장 탐색", "지원하기", "조건 맞춤 추천"].map(t => (
                 <span key={t} style={{ fontSize: 11, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "#c4b5fd", padding: "3px 8px", borderRadius: 20 }}>{t}</span>
               ))}
             </div>
@@ -46,7 +46,7 @@ export default function ModeSelectPage() {
             <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>사장님으로 시작</div>
             <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>우리 매장에 맞는 알바생 찾기</div>
             <div style={{ display: "flex", gap: 8 }}>
-              {["궁합 높은 알바생 탐색", "러브콜 보내기", "성향 기반 추천"].map(t => (
+              {["궁합 높은 알바생 탐색", "채용 제안하기", "성향 기반 추천"].map(t => (
                 <span key={t} style={{ fontSize: 11, background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", padding: "3px 8px", borderRadius: 20 }}>{t}</span>
               ))}
             </div>

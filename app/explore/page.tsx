@@ -201,6 +201,7 @@ function ExploreContent() {
       const { data: rawJobs } = await supabase.from("jobs")
         .select(`*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, is_deleted, lat, lng), users!jobs_user_id_fkey(avatar_url, real_name, nickname)`)
         .eq("is_active", true)
+        .eq("job_status", "active")
         .neq("job_type", "urgent")
         .gte("expires_at", new Date().toISOString())
         .limit(1000);
@@ -459,10 +460,6 @@ function ExploreContent() {
                   const isActive = sortBy === opt.key;
                   return (
                     <button key={opt.key} onClick={() => {
-                      if (isGunghap && !hasHexaco) {
-                        router.push("/interview?type=worker&from=explore_sort");
-                        return;
-                      }
                       setSortBy(opt.key);
                       setShowAllSection(null);
                     }}
@@ -674,16 +671,28 @@ function ExploreContent() {
                 return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>{tags.map((t: string) => <span key={t} style={{ fontSize: 11, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#c4b5fd", padding: "4px 10px", borderRadius: 20 }}>#{t}</span>)}{!!bottomSheet.meal_provided && <span style={{ fontSize: 11, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", padding: "4px 10px", borderRadius: 20 }}>🍱 식사 제공</span>}</div>;
               })()}
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { const id = String(bottomSheet.id || bottomSheet.user_id); router.push(viewMode === "worker" ? `/job/${id}` : `/worker/${id}`); }} style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "13px", color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>상세보기 →</button>
+                <button onClick={() => { const id = String(bottomSheet.id || bottomSheet.user_id); router.push(viewMode === "worker" ? `/job/${id}` : `/worker/${id}`); }} className="btn-bottomsheet-secondary">상세보기 →</button>
                 {isLoggedIn ? (
-                  <button onClick={() => { handleLovecall(String(bottomSheet.id || bottomSheet.user_id)); setBottomSheet(null); }} style={{ flex: 2, background: viewMode === "worker" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "linear-gradient(135deg, #ec4899, #be185d)", border: "none", borderRadius: 12, padding: "13px", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", letterSpacing: "-0.2px" }}>
-                    {viewMode === "worker" ? "지원하기" : "💌 채용 제안하기"}
+                  <button onClick={() => { handleLovecall(String(bottomSheet.id || bottomSheet.user_id)); setBottomSheet(null); }} className={`btn-bottomsheet-primary ${viewMode}`}>
+                    {viewMode === "worker" ? "지원하기" : "채용 제안하기"}
                   </button>
                 ) : (
-                  <button onClick={() => router.push("/login")} style={{ flex: 2, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "13px", color: "rgba(255,255,255,0.4)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>🔒 로그인하고 지원하기</button>
+                  <button onClick={() => router.push("/login")} className="btn-bottomsheet-login">🔒 로그인하고 지원하기</button>
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isLoggedIn && !hasHexaco && sortBy === "궁합순" && !loading && (
+        <div style={{ position: "fixed", bottom: 70, left: 0, right: 0, padding: "0 16px", zIndex: 40 }}>
+          <div style={{ maxWidth: 480, margin: "0 auto", background: "linear-gradient(135deg, #ec4899, #8b5cf6)", borderRadius: 16, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 24px rgba(139,92,246,0.35)" }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "#fff" }}>💕 성향 분석하면 궁합 점수가 생겨요!</p>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0 }}>5분 분석으로 딱 맞는 공고 찾기</p>
+            </div>
+            <button onClick={() => router.push("/interview?type=worker&from=explore_sort")} style={{ background: "#fff", border: "none", color: "#7c3aed", fontWeight: 800, padding: "8px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12 }}>시작 →</button>
           </div>
         </div>
       )}

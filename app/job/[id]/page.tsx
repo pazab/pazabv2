@@ -121,6 +121,7 @@ export default function JobDetailPage() {
   const [likeCount, setLikeCount] = useState(0);
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [storeFeeds, setStoreFeeds] = useState<any[]>([]);
 
   useEffect(() => {
     let lastY = 0;
@@ -216,6 +217,19 @@ export default function JobDetailPage() {
       setJob(data);
       setLikeCount(Number(data.like_count || 0));
 
+      // 피드 가져오기 추가
+      try {
+        const { data: feeds } = await supabase
+          .from("feed_posts")
+          .select("*")
+          .eq("user_id", data.user_id)
+          .order("created_at", { ascending: false })
+          .limit(2);
+        setStoreFeeds(feeds || []);
+      } catch (e) {
+        console.error("매장 피드 로드 오류:", e);
+      }
+
       if (uid) {
         if (uid === data.user_id || role === "admin") setIsOwner(true);
         const { data: wp } = await supabase.from("worker_profiles").select("id").eq("user_id", uid).eq("is_public", true).eq("is_active", true).neq("job_status", "completed").maybeSingle();
@@ -233,7 +247,8 @@ export default function JobDetailPage() {
           .or(`job_id.eq.${data.id},employer_profile_id.eq.${data.employer_profile_id ?? data.id}`)
           .eq("worker_id", uid).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (match) setExistingMatch({ ...match, isReceived: match.employer_interest === true });
-        if (match?.match_score) {
+        
+        if (match?.match_score != null) {
           setMatchScore(Number(match.match_score));
         } else {
           try {
@@ -241,7 +256,11 @@ export default function JobDetailPage() {
             const matchData = await res.json();
             if (matchData.success) {
               const found = matchData.results?.find((r: Record<string, unknown>) => r.user_id === data!.user_id || r.id === data!.user_id || r.id === id);
-              if (found) setMatchScore(Number(found.match_score));
+              if (found && found.match_score != null) {
+                setMatchScore(Number(found.match_score));
+              } else {
+                setMatchScore(null);
+              }
             }
           } catch {}
         }
@@ -261,6 +280,29 @@ export default function JobDetailPage() {
   const handleInterest = async () => {
     if (!isLoggedIn || !userId) { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); return; }
     if (existingMatch && (existingMatch.progress_status === "cancelled" || existingMatch.progress_status === "rejected")) { setShowConfirm(true); return; }
+    
+    setSending(true);
+    // 구직 프로필이 없는 경우 백그라운드 자동 생성
+    if (!hasWorkerProfile) {
+      try {
+        const { data: u } = await supabase.from("users").select("nickname, real_name").eq("id", userId).single();
+        const profileName = u?.nickname || u?.real_name || "알바생";
+        const { error: insertErr } = await supabase.from("worker_profiles").insert({
+          user_id: userId,
+          name: profileName,
+          is_active: true,
+          is_public: true,
+          desired_region: "협의",
+          desired_type: "기타",
+          worker_type: "묵묵수행형"
+        });
+        if (!insertErr) {
+          setHasWorkerProfile(true);
+        }
+      } catch (err) {
+        console.error("자동 프로필 생성 오류:", err);
+      }
+    }
     await sendLoveCall();
   };
 
@@ -287,7 +329,8 @@ export default function JobDetailPage() {
 
   const rawTypeInfo = EMPLOYER_TYPE_INFO[String(job.employer_type || "")];
   const typeInfo: TypeInfo | null = rawTypeInfo ? { ...rawTypeInfo, desc: rawTypeInfo.tagline } : getEmployerTypeFromBig5(job.bio5_data as Record<string, number> | null);
-  const tags = Array.isArray(job.tags) ? job.tags as string[] : JSON.parse(String(job.tags || "[]")) as string[];
+  const tags = (Array.isArray(job.tags) ? job.tags as string[] : JSON.parse(String(job.tags || "[]")) as string[])
+    .filter((t: string) => typeof t === "string" && !t.includes(":"));
   const imageUrl = job.image_url as string | null;
   const imageUrls = job.image_urls as string[] | null;
   const videoUrl = job.video_url as string | null;
@@ -422,20 +465,49 @@ export default function JobDetailPage() {
           </div>
         )}
 
-        {/* 궁합 */}
-        {matchScore != null && <MatchScoreSection score={matchScore} />}
-
-        {/* 비로그인 궁합 유도 */}
-        {matchScore == null && !isLoggedIn && (
-          <div style={{ margin: "20px 0", background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(236,72,153,0.06))", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 16, padding: 16, textAlign: "center" }}>
-            <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>🔒 궁합 점수를 보고 싶다면?</p>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 12px" }}>성향 분석 후 가입하면 공개돼요</p>
-            <button onClick={() => router.push("/interview")} style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>🔬 성향 분석 하러가기 →</button>
+        {/* 매장 소개 (Description) */}
+        {!!job.description && (
+          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 10px", letterSpacing: "0.5px" }}>🏪 매장 소개</p>
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: "14px 16px", color: "var(--text)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+              {job.description}
+            </div>
           </div>
         )}
 
+        {/* 매장 최근 소식 (Mini Feed) */}
+        {storeFeeds.length > 0 && (
+          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>📸 매장의 최근 소식</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {storeFeeds.map(feed => {
+                const imgUrl = Array.isArray(feed.media_urls) && feed.media_urls.length > 0 ? feed.media_urls[0] : null;
+                return (
+                  <div key={feed.id} onClick={() => router.push("/feed")} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 12, display: "flex", gap: 12, cursor: "pointer" }}>
+                    {imgUrl && (
+                      <div style={{ width: 64, height: 64, borderRadius: 10, background: `url(${imgUrl}) center/cover`, flexShrink: 0 }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                      <p style={{ fontSize: 13, color: "var(--text)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.5 }}>
+                        {feed.content}
+                      </p>
+                      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>
+                        💬 댓글 {feed.comment_count || 0} · ❤️ {feed.like_count || 0}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+
+        {/* 궁합 */}
+        {matchScore != null && <MatchScoreSection score={matchScore} />}
+
         {/* 사장님 성향 */}
-        {!!job.employer_type && typeInfo ? (
+        {!!job.employer_type && typeInfo && (
           <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>👔 사장님 성향</p>
             <div style={{ background: `${typeInfo.color}12`, border: `1px solid ${typeInfo.color}30`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
@@ -457,52 +529,18 @@ export default function JobDetailPage() {
             {hexacoData && <HexacoSection hexacoData={hexacoData} />}
             {!existingMatch && (
               <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                <span>💌</span>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>러브콜을 주고받으면 찰떡 알바생 유형이 공개돼요</p>
+                <span>📌</span>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>지원하면 찰떡 알바생 유형이 공개돼요</p>
               </div>
             )}
             <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.25)", color: "#f9a8d4", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               🤖 AI 봇에게 물어보기
             </button>
           </div>
-        ) : (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>👔 사장님 성향 분석</p>
-            <div style={{
-              background: "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.04))",
-              border: "1px solid rgba(139,92,246,0.15)",
-              borderRadius: 16,
-              padding: 20,
-              textAlign: "center"
-            }}>
-              <p style={{ fontSize: 32, margin: "0 0 10px" }}>🧠</p>
-              <h4 style={{ fontSize: 15, fontWeight: 800, margin: "0 0 6px" }}>아직 등록된 사장님의 성향 분석이 없어요</h4>
-              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 16px", lineHeight: 1.5 }}>
-                재미삼아 5분 성향 분석을 완료하시면,<br />
-                어떤 알바생과 찰떡궁합인지 바로 확인할 수 있어요!
-              </p>
-              {isOwner ? (
-                <button
-                  onClick={() => router.push("/employer/interview")}
-                  style={{
-                    background: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-                    border: "none", color: "#fff", fontWeight: 700,
-                    padding: "10px 18px", borderRadius: 12, cursor: "pointer", fontSize: 13
-                  }}
-                >
-                  🎯 5분 성향 분석 시작하기
-                </button>
-              ) : (
-                <div style={{ fontSize: 11, color: "var(--text-muted)", background: "rgba(0,0,0,0.15)", padding: "8px 12px", borderRadius: 10, display: "inline-block" }}>
-                  💡 사장님이 성향 분석을 완료하면 궁합 정보가 나타납니다.
-                </div>
-              )}
-            </div>
-          </div>
         )}
 
         {/* 팀 궁합 */}
-        {teamCompat && !isOwner && Number((teamCompat as Record<string, unknown>).totalScore || 0) > 0 && (
+        {teamCompat && !isOwner && (
           <TeamCompatSection teamCompat={teamCompat} />
         )}
 
@@ -529,20 +567,18 @@ export default function JobDetailPage() {
           {isOwner ? (
             <button onClick={() => router.push(`/employer/register?edit=true&jobId=${job.id}`)} style={{ flex: 1, height: 52, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", fontWeight: 600, borderRadius: 14, cursor: "pointer", fontSize: 14 }}>✏️ 공고 수정하기</button>
           ) : isReceived && status === "pending" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "default" }}>💌 러브콜 받음 · MY에서 수락/거절</button>
+            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "default" }}>📥 지원 받음 · MY에서 수락/거절</button>
           ) : status === "sent" || status === "pending" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>💌 러브콜 보냄 (대기중)</button>
+            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>📤 지원 완료 (수락 대기중)</button>
           ) : status === "accepted" ? (
             <button onClick={() => router.push(`/chat/${existingMatch?.id}`)} style={{ flex: 1, height: 52, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💬 대화 중 · 채팅방 가기</button>
           ) : status === "hired" ? (
             <button disabled style={{ flex: 1, height: 52, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fde68a", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>✅ 채용 완료</button>
           ) : status === "rejected" ? (
             <button onClick={handleInterest} disabled={sending} style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 거절됨 · 다시 보내기</button>
-          ) : isLoggedIn && !hasWorkerProfile ? (
-            <button onClick={() => router.push(`/worker/profile?return=${encodeURIComponent(`/job/${id}`)}`)} style={{ flex: 1, height: 52, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>📋 구직 공고 등록 후 지원하기</button>
           ) : (
             <button onClick={handleInterest} disabled={sending} style={{ flex: 1, height: 52, background: isLoggedIn ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.08)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 15, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
-              {sending ? "처리 중..." : isLoggedIn ? "💌 러브콜 보내기" : "로그인하고 지원하기 →"}
+              {sending ? "처리 중..." : isLoggedIn ? "지원하기" : "로그인하고 지원하기 →"}
             </button>
           )}
         </div>
@@ -552,7 +588,7 @@ export default function JobDetailPage() {
       {showConfirm && (
         <div style={{ ...modalOverlay }}>
           <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>러브콜 다시 보내기</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>다시 지원하기</h3>
             <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.progress_status === "rejected" ? "거절된 공고에 다시 보낼까요?" : "이전에 취소한 공고예요. 다시 보낼까요?"}</p>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={sendLoveCall} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "보내기 →"}</button>
@@ -615,30 +651,57 @@ export default function JobDetailPage() {
 }
 
 function TeamCompatSection({ teamCompat }: { teamCompat: Record<string, unknown> }) {
-  const totalScore = Number(teamCompat.totalScore || 0);
+  const router = useRouter();
+  const totalScore = teamCompat.totalScore;
   const employer = teamCompat.employer as Record<string, unknown>;
   const members = (teamCompat.members as Record<string, unknown>[] || []);
+  const isLocked = totalScore == null;
+
   return (
     <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: 0, letterSpacing: "0.5px" }}>👥 팀과의 궁합</p>
-        <span style={{ fontSize: 20, fontWeight: 900, color: totalScore >= 70 ? "#86efac" : totalScore >= 55 ? "#fbbf24" : "#f87171" }}>{totalScore}점</span>
+        {isLocked ? (
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#c4b5fd", background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", padding: "4px 10px", borderRadius: 12 }}>🔒 분석 후 공개</span>
+        ) : (
+          <span style={{ fontSize: 20, fontWeight: 900, color: Number(totalScore) >= 70 ? "#86efac" : Number(totalScore) >= 55 ? "#fbbf24" : "#f87171" }}>{Number(totalScore)}점</span>
+        )}
       </div>
+      
       {[{ label: "사장님", data: employer }, ...members.map((m, i) => ({ label: `팀원 ${i + 1}`, data: m }))].map(({ label, data }) => (
-        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", opacity: isLocked ? 0.6 : 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 18 }}>{String(data?.emoji || "👤")}</span>
+            <span style={{ fontSize: 18 }}>{isLocked ? "👤" : String(data?.emoji || "👤")}</span>
             <div>
               <p style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>{label}</p>
-              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{String(data?.personalityType || "미분석")}</p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
+                {isLocked ? "성향 정보 잠김" : String(data?.personalityType || "미분석")}
+              </p>
             </div>
           </div>
-          {Number(data?.score || 0) > 0
-            ? <span style={{ fontSize: 15, fontWeight: 800, color: Number(data?.score) >= 70 ? "#86efac" : Number(data?.score) >= 55 ? "#fbbf24" : "#f87171" }}>{Number(data?.score)}점</span>
-            : <span style={{ fontSize: 11, color: "var(--text-muted)", background: "rgba(255,255,255,0.04)", padding: "3px 8px", borderRadius: 20 }}>미분석</span>}
+          {!isLocked && data?.score != null ? (
+            <span style={{ fontSize: 15, fontWeight: 800, color: Number(data.score) >= 70 ? "#86efac" : Number(data.score) >= 55 ? "#fbbf24" : "#f87171" }}>{Number(data.score)}점</span>
+          ) : (
+            <span style={{ fontSize: 11, color: "var(--text-muted)", background: "rgba(255,255,255,0.04)", padding: "3px 8px", borderRadius: 20 }}>
+              {isLocked ? "🔒 잠김" : "미분석"}
+            </span>
+          )}
         </div>
       ))}
-      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "10px 0 0", textAlign: "center" }}>* 사장님 50% + 팀원 평균 50%</p>
+      
+      {isLocked ? (
+        <div style={{ marginTop: 12, padding: "14px 16px", background: "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.04))", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 16, textAlign: "center" }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.5 }}>
+            성향 분석을 완료하시면 사장님 및 팀원들과의<br />
+            <strong>상세 궁합 및 궁합 점수</strong>가 열려요! 😊
+          </p>
+          <button onClick={() => router.push("/interview")} style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
+            🎯 5분 성향 분석 시작하기
+          </button>
+        </div>
+      ) : (
+        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "10px 0 0", textAlign: "center" }}>* 사장님 50% + 팀원 평균 50%</p>
+      )}
     </div>
   );
 }

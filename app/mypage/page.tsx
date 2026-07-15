@@ -509,7 +509,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
               {!showRespond && !["cancelled", "failed", "rejected", "hired"].includes(lc.progress_status || lc.status) && (
                 <button onClick={() => onCancel(lc.id)}
                   style={{ width: "100%", background: "none", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
-                  러브콜 취소하기
+                  {lc.myRole === "worker" ? "지원 취소하기" : "채용제안 취소하기"}
                 </button>
               )}
             </div>
@@ -756,24 +756,29 @@ function MyPageContent() {
     setJobLoading(true);
     try {
       const { data: rawJobs } = await supabase.from("jobs")
-        .select("*, employer_profiles!inner(id, business_name, business_type, region, image_url, image_urls, is_deleted)")
+        .select("*, employer_profiles!left(id, business_name, business_type, region, image_url, image_urls, is_deleted)")
         .eq("user_id", uid)
         .neq("job_type", "urgent")
-        .neq("job_status", "closed")
         .order("created_at", { ascending: false });
+
       // 삭제된 매장의 공고 제외 + 매장 정보 flatten
       const flatJobs = (rawJobs || [])
         .filter((j: any) => !j.employer_profiles?.is_deleted)
         .map((j: any) => ({ ...j, ...j.employer_profiles, id: j.id, employer_profile_id: j.employer_profile_id }));
+
       const jobsWithLogs = await Promise.all(flatJobs.map(async (job: any) => {
+        if (!job.employer_profile_id) {
+          return { ...job, newQuestionCount: 0 };
+        }
         const { count } = await supabase.from("bot_chat_logs")
           .select("*", { count: "exact", head: true })
           .eq("employer_profile_id", job.employer_profile_id)
           .eq("bot_uncertain", true);
         return { ...job, newQuestionCount: count || 0 };
       }));
+
       setJobs(jobsWithLogs);
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error("fetchJobs error:", err); }
     finally { setJobLoading(false); }
   };
 
@@ -807,7 +812,7 @@ function MyPageContent() {
 
   const handleCancel = async (matchId: string) => {
     setConfirmModal({
-      title: "러브콜을 취소할까요?",
+      title: "지원을 취소할까요?",
       desc: "취소 기록은 남아있고, 나중에 삭제할 수 있어요.",
       confirmLabel: "네, 취소할게요",
       confirmColor: "rgba(239,68,68,0.8)",
@@ -874,7 +879,15 @@ function MyPageContent() {
     try {
       const res = await fetch(`/api/lovecall?userId=${uid}&userType=${uType}`);
       const data = await res.json();
-      if (data.success) setLoveCalls(data.data || []);
+      if (data.success) {
+        const list = data.data || [];
+        setLoveCalls(list);
+
+        const wList = list.filter((lc: any) => lc.myRole === "worker");
+        const eList = list.filter((lc: any) => lc.myRole === "employer");
+        if (wList.length > 0) setShowWorkerCalls(true);
+        if (eList.length > 0) setShowEmployerCalls(true);
+      }
     } catch (err) { console.error(err); }
     finally { setLoveCallLoading(false); }
   };
@@ -1099,12 +1112,12 @@ function MyPageContent() {
                     + 구직 공고
                   </button>
                 </div>
-                {/* 러브콜 배지 버튼 */}
+                {/* 지원 현황 배지 버튼 */}
                 {!loveCallLoading && (
                   <button onClick={() => setShowWorkerCalls(v => !v)}
                     style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                      💌 러브콜
+                      📋 지원 현황
                       {wPending > 0 && <span style={{ background: "#fff", color: "#ec4899", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{wPending}개 대기</span>}
                       {wPending === 0 && wTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{wTotal}건</span>}
                       {wTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
@@ -1122,7 +1135,7 @@ function MyPageContent() {
                 <div>
                   {wReceived.length === 0 && wSent.length === 0 ? (
                     <div style={{ background: "var(--surface)", border: "1px solid rgba(236,72,153,0.12)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
-                      <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 10px" }}>아직 러브콜이 없어요</p>
+                      <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 10px" }}>아직 지원 내역이 없어요</p>
                       <button onClick={() => router.push("/explore?type=worker")}
                         style={{ background: "rgba(236,72,153,0.12)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", padding: "7px 18px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
                         매장 둘러보기 →
@@ -1130,8 +1143,32 @@ function MyPageContent() {
                     </div>
                   ) : (
                     <>
-                      {wReceived.length > 0 && <LoveCallSection title="💌 받은 러브콜" calls={wReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/job/${lc.employer_id}`)} onDelete={handleDelete} router={router} />}
-                      {wSent.length > 0 && <LoveCallSection title="📤 보낸 러브콜" calls={wSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/job/${lc.employer_id}`)} onDelete={handleDelete} router={router} />}
+                      {wReceived.length > 0 && (
+                        <LoveCallSection 
+                          title="📥 받은 채용 제안" 
+                          calls={wReceived} 
+                          showRespond={true} 
+                          respondingId={respondingId} 
+                          onRespond={handleRespond} 
+                          onCancel={handleCancel} 
+                          onNavigate={(lc) => router.push(`/profile/${lc.employer_id}`)} 
+                          onDelete={handleDelete} 
+                          router={router} 
+                        />
+                      )}
+                      {wSent.length > 0 && (
+                        <LoveCallSection 
+                          title="📤 보낸 지원" 
+                          calls={wSent} 
+                          showRespond={false} 
+                          respondingId={respondingId} 
+                          onRespond={handleRespond} 
+                          onCancel={handleCancel} 
+                          onNavigate={(lc) => router.push(`/profile/${lc.employer_id}`)} 
+                          onDelete={handleDelete} 
+                          router={router} 
+                        />
+                      )}
                     </>
                   )}
                 </div>
@@ -1163,7 +1200,7 @@ function MyPageContent() {
                 <button onClick={() => setShowEmployerCalls(v => !v)}
                   style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                    💌 러브콜
+                    📋 채용 제안
                     {ePending > 0 && <span style={{ background: "#fff", color: "#7c3aed", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{ePending}개 대기</span>}
                     {ePending === 0 && eTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{eTotal}건</span>}
                     {eTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
@@ -1188,7 +1225,7 @@ function MyPageContent() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {[...jobs].sort((a, b) => {
-                    const order: Record<string, number> = { active: 0, matched: 1, completed: 2, cancelled: 3 };
+                    const order: Record<string, number> = { active: 0, matched: 1, completed: 2, cancelled: 3, closed: 4 };
                     return (order[a.job_status || "active"] ?? 9) - (order[b.job_status || "active"] ?? 9);
                   }).map(job => (
                     <div key={job.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
@@ -1202,6 +1239,8 @@ function MyPageContent() {
                             <span style={{ fontSize: 11, color: "var(--success-text)", fontWeight: 600 }}>✅ 채용완료</span>
                           ) : job.job_status === "matched" ? (
                             <span style={{ fontSize: 11, color: "#d97706", fontWeight: 600 }}>🤝 매칭중</span>
+                          ) : job.job_status === "closed" ? (
+                            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>🚫 마감됨</span>
                           ) : (
                             <>
                               <span style={{ fontSize: 11, color: job.is_active ? "var(--success-text)" : "var(--text-muted)", fontWeight: 700 }}>{job.is_active ? "모집중" : "비공개"}</span>
@@ -1214,7 +1253,7 @@ function MyPageContent() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
-                        {!["completed", "matched"].includes(job.job_status) && (
+                        {!["completed", "matched", "closed"].includes(job.job_status) && (
                           <button onClick={() => router.push(`/employer/register?edit=true&jobId=${job.id}&return=mypage`)}
                             style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                             ✏️ 수정
@@ -1245,12 +1284,12 @@ function MyPageContent() {
               <div>
                 {eReceived.length === 0 && eSent.length === 0 ? (
                   <div style={{ background: "var(--surface)", border: "1px solid rgba(124,58,237,0.12)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
-                    <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>아직 러브콜이 없어요</p>
+                    <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>아직 지원/제안 내역이 없어요</p>
                   </div>
                 ) : (
                   <>
-                    {eReceived.length > 0 && <LoveCallSection title="💌 받은 러브콜" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/worker/${lc.counterpart?.user_id || lc.worker_id}`)} onDelete={handleDelete} router={router} />}
-                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 러브콜" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/worker/${lc.counterpart?.user_id || lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                    {eReceived.length > 0 && <LoveCallSection title="📥 받은 지원" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 채용 제안" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
                   </>
                 )}
               </div>

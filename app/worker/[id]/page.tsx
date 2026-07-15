@@ -146,15 +146,20 @@ export default function WorkerDetailPage() {
   const fetchWorker = async (uid?: string, role?: string | null) => {
     const { data: profile } = await supabase.from("worker_profiles").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     const { data: user } = await supabase.from("users").select("nickname, grade, trust_score, worker_result").eq("id", id).single();
-    if (profile) {
-      setWorker(profile as Record<string, unknown>);
+    
+    if (user) {
       setWorkerUser(user as Record<string, unknown>);
-      setLikeCount(Number((profile as Record<string, unknown>).like_count || 0));
+      if (profile) {
+        setWorker(profile as Record<string, unknown>);
+        setLikeCount(Number((profile as Record<string, unknown>).like_count || 0));
+      } else {
+        setWorker({ user_id: id });
+        setLikeCount(0);
+      }
 
       if (uid) {
         if (uid === id || role === "admin") setIsOwner(true);
 
-        // 좋아요 상태
         const { data: likeData } = await supabase.from("job_likes").select("id").eq("user_id", uid).eq("target_id", id).eq("target_type", "worker").maybeSingle();
         setIsLiked(!!likeData);
 
@@ -220,7 +225,7 @@ export default function WorkerDetailPage() {
   };
 
   if (loading) return <main style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}><p style={{ color: "var(--text-muted)" }}>불러오는 중...</p></main>;
-  if (!worker) return (
+  if (!workerUser) return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ textAlign: "center" }}>
         <p style={{ color: "var(--text-muted)", marginBottom: 16 }}>구직자 정보를 찾을 수 없어요</p>
@@ -403,8 +408,8 @@ export default function WorkerDetailPage() {
 
             {!existingMatch && (
               <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(236,72,153,0.06)", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                <span>💌</span>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>러브콜을 주고받으면 찰떡 사장님 유형이 공개돼요</p>
+                <span>📌</span>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>채용 제안하면 찰떡 사장님 유형이 공개돼요</p>
               </div>
             )}
 
@@ -468,9 +473,9 @@ export default function WorkerDetailPage() {
           {isOwner ? (
             <button onClick={() => router.push(`/worker/profile?edit=true&profileId=${worker.id}`)} style={{ flex: 1, height: 52, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", fontWeight: 600, borderRadius: 14, cursor: "pointer", fontSize: 14 }}>✏️ 내 프로필 수정하기</button>
           ) : isReceived && status === "pending" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "default" }}>💌 나한테 러브콜이 왔어요 · MY 확인</button>
+            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "default" }}>📥 지원이 들어왔어요 · MY 확인</button>
           ) : status === "sent" || status === "pending" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>💌 러브콜 보냄 (대기중)</button>
+            <button disabled style={{ flex: 1, height: 52, background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.3)", color: "#f9a8d4", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>📤 채용 제안 완료 (수락 대기중)</button>
           ) : status === "accepted" ? (
             <button onClick={() => router.push(`/chat/${existingMatch?.id}`)} style={{ flex: 1, height: 52, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💬 대화 중 · 채팅방 가기</button>
           ) : status === "hired" ? (
@@ -478,12 +483,12 @@ export default function WorkerDetailPage() {
           ) : status === "rejected" ? (
             <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 거절됨 · 다시 보내기</button>
           ) : !isLoggedIn ? (
-            <button onClick={() => { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); }} style={{ flex: 1, height: 52, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.5)", fontWeight: 600, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>🔒 로그인하고 러브콜 보내기</button>
+            <button onClick={() => { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); }} style={{ flex: 1, height: 52, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.5)", fontWeight: 600, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>🔒 로그인하고 채용 제안하기</button>
           ) : !employerProfileId ? (
-            <button onClick={() => router.push(`/employer/register?return=${encodeURIComponent(`/worker/${id}`)}`)} style={{ flex: 1, height: 52, background: "linear-gradient(135deg, #ec4899, #be185d)", border: "none", color: "#fff", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>🏪 매장 공고 등록 후 러브콜</button>
+            <button onClick={() => router.push(`/employer/register?return=${encodeURIComponent(`/worker/${id}`)}`)} style={{ flex: 1, height: 52, background: "linear-gradient(135deg, #ec4899, #be185d)", border: "none", color: "#fff", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>🏪 매장 공고 등록 후 채용 제안</button>
           ) : (
             <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "linear-gradient(135deg, #ec4899, #be185d)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 15, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
-              {sending ? "전송 중..." : "💌 러브콜 보내기"}
+              {sending ? "전송 중..." : "채용 제안하기"}
             </button>
           )}
         </div>
@@ -493,7 +498,7 @@ export default function WorkerDetailPage() {
       {showConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
           <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 480, margin: "0 auto" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>러브콜 다시 보내기</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>다시 채용 제안하기</h3>
             <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.progress_status === "rejected" ? "거절한 이력이 있어요. 다시 보낼까요?" : "이전에 취소했어요. 다시 보낼까요?"}</p>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={sendLoveCall} disabled={sending} style={{ flex: 1, background: "linear-gradient(135deg, #ec4899, #be185d)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer" }}>{sending ? "전송 중..." : "보내기 →"}</button>

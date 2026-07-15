@@ -106,3 +106,81 @@ body {
   font-family: var(--font-noto-kr), sans-serif;
   margin: 0;
 }
+
+/* 바텀시트 버튼 커스텀 스타일 및 호버 효과 */
+.btn-bottomsheet-secondary {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  text-align: center;
+}
+
+.btn-bottomsheet-secondary:hover {
+  background: var(--border);
+  border-color: var(--text-muted);
+  transform: translateY(-1px);
+}
+
+.btn-bottomsheet-primary {
+  flex: 2;
+  border: none;
+  border-radius: 12px;
+  padding: 13px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  letter-spacing: -0.2px;
+  transition: all 0.15s ease-in-out;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-bottomsheet-primary.worker {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+}
+
+.btn-bottomsheet-primary.worker:hover {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.3);
+}
+
+.btn-bottomsheet-primary.employer {
+  background: linear-gradient(135deg, #ec4899, #be185d);
+}
+
+.btn-bottomsheet-primary.employer:hover {
+  background: linear-gradient(135deg, #be185d, #9d174d);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(236, 72, 153, 0.3);
+}
+
+.btn-bottomsheet-login {
+  flex: 2;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 13px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  text-align: center;
+}
+
+.btn-bottomsheet-login:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+

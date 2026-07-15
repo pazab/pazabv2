@@ -48,6 +48,21 @@ const GRADE_EMOJI: Record<string, string> = {
   platinum: "💎" 
 };
 
+const isVideoFile = (file: File) => {
+  if (!file) return false;
+  if (file.type && file.type.startsWith("video/")) return true;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  return ext ? ["mp4", "webm", "ogg", "mov", "avi", "mkv", "quicktime"].includes(ext) : false;
+};
+
+const isVideoUrl = (url: string) => {
+  if (!url || typeof url !== "string") return false;
+  if (url.startsWith("data:video/")) return true;
+  const cleanUrl = url.split("?")[0].split("#")[0];
+  const ext = cleanUrl.split(".").pop()?.toLowerCase();
+  return ext ? ["mp4", "webm", "ogg", "mov", "avi", "mkv"].includes(ext) : false;
+};
+
 export default function FeedPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -66,6 +81,11 @@ export default function FeedPage() {
   const [uploading, setUploading] = useState(false);
   const [myStores, setMyStores] = useState<MyStore[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+
+  // 수정/삭제 관련 추가 상태
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [existingMediaUrls, setExistingMediaUrls] = useState<string[]>([]);
+  const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(null);
 
   // 댓글 창 관리 (postId -> boolean)
   const [openCommentsMap, setOpenCommentsMap] = useState<Record<string, boolean>>({});
@@ -312,26 +332,65 @@ export default function FeedPage() {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (files.length === 0) return;
 
-    // 확장자 체크로 비디오 여부 결정
-    const isVideo = files[0].type.startsWith("video/");
-    setNewMediaType(isVideo ? "video" : "image");
-    
-    // 최대 10장 이미지, 1개 비디오
-    const targetFiles = isVideo ? [files[0]] : files.slice(0, 10);
-    setNewMediaFiles(targetFiles);
+    // 새로 선택된 파일들의 프리뷰 URL 생성
+    const newPreviews = files.map(file => URL.createObjectURL(file));
 
-    const previews = targetFiles.map(file => URL.createObjectURL(file));
-    setMediaPreviews(previews);
+    // 기존 미디어 파일에 이어붙이기 (비디오 감지는 콜백 외부에서 안전하게 상태 단독 갱신)
+    const nextFiles = [...newMediaFiles, ...files];
+    const hasVideo = nextFiles.some(f => isVideoFile(f));
+    setNewMediaType(hasVideo ? "video" : "image");
+
+    setNewMediaFiles(prev => [...prev, ...files]);
+    setMediaPreviews(prev => [...prev, ...newPreviews]);
+  };
+
+  const openEditModal = (post: Post) => {
+    setEditingPost(post);
+    setNewContent(post.content);
+    setExistingMediaUrls(post.media_urls || []);
+    setNewMediaType(post.media_type || "image");
+    setSelectedStoreId(post.storeId);
+    setMediaPreviews(post.media_urls || []);
+    setWriteModalOpen(true);
+    setActiveMenuPostId(null);
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("정말 이 게시글을 삭제하시겠습니까?")) return;
+    try {
+      const res = await fetch(`/api/feed?postId=${postId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setPosts(prev => prev.filter(p => p.id !== postId));
+      } else {
+        alert("삭제 실패: " + data.error);
+      }
+    } catch (err: any) {
+      alert("오류 발생: " + err.message);
+    }
+  };
+
+  const removePreview = (idx: number) => {
+    const targetUrl = mediaPreviews[idx];
+    setMediaPreviews(prev => prev.filter((_, i) => i !== idx));
+
+    if (targetUrl && (targetUrl.startsWith("http://") || targetUrl.startsWith("https://"))) {
+      setExistingMediaUrls(prev => prev.filter(url => url !== targetUrl));
+    } else {
+      // blob url들 중 이 인덱스가 새로 선택한 파일들(newMediaFiles) 중 몇 번째에 해당하는지 파악
+      const numBeforeBlob = mediaPreviews.slice(0, idx).filter(url => !url.startsWith("http://") && !url.startsWith("https://")).length;
+      setNewMediaFiles(prev => prev.filter((_, i) => i !== numBeforeBlob));
+    }
   };
 
   const handleCreatePost = async () => {
-    if (!newContent.trim() && newMediaFiles.length === 0) return;
+    if (!newContent.trim() && newMediaFiles.length === 0 && existingMediaUrls.length === 0) return;
     setUploading(true);
 
     try {
-      const mediaUrls: string[] = [];
+      const uploadedUrls: string[] = [];
 
-      // 1. Supabase Storage 파일 업로드
+      // 1. Supabase Storage 신규 파일 업로드
       for (const file of newMediaFiles) {
         const fileExt = file.name.split(".").pop();
         const randId = Math.random().toString(36).substring(2, 9);
@@ -346,32 +405,66 @@ export default function FeedPage() {
 
         const { data } = supabase.storage.from("media").getPublicUrl(path);
         if (data?.publicUrl) {
-          mediaUrls.push(data.publicUrl);
+          uploadedUrls.push(data.publicUrl);
         }
       }
 
-      // 2. DB Insert
-      const res = await fetch("/api/feed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: newContent,
-          media_urls: mediaUrls,
-          media_type: newMediaType,
-          employerProfileId: selectedStoreId
-        })
-      });
+      // 최종 미디어 URL 목록 (기존 유지분 + 신규 업로드분)
+      const finalMediaUrls = [...existingMediaUrls, ...uploadedUrls];
 
-      const data = await res.json();
-      if (data.success) {
-        setPosts(prev => [data.data, ...prev]);
-        closeWriteModal();
+      // 최종 미디어 파일 구성을 보고 비디오가 1개라도 존재하는지 엄밀하게 판별
+      const hasNewVideo = newMediaFiles.some(f => isVideoFile(f));
+      const hasExistingVideo = existingMediaUrls.some(url => isVideoUrl(url));
+      const computedMediaType = (hasNewVideo || hasExistingVideo) ? "video" : "image";
+
+      if (editingPost) {
+        // 2-A. DB Update (수정)
+        const res = await fetch("/api/feed", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            postId: editingPost.id,
+            content: newContent,
+            mediaUrls: finalMediaUrls,
+            mediaType: computedMediaType
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          setPosts(prev => prev.map(p => 
+            p.id === editingPost.id 
+              ? { ...p, content: newContent, media_urls: finalMediaUrls, media_type: computedMediaType } 
+              : p
+          ));
+          closeWriteModal();
+        } else {
+          alert("게시물 수정 실패: " + data.error);
+        }
       } else {
-        alert("게시물 업로드 실패: " + data.error);
+        // 2-B. DB Insert (새로운 등록)
+        const res = await fetch("/api/feed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: newContent,
+            media_urls: finalMediaUrls,
+            media_type: computedMediaType,
+            employerProfileId: selectedStoreId
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          setPosts(prev => [data.data, ...prev]);
+          closeWriteModal();
+        } else {
+          alert("게시물 업로드 실패: " + data.error);
+        }
       }
     } catch (err: any) {
       console.error(err);
-      alert("업로드 중 오류 발생: " + err.message);
+      alert("처리 중 오류 발생: " + err.message);
     } finally {
       setUploading(false);
     }
@@ -383,6 +476,8 @@ export default function FeedPage() {
     setNewMediaFiles([]);
     setMediaPreviews([]);
     setNewMediaType("image");
+    setEditingPost(null);
+    setExistingMediaUrls([]);
   };
 
   const formatTime = (dateStr: string) => {
@@ -478,39 +573,75 @@ export default function FeedPage() {
               return (
                 <div key={post.id} className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden flex flex-col">
                   {/* 작성자 정보 */}
-                  <button
-                    onClick={() => router.push(post.storeId ? `/store/${post.storeId}` : `/profile/${post.user_id}`)}
-                    className="flex items-center gap-3 p-3 border-b border-border text-left w-full cursor-pointer focus:outline-none hover:bg-surface2/40 transition">
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-surface2 border border-border flex items-center justify-center flex-shrink-0">
-                      {post.authorAvatar ? (
-                        <img src={post.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-lg">{post.authorType === "employer" ? "🏪" : "👤"}</span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-sm text-text truncate">{post.authorName}</span>
-                        <span className="text-xs" title={post.grade}>{GRADE_EMOJI[post.grade] || "🥉"}</span>
-                        {post.storeId && (
-                          <span className="text-[9px] text-primary bg-primary-light px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">매장홈 →</span>
+                  <div className="flex items-center justify-between p-3 border-b border-border hover:bg-surface2/40 transition relative">
+                    <div
+                      onClick={() => router.push(post.storeId ? `/store/${post.storeId}` : `/profile/${post.user_id}`)}
+                      className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-surface2 border border-border flex items-center justify-center flex-shrink-0">
+                        {post.authorAvatar ? (
+                          <img src={post.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-lg">{post.authorType === "employer" ? "🏪" : "👤"}</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-text-muted bg-surface2 px-1.5 py-0.5 rounded">
-                          신뢰도 {post.trustScore}
-                        </span>
-                        <span className="text-[10px] text-text-muted">
-                          {formatTime(post.created_at)}
-                        </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-sm text-text truncate">{post.authorName}</span>
+                          <span className="text-xs" title={post.grade}>{GRADE_EMOJI[post.grade] || "🥉"}</span>
+                          {post.storeId && (
+                            <span className="text-[9px] text-primary bg-primary-light px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">매장홈 →</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-text-muted bg-surface2 px-1.5 py-0.5 rounded">
+                            신뢰도 {post.trustScore}
+                          </span>
+                          <span className="text-[10px] text-text-muted">
+                            {formatTime(post.created_at)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </button>
+
+                    {/* 본인 작성 글 수정/삭제 메뉴 */}
+                    {post.user_id === userId && (
+                      <div className="relative">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenuPostId(prev => prev === post.id ? null : post.id);
+                          }}
+                          className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface2 transition focus:outline-none cursor-pointer">
+                          <span className="text-text font-bold text-sm">⋮</span>
+                        </button>
+                        {activeMenuPostId === post.id && (
+                          <div className="absolute right-0 top-9 bg-surface border border-border rounded-xl shadow-lg z-20 w-24 overflow-hidden flex flex-col py-1">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditModal(post);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-bold text-text hover:bg-surface2 transition cursor-pointer">
+                              ✏️ 수정하기
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeletePost(post.id);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-500/10 transition cursor-pointer">
+                              🗑️ 삭제하기
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* 미디어 영역 */}
                   {post.media_urls && post.media_urls.length > 0 && (
                     <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
-                      {post.media_type === "video" ? (
+                      {(post.media_urls.length === 1 && isVideoUrl(post.media_urls[0])) ? (
                         <>
                           <video
                             ref={el => { if (el) videoRefs.current.set(post.id, el); else videoRefs.current.delete(post.id); }}
@@ -536,38 +667,63 @@ export default function FeedPage() {
                           ref={el => { if (el) mediaRefs.current.set(post.id, el); else mediaRefs.current.delete(post.id); }}
                           onScroll={e => handleMediaScroll(post.id, e)}
                           className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
-                          {post.media_urls.map((url, idx) => (
-                            <div key={idx}
-                              onClick={() => { setZoomedPost(post); setZoomedIndex(idx); }}
-                              className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center cursor-zoom-in">
-                              <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
-                            </div>
-                          ))}
+                          {post.media_urls.map((url, idx) => {
+                            const isVid = isVideoUrl(url);
+                            return (
+                              <div key={idx}
+                                onClick={() => { setZoomedPost(post); setZoomedIndex(idx); }}
+                                className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center cursor-zoom-in relative bg-black">
+                                {isVid ? (
+                                  <>
+                                    <video
+                                      src={url}
+                                      muted={mutedMap[`${post.id}-${idx}`] !== false}
+                                      loop
+                                      playsInline
+                                      autoPlay={idx === (mediaIndexMap[post.id] || 0)} // 현재 보고 있는 슬라이드면 자동재생
+                                      className="w-full h-full object-contain" />
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setMutedMap(prev => ({ ...prev, [`${post.id}-${idx}`]: prev[`${post.id}-${idx}`] === false }));
+                                      }}
+                                      className="absolute bottom-12 right-2.5 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition z-10"
+                                      aria-label="음소거 전환">
+                                      <i className={`ti ${mutedMap[`${post.id}-${idx}`] !== false ? "ti-volume-3" : "ti-volume"}`}
+                                        style={{ fontSize: 14, color: "#fff" }} aria-hidden="true" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
 
-                      {/* 확대보기 힌트 아이콘 (PC에서도 클릭 가능함을 알림) */}
-                      {post.media_type === "image" && (
+                      {/* 크게 보기 버튼 (동영상이 아닐 때 혹은 다중 미디어일 때 노출) */}
+                      {(post.media_urls.length > 1 || !isVideoUrl(post.media_urls[0])) && (
                         <button onClick={() => { setZoomedPost(post); setZoomedIndex(mediaIndexMap[post.id] || 0); }}
-                          className="absolute bottom-2.5 right-2.5 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
+                          className="absolute bottom-2.5 right-2.5 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition z-10"
                           aria-label="크게 보기">
                           <i className="ti ti-maximize" style={{ fontSize: 14, color: "#fff" }} aria-hidden="true" />
                         </button>
                       )}
 
-                      {/* PC용 좌우 화살표 버튼 (제스처 없어도 이미지 전환 가능) */}
-                      {post.media_type === "image" && post.media_urls.length > 1 && (
+                      {/* PC용 좌우 화살표 버튼 */}
+                      {post.media_urls.length > 1 && (
                         <>
                           {(mediaIndexMap[post.id] || 0) > 0 && (
                             <button onClick={() => scrollMedia(post.id, -1)}
-                              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
+                              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition z-10"
                               aria-label="이전 사진">
                               <i className="ti ti-chevron-left" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
                             </button>
                           )}
                           {(mediaIndexMap[post.id] || 0) < post.media_urls.length - 1 && (
                             <button onClick={() => scrollMedia(post.id, 1)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition z-10"
                               aria-label="다음 사진">
                               <i className="ti ti-chevron-right" style={{ fontSize: 18, color: "#fff" }} aria-hidden="true" />
                             </button>
@@ -744,21 +900,21 @@ export default function FeedPage() {
               {/* 미디어 프리뷰 */}
               {mediaPreviews.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto py-1 scrollbar-thin">
-                  {mediaPreviews.map((url, idx) => (
-                    <div key={idx} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border flex-shrink-0 bg-black">
-                      {newMediaType === "video" ? (
-                        <video src={url} className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={url} alt={`preview-${idx}`} className="w-full h-full object-cover" />
-                      )}
-                      <button onClick={() => {
-                        setNewMediaFiles(prev => prev.filter((_, i) => i !== idx));
-                        setMediaPreviews(prev => prev.filter((_, i) => i !== idx));
-                      }} className="absolute top-0.5 right-0.5 bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center hover:bg-black">
-                        <i className="ti ti-x text-[8px]" aria-hidden="true" />
-                      </button>
-                    </div>
-                  ))}
+                  {mediaPreviews.map((url, idx) => {
+                    const isVideo = isVideoFile(newMediaFiles[idx]) || isVideoUrl(url);
+                    return (
+                      <div key={idx} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border flex-shrink-0 bg-black">
+                        {isVideo ? (
+                          <video src={url} className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={url} alt={`preview-${idx}`} className="w-full h-full object-cover" />
+                        )}
+                        <button onClick={() => removePreview(idx)} className="absolute top-0.5 right-0.5 bg-black/70 text-white w-4 h-4 rounded-full flex items-center justify-center hover:bg-black">
+                          <i className="ti ti-x text-[8px]" aria-hidden="true" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
