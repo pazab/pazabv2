@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
+import { EntityLink } from "@/components/EntityLink";
 
 interface StoreInfo {
   id: string;
@@ -277,17 +278,14 @@ export default function StoreHomePage() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
               <span className="text-[11px] text-text-muted">👥 팔로워 {followerCount}명</span>
               {store.owner && (
-                <button
-                  onClick={() => router.push(`/profile/${store.user_id}`)}
-                  style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "5px 10px 5px 5px", cursor: "pointer" }}
-                >
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: store.owner.avatar_url ? `url(${store.owner.avatar_url}) center/cover` : "linear-gradient(135deg,#8b5cf6,#7c3aed)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>
-                    {!store.owner.avatar_url && "👤"}
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600 }}>
-                    {store.owner.nickname || "운영자"} 프로필 보기 →
-                  </span>
-                </button>
+                <EntityLink
+                  href={`/profile/${store.user_id}`}
+                  avatarUrl={store.owner.avatar_url}
+                  fallbackEmoji="👤"
+                  name={store.owner.nickname || "운영자"}
+                  label="프로필"
+                  variant="content"
+                />
               )}
             </div>
           </div>

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
+import { EntityLink } from "@/components/EntityLink";
 
 interface Post {
   id: string;
@@ -589,7 +590,15 @@ export default function FeedPage() {
                           <span className="font-bold text-sm text-text truncate">{post.authorName}</span>
                           <span className="text-xs" title={post.grade}>{GRADE_EMOJI[post.grade] || "🥉"}</span>
                           {post.storeId && (
-                            <span className="text-[9px] text-primary bg-primary-light px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">매장홈 →</span>
+                            <EntityLink
+                              href={`/store/${post.storeId}`}
+                              avatarUrl={post.authorAvatar}
+                              fallbackEmoji="🏪"
+                              fallbackGradient="linear-gradient(135deg,#ec4899,#be185d)"
+                              name=""
+                              label="매장홈"
+                              variant="chip"
+                            />
                           )}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">

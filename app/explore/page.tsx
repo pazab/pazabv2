@@ -383,7 +383,16 @@ function ExploreContent() {
 
   const cardProps = (item: Record<string, unknown>): CardProps => ({
     item, mode: viewMode, isLoggedIn, myRegion,
+    isOwner: !!userId && userId === String(item.user_id || ""),
     onLike: handleLike, onLovecall: handleLovecall, likedIds,
+    onEdit: (id) => {
+      if (viewMode === "worker") router.push(`/employer/register?profileId=${id}&return=/explore`);
+      else router.push(`/worker/profile?edit=true&profileId=${id}&return=/explore`);
+    },
+    onDelete: (id) => {
+      if (viewMode === "worker") fetch("/api/job/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: id }) }).then(() => setAllItems(prev => prev.filter(i => String(i.id) !== id)));
+      else fetch("/api/worker/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: id }) }).then(() => setAllItems(prev => prev.filter(i => String(i.user_id) !== id)));
+    },
     onClick: () => {
       setBottomSheet(item as SheetItem);
       const targetId = String(item.id || item.user_id);
@@ -624,15 +633,15 @@ function ExploreContent() {
                     if (uid) { router.push(`/worker/${uid}`); setBottomSheet(null); }
                   }
                 }} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: (viewMode === "worker" ? bottomSheet.employer_avatar : bottomSheet.worker_avatar) ? `url(${viewMode === "worker" ? bottomSheet.employer_avatar : bottomSheet.worker_avatar}) center/cover` : "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
-                    {!(viewMode === "worker" ? bottomSheet.employer_avatar : bottomSheet.worker_avatar) && (viewMode === "worker" ? "🏪" : "👤")}
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: (viewMode === "worker" ? (bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) ? `url(${viewMode === "worker" ? (bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar}) center/cover` : "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+                    {!(viewMode === "worker" ? (bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) && (viewMode === "worker" ? "🏪" : "👤")}
                   </div>
                   <div style={{ flex: 1 }}>
                     <h3 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 2px", letterSpacing: "-0.3px" }}>
                       {viewMode === "worker" ? String(bottomSheet.business_name || "") : String(bottomSheet.worker_type || bottomSheet.worker_name || "알바생")}
                     </h3>
                     <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-                      {viewMode === "worker" ? String(bottomSheet.employer_name || bottomSheet.business_type || "") : String(bottomSheet.desired_type || "")}
+                      {viewMode === "worker" ? String(bottomSheet.business_type || "") : String(bottomSheet.desired_type || "")}
                     </p>
                   </div>
                 </div>

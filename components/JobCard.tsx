@@ -21,6 +21,7 @@ export interface CardProps {
   mode: "worker" | "employer";
   isLoggedIn: boolean;
   myRegion: string;
+  isOwner?: boolean;
   onLike?: (id: string, liked: boolean) => void;
   onLovecall?: (id: string) => void;
   onClick?: () => void;
@@ -28,6 +29,8 @@ export interface CardProps {
   onHide?: (id: string) => void;
   onReport?: (id: string) => void;
   onDislike?: (id: string) => void;
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 export function getRegionMatchLevel(myRegion: string, targetRegion: string): "same-dong" | "same-gu" | "same-sido" | "other" {
@@ -69,7 +72,7 @@ export function DeadlineBadge({ expiresAt }: { expiresAt: string }) {
   );
 }
 
-export function JobCard({ item, mode, isLoggedIn, myRegion, onLike, onLovecall, onClick, likedIds, onHide, onReport, onDislike }: CardProps) {
+export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onLovecall, onClick, likedIds, onHide, onReport, onDislike, onEdit, onDelete }: CardProps) {
   const router = useRouter();
   const id = String(item.id || item.user_id || "");
   const isLiked = likedIds ? likedIds.has(id) : false;
@@ -139,22 +142,33 @@ export function JobCard({ item, mode, isLoggedIn, myRegion, onLike, onLovecall, 
         </button>
         {menuOpen && (
           <div style={{ position: "absolute", top: 36, right: 0, background: "#1c1c1e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, minWidth: 160, overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", zIndex: 30 }}>
-            <button onClick={() => { onHide?.(id); setMenuOpen(false); }}
-              style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.07)", color: "#fff", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-              <span>🙈</span> 이 글 숨기기
-            </button>
-            <button onClick={() => { onDislike?.(id); setMenuOpen(false); }}
-              style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.07)", color: "#fff", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-              <span>👎</span> 관심 없음
-            </button>
-            <button onClick={() => { setMenuOpen(false); alert(`매칭 점수 ${score ?? "?"}점\n지역·직종·임금·근무조건 기반으로 계산됩니다.`); }}
-              style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.7)", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-              <span>🤔</span> 이 글이 왜 보이나요?
-            </button>
-            <button onClick={() => { onReport?.(id); setMenuOpen(false); }}
-              style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", color: "#f87171", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-              <span>🚨</span> 신고하기
-            </button>
+            {isOwner ? (
+              <>
+                <button onClick={() => { onEdit?.(id); setMenuOpen(false); }}
+                  style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.07)", color: "#fff", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span>✏️</span> 수정하기
+                </button>
+                <button onClick={() => { onDelete?.(id); setMenuOpen(false); }}
+                  style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", color: "#f87171", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span>🗑️</span> 삭제하기
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => { onHide?.(id); setMenuOpen(false); }}
+                  style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.07)", color: "#fff", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span>🙈</span> 이 글 숨기기
+                </button>
+                <button onClick={() => { onDislike?.(id); setMenuOpen(false); }}
+                  style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.07)", color: "#fff", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span>👎</span> 관심 없음
+                </button>
+                <button onClick={() => { onReport?.(id); setMenuOpen(false); }}
+                  style={{ width: "100%", padding: "13px 16px", background: "none", border: "none", color: "#f87171", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span>🚨</span> 신고하기
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

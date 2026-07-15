@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { getMatchLevel, EMPLOYER_TYPE_INFO } from "@/lib/utils";
 import { BADGE_DEFS, getGrade } from "@/lib/trustScore";
 import { btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
+import { EntityLink } from "@/components/EntityLink";
 
 interface TypeInfo {
   emoji: string;
@@ -397,8 +398,17 @@ export default function JobDetailPage() {
               <button onClick={() => setShowJobMenu(!showJobMenu)} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⋯</button>
               {showJobMenu && (
                 <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", width: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 50 }}>
-                  <button onClick={() => { setShowJobMenu(false); showToast("신고가 접수됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)" }}>🚨 신고하기</button>
-                  <button onClick={() => { setShowJobMenu(false); showToast("차단됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171" }}>🚫 차단하기</button>
+                  {isOwner ? (
+                    <>
+                      <button onClick={() => { setShowJobMenu(false); router.push(`/employer/register?edit=true&jobId=${job.id}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>✏️ 수정하기</button>
+                      <button onClick={() => { setShowJobMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171" }}>🗑️ 삭제하기</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => { setShowJobMenu(false); showToast("신고가 접수됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)" }}>🚨 신고하기</button>
+                      <button onClick={() => { setShowJobMenu(false); showToast("차단됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171" }}>🚫 차단하기</button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -416,12 +426,15 @@ export default function JobDetailPage() {
           <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", margin: "0 0 10px" }}>📍 {String(job.region || "").split(" ").slice(0, 3).join(" ")}</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {!!job.employer_profile_id && (
-              <button onClick={() => router.push(`/store/${job.employer_profile_id}`)} style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 20, padding: "6px 12px", cursor: "pointer" }}>
-                <div style={{ width: 24, height: 24, borderRadius: "50%", background: job.employer_avatar ? `url(${job.employer_avatar}) center/cover` : "linear-gradient(135deg,#ec4899,#be185d)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>
-                  {!job.employer_avatar && "🏪"}
-                </div>
-                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: 600 }}>매장 홈 보기 →</span>
-              </button>
+              <EntityLink
+                href={`/store/${job.employer_profile_id}`}
+                avatarUrl={String(job.image_url || (Array.isArray(job.image_urls) && job.image_urls[0]) || "")}
+                fallbackEmoji="🏪"
+                fallbackGradient="linear-gradient(135deg,#ec4899,#be185d)"
+                name={String(job.business_name || "")}
+                label="매장 홈"
+                variant="hero"
+              />
             )}
           </div>
         </div>
@@ -564,9 +577,7 @@ export default function JobDetailPage() {
             {isLiked ? "❤" : "♡"}
             <span style={{ fontSize: 12 }}>{likeCount}</span>
           </button>
-          {isOwner ? (
-            <button onClick={() => router.push(`/employer/register?edit=true&jobId=${job.id}`)} style={{ flex: 1, height: 52, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", fontWeight: 600, borderRadius: 14, cursor: "pointer", fontSize: 14 }}>✏️ 공고 수정하기</button>
-          ) : isReceived && status === "pending" ? (
+          {isOwner ? null : isReceived && status === "pending" ? (
             <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "default" }}>📥 지원 받음 · MY에서 수락/거절</button>
           ) : status === "sent" || status === "pending" ? (
             <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>📤 지원 완료 (수락 대기중)</button>
