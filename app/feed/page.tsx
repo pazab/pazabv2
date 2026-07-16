@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { EntityLink } from "@/components/EntityLink";
@@ -64,8 +64,9 @@ const isVideoUrl = (url: string) => {
   return ext ? ["mp4", "webm", "ogg", "mov", "avi", "mkv"].includes(ext) : false;
 };
 
-export default function FeedPage() {
+function FeedContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [userId, setUserId] = useState<string | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,6 +106,19 @@ export default function FeedPage() {
   // 동영상 스크롤 자동재생/정지 (인스타/틱톡 스타일 — 화면에 들어오면 재생, 벗어나면 정지)
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const [mutedMap, setMutedMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const writeMode = searchParams.get("write") === "true";
+    const qStoreId = searchParams.get("storeId");
+    if (writeMode) {
+      setWriteModalOpen(true);
+      if (qStoreId) {
+        setSelectedStoreId(qStoreId);
+      }
+      // URL의 쿼리 매개변수를 제거하여 뒤로가기 시 모달이 다시 활성화되는 중복 팝업 현상을 방지
+      router.replace("/feed", { scroll: false });
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -598,6 +612,7 @@ export default function FeedPage() {
                               name=""
                               label="매장홈"
                               variant="chip"
+                              avatarShape="square"
                             />
                           )}
                         </div>
@@ -1013,5 +1028,17 @@ export default function FeedPage() {
         );
       })()}
     </main>
+  );
+}
+
+export default function FeedPage() {
+  return (
+    <Suspense fallback={
+      <main style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: "var(--text-muted)" }}>불러오는 중...</p>
+      </main>
+    }>
+      <FeedContent />
+    </Suspense>
   );
 }

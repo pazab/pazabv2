@@ -583,7 +583,7 @@ export default function ChatRoomPage() {
     : counterpart?.nickname || "상대방";
 
   const counterpartAvatar = counterpart?.user_type === "employer"
-    ? (counterpartProfile?.image_url || counterpart?.avatar_url || null)
+    ? (counterpartProfile?.logo_url || counterpartProfile?.image_url || counterpart?.avatar_url || null)
     : (counterpartWorkerProfile?.image_url || counterpart?.avatar_url || null);
 
   const isEmployer = match?.employer_id === userId;
@@ -622,7 +622,7 @@ export default function ChatRoomPage() {
             <div onClick={() => {
               if (counterpart?.id) router.push(`/profile/${counterpart.id}`);
             }} style={{ position: "relative", flexShrink: 0, cursor: "pointer" }}>
-              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 18, boxShadow: "0 0 0 2px var(--border)" }}>
+              <div style={{ width: 40, height: 40, borderRadius: counterpart?.user_type === "employer" ? "8px" : "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 18, boxShadow: "0 0 0 2px var(--border)" }}>
                 {counterpartAvatar ? (
                   <img src={counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 ) : (
@@ -881,9 +881,9 @@ export default function ChatRoomPage() {
                   }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
                     {counterpartAvatar ? (
                       <img src={counterpartAvatar} alt="avatar"
-                        style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1.5px solid var(--border)" }} />
+                        style={{ width: 34, height: 34, borderRadius: counterpart?.user_type === "employer" ? "6px" : "50%", objectFit: "cover", border: "1.5px solid var(--border)" }} />
                     ) : (
-                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, border: "1.5px solid var(--border)" }}>
+                      <div style={{ width: 34, height: 34, borderRadius: counterpart?.user_type === "employer" ? "6px" : "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, border: "1.5px solid var(--border)" }}>
                         <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
                       </div>
                     )}

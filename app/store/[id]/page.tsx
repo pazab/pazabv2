@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { EntityLink } from "@/components/EntityLink";
+import StoreRegisterModal from "@/components/StoreRegisterModal";
 
 interface StoreInfo {
   id: string;
@@ -12,6 +13,7 @@ interface StoreInfo {
   business_name: string;
   business_type: string | null;
   description: string | null;
+  logo_url: string | null;
   image_url: string | null;
   region: string | null;
   address: string | null;
@@ -60,6 +62,7 @@ export default function StoreHomePage() {
   const [following, setFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
   const [followBusy, setFollowBusy] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // 상세 라이트박스
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
@@ -67,6 +70,8 @@ export default function StoreHomePage() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [commenting, setCommenting] = useState(false);
+  const [activeMediaIdx, setActiveMediaIdx] = useState(0);
+  const [zoomedMedia, setZoomedMedia] = useState<{ urls: string[]; index: number } | null>(null);
 
   useEffect(() => { init(); }, [storeId]);
 
@@ -78,7 +83,7 @@ export default function StoreHomePage() {
 
     const { data: storeRaw } = await supabase
       .from("employer_profiles")
-      .select("id, user_id, business_name, business_type, description, image_url, region, address")
+      .select("id, user_id, business_name, business_type, description, logo_url, image_url, region, address")
       .eq("id", storeId)
       .maybeSingle();
     if (storeRaw) {
@@ -180,6 +185,7 @@ export default function StoreHomePage() {
 
   const handlePostClick = (post: Post) => {
     setSelectedPost(post);
+    setActiveMediaIdx(0);
     loadComments(post.id);
   };
 
@@ -240,17 +246,26 @@ export default function StoreHomePage() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 100 }}>
-      <AppHeader title="매장 홈" showBack onBack={() => router.back()} />
+      <AppHeader title="매장 홈" showBack onBack={() => router.back()} showBellAndMenu={true} />
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* 매장 헤더 */}
         <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
-          <div className="w-full aspect-[16/9] bg-surface2 flex items-center justify-center overflow-hidden">
+          <div className="w-full aspect-[16/9] bg-surface2 flex items-center justify-center overflow-hidden relative">
             {store.image_url ? (
               <img src={store.image_url} alt={store.business_name} className="w-full h-full object-cover" />
             ) : (
               <span className="text-5xl">🏪</span>
+            )}
+            {isOwner && (
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="absolute top-3 right-3 bg-black/60 hover:bg-black/80 w-8 h-8 rounded-full flex items-center justify-center text-white transition active:scale-95 border border-white/10"
+                title="매장 정보 수정"
+              >
+                <i className="ti ti-settings text-base" aria-hidden="true" />
+              </button>
             )}
           </div>
           <div className="p-4 flex flex-col gap-2">
@@ -283,8 +298,9 @@ export default function StoreHomePage() {
                   avatarUrl={store.owner.avatar_url}
                   fallbackEmoji="👤"
                   name={store.owner.nickname || "운영자"}
-                  label="프로필"
+                  label=""
                   variant="content"
+                  avatarShape="circle"
                 />
               )}
             </div>
@@ -312,18 +328,29 @@ export default function StoreHomePage() {
           </div>
         )}
 
-        {/* 매장 피드 */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-bold text-text-sub">📸 매장 소식</span>
+        {/* 매장 피드 (3열 격자형 - 인스타 스타일) */}
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: "16px 0", overflow: "hidden" }} className="flex flex-col">
+          <div className="flex justify-between items-center px-4 mb-3">
+            <span className="text-xs font-bold text-text-sub">📸 매장 소식</span>
+            {isOwner && (
+              <button 
+                onClick={() => router.push(`/feed?write=true&storeId=${storeId}`)}
+                className="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md transition active:scale-95 flex items-center gap-1 focus:outline-none"
+              >
+                <i className="ti ti-plus" aria-hidden="true" />
+                소식 등록
+              </button>
+            )}
+          </div>
           {posts.length === 0 ? (
-            <div className="text-center py-14 px-4 bg-surface rounded-2xl border border-border">
+            <div className="mx-4 text-center py-14 px-4 bg-surface2/30 rounded-2xl border border-border">
               <p className="text-xs text-text-muted">아직 올라온 소식이 없어요</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-1.5">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1.5px", background: "var(--border)" }}>
               {posts.map(post => (
                 <button key={post.id} onClick={() => handlePostClick(post)}
-                  className="aspect-square bg-surface2 rounded-xl relative overflow-hidden group focus:outline-none border border-border/40">
+                  className="aspect-square relative overflow-hidden group focus:outline-none transition duration-150 active:scale-95 bg-surface">
                   {post.media_urls && post.media_urls.length > 0 ? (
                     post.media_type === "video" ? (
                       <div className="w-full h-full relative">
@@ -336,8 +363,8 @@ export default function StoreHomePage() {
                       <img src={post.media_urls[0]} alt="feed-item" className="w-full h-full object-cover" />
                     )
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center p-2">
-                      <span className="text-[10px] text-text-muted line-clamp-4 text-center">{post.content}</span>
+                    <div className="w-full h-full flex items-center justify-center p-2 bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                      <span className="text-[10px] text-text-sub line-clamp-4 text-center">{post.content}</span>
                     </div>
                   )}
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-3 text-xs font-bold text-white">
@@ -352,98 +379,240 @@ export default function StoreHomePage() {
       </div>
 
       {/* 상세 라이트박스 */}
-      {selectedPost && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-3xl border border-border shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="flex justify-between items-center px-4 py-3 border-b border-border bg-surface2/40">
-              <span className="font-bold text-xs text-text-sub">{store.business_name}</span>
-              <button onClick={() => setSelectedPost(null)} className="text-text-muted hover:text-text focus:outline-none">
-                <i className="ti ti-x text-lg" aria-hidden="true" />
-              </button>
-            </div>
+      {selectedPost && (() => {
+        const currentIdx = posts.findIndex(p => p.id === selectedPost.id);
+        const hasPrev = currentIdx > 0;
+        const hasNext = currentIdx < posts.length - 1;
+        const navigatePost = (dir: -1 | 1) => {
+          const targetIdx = currentIdx + dir;
+          if (targetIdx >= 0 && targetIdx < posts.length) {
+            const targetPost = posts[targetIdx];
+            setSelectedPost(targetPost);
+            setActiveMediaIdx(0);
+            setComments([]);
+            loadComments(targetPost.id);
+          }
+        };
 
-            <div className="flex-1 overflow-y-auto">
-              {selectedPost.media_urls && selectedPost.media_urls.length > 0 && (
-                <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
-                  {selectedPost.media_type === "video" ? (
-                    <video src={selectedPost.media_urls[0]} controls playsInline className="w-full h-full object-contain" />
-                  ) : (
-                    <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
-                      {selectedPost.media_urls.map((url, idx) => (
-                        <div key={idx} className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center">
-                          <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3">
+            <div className="relative w-full max-w-md">
+              {/* 이전 버튼 */}
+              {hasPrev && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); navigatePost(-1); }}
+                  className="absolute -left-3 md:-left-12 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white w-8 h-8 rounded-full flex items-center justify-center transition active:scale-90 z-50 focus:outline-none border border-white/10"
+                >
+                  <i className="ti ti-chevron-left text-base" aria-hidden="true" />
+                </button>
+              )}
+              {/* 다음 버튼 */}
+              {hasNext && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); navigatePost(1); }}
+                  className="absolute -right-3 md:-right-12 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white w-8 h-8 rounded-full flex items-center justify-center transition active:scale-90 z-50 focus:outline-none border border-white/10"
+                >
+                  <i className="ti ti-chevron-right text-base" aria-hidden="true" />
+                </button>
               )}
 
-              <div className="p-4 flex flex-col gap-2.5">
-                {selectedPost.content ? (
-                  <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{selectedPost.content}</p>
-                ) : (
-                  <span className="text-xs text-text-muted italic">본문 텍스트가 없습니다.</span>
-                )}
-
-                <div className="flex items-center gap-3 mt-1.5 border-t border-b border-border py-2">
-                  <button onClick={handleLikePost} className="flex items-center gap-1.5 text-text-sub focus:outline-none">
-                    <i className={`ti ${selectedPost.likedByMe ? "ti-heart-filled text-pink-500" : "ti-heart text-text"} text-lg`} aria-hidden="true" />
-                    <span className="text-xs font-bold">{selectedPost.like_count || 0}</span>
+              <div className="bg-surface rounded-xl border border-border shadow-2xl w-full overflow-hidden flex flex-col h-[94vh] max-h-[94vh]">
+                <div className="flex justify-between items-center px-4 py-3.5 border-b border-border bg-surface2/40">
+                  <span className="font-bold text-xs text-text-sub">{store.business_name}</span>
+                  <button onClick={() => setSelectedPost(null)} className="text-text-muted hover:text-text focus:outline-none">
+                    <i className="ti ti-x text-lg" aria-hidden="true" />
                   </button>
-                  <div className="flex items-center gap-1.5 text-text-sub">
-                    <i className="ti ti-message-2 text-lg text-text" aria-hidden="true" />
-                    <span className="text-xs font-bold">{selectedPost.comment_count || 0}</span>
-                  </div>
                 </div>
-              </div>
 
-              <div className="bg-surface2/30 p-4 border-t border-border flex flex-col gap-3">
-                <span className="font-bold text-[11px] text-text-muted">댓글 ({comments.length})</span>
-                {commentsLoading ? (
-                  <span className="text-[10px] text-text-muted text-center py-1">댓글 로딩 중...</span>
-                ) : comments.length === 0 ? (
-                  <span className="text-[10px] text-text-muted text-center py-1">댓글이 없습니다.</span>
-                ) : (
-                  <div className="flex flex-col gap-2.5 max-h-44 overflow-y-auto">
-                    {comments.map(comment => (
-                      <div key={comment.id} className="flex gap-2 items-start text-xs">
-                        <div className="w-6 h-6 rounded-full overflow-hidden bg-surface flex-shrink-0 border border-border flex items-center justify-center">
-                          {comment.authorAvatar ? (
-                            <img src={comment.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-xs">👤</span>
+                <div className="flex-1 overflow-y-auto">
+                  {selectedPost.media_urls && selectedPost.media_urls.length > 0 && (
+                    <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
+                      {selectedPost.media_type === "video" ? (
+                        <video src={selectedPost.media_urls[0]} controls playsInline className="w-full h-full object-contain" />
+                      ) : (
+                        <div className="relative w-full h-full flex items-center justify-center select-none">
+                          <img 
+                            src={selectedPost.media_urls[activeMediaIdx]} 
+                            alt={`media-${activeMediaIdx}`} 
+                            className="w-full h-full object-contain cursor-zoom-in"
+                            onClick={() => setZoomedMedia({ urls: selectedPost.media_urls, index: activeMediaIdx })}
+                          />
+                          {/* 이미지 슬라이더 좌우 화살표 */}
+                          {selectedPost.media_urls.length > 1 && (
+                            <>
+                              {activeMediaIdx > 0 && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setActiveMediaIdx(prev => prev - 1); }}
+                                  className="absolute left-2.5 bg-black/50 hover:bg-black/70 text-white w-6 h-6 rounded-full flex items-center justify-center transition active:scale-90 z-20 focus:outline-none border border-white/10"
+                                >
+                                  <i className="ti ti-chevron-left text-xs" aria-hidden="true" />
+                                </button>
+                              )}
+                              {activeMediaIdx < selectedPost.media_urls.length - 1 && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setActiveMediaIdx(prev => prev + 1); }}
+                                  className="absolute right-2.5 bg-black/50 hover:bg-black/70 text-white w-6 h-6 rounded-full flex items-center justify-center transition active:scale-90 z-20 focus:outline-none border border-white/10"
+                                >
+                                  <i className="ti ti-chevron-right text-xs" aria-hidden="true" />
+                                </button>
+                              )}
+                              {/* 인디케이터 배지 */}
+                              <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[9px] font-bold px-2 py-0.5 rounded-full z-20">
+                                {activeMediaIdx + 1} / {selectedPost.media_urls.length}
+                              </div>
+                            </>
                           )}
                         </div>
-                        <div className="flex-1 bg-surface rounded-xl px-2.5 py-1.5 shadow-sm border border-border">
-                          <div className="flex justify-between items-center mb-0.5">
-                            <span className="font-bold text-[10px] text-text">{comment.authorName}</span>
-                          </div>
-                          <p className="text-[11px] text-text-sub leading-normal">{comment.content}</p>
-                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-4 flex flex-col gap-2.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-7 h-7 rounded-full overflow-hidden bg-surface border border-border flex items-center justify-center">
+                        {store.owner?.avatar_url ? (
+                          <img src={store.owner.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-sm">👤</span>
+                        )}
                       </div>
-                    ))}
+                      <div>
+                        <p className="text-[11px] font-bold text-text leading-none">{store.business_name}</p>
+                        <p className="text-[9px] text-text-muted mt-0.5">
+                          {new Date(selectedPost.created_at).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" })}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedPost.content ? (
+                      <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{selectedPost.content}</p>
+                    ) : (
+                      <span className="text-xs text-text-muted italic">본문 텍스트가 없습니다.</span>
+                    )}
+
+                    <div className="flex items-center gap-3 mt-1.5 border-t border-b border-border py-2">
+                      <button onClick={handleLikePost} className="flex items-center gap-1.5 text-text-sub focus:outline-none">
+                        <i className={`ti ${selectedPost.likedByMe ? "ti-heart-filled text-pink-500" : "ti-heart text-text"} text-lg`} aria-hidden="true" />
+                        <span className="text-xs font-bold">{selectedPost.like_count || 0}</span>
+                      </button>
+                      <div className="flex items-center gap-1.5 text-text-sub">
+                        <i className="ti ti-message-2 text-lg text-text" aria-hidden="true" />
+                        <span className="text-xs font-bold">{selectedPost.comment_count || 0}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-surface2/30 p-4 border-t border-border flex flex-col gap-3">
+                    <span className="font-bold text-[11px] text-text-muted">댓글 ({comments.length})</span>
+                    {commentsLoading ? (
+                      <span className="text-[10px] text-text-muted text-center py-1">댓글 로딩 중...</span>
+                    ) : comments.length === 0 ? (
+                      <span className="text-[10px] text-text-muted text-center py-1">댓글이 없습니다.</span>
+                    ) : (
+                      <div className="flex flex-col gap-2.5 max-h-44 overflow-y-auto">
+                        {comments.map(comment => (
+                          <div key={comment.id} className="flex gap-2 items-start text-xs">
+                            <div className="w-6 h-6 rounded-full overflow-hidden bg-surface flex-shrink-0 border border-border flex items-center justify-center">
+                              {comment.authorAvatar ? (
+                                <img src={comment.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-xs">👤</span>
+                              )}
+                            </div>
+                            <div className="flex-1 bg-surface rounded-xl px-2.5 py-1.5 shadow-sm border border-border">
+                              <div className="flex justify-between items-center mb-0.5">
+                                <span className="font-bold text-[10px] text-text">{comment.authorName}</span>
+                              </div>
+                              <p className="text-[11px] text-text-sub leading-normal">{comment.content}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {myId && (
+                  <div className="p-3 border-t border-border bg-surface2 flex gap-1.5">
+                    <input type="text" placeholder="댓글을 입력하세요..."
+                      value={newComment}
+                      onChange={e => setNewComment(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") handleAddComment(); }}
+                      disabled={commenting}
+                      className="flex-1 bg-surface border border-border text-xs px-3 py-2 rounded-xl focus:outline-none" />
+                    <button onClick={handleAddComment} disabled={commenting || !newComment.trim()}
+                      className="bg-primary text-white text-xs font-bold px-3.5 py-2 rounded-xl active:scale-95 transition disabled:opacity-50">
+                      등록
+                    </button>
                   </div>
                 )}
               </div>
             </div>
+          </div>
+        );
+      })()}
 
-            {myId && (
-              <div className="p-3 border-t border-border bg-surface2 flex gap-1.5">
-                <input type="text" placeholder="댓글을 입력하세요..."
-                  value={newComment}
-                  onChange={e => setNewComment(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") handleAddComment(); }}
-                  disabled={commenting}
-                  className="flex-1 bg-surface border border-border text-xs px-3 py-2 rounded-xl focus:outline-none" />
-                <button onClick={handleAddComment} disabled={commenting || !newComment.trim()}
-                  className="bg-primary text-white text-xs font-bold px-3.5 py-2 rounded-xl active:scale-95 transition disabled:opacity-50">
-                  등록
-                </button>
-              </div>
+      {zoomedMedia && (
+        <div
+          onClick={() => setZoomedMedia(null)}
+          className="fixed inset-0 bg-black z-[100] flex items-center justify-center cursor-zoom-out select-none"
+        >
+          <div className="relative max-w-full max-h-full flex items-center justify-center">
+            <img 
+              src={zoomedMedia.urls[zoomedMedia.index]} 
+              alt="zoom-view" 
+              className="max-w-full max-h-full object-contain" 
+            />
+
+            {/* 줌 상태 내의 이미지 캐러셀 좌우 화살표 */}
+            {zoomedMedia.urls.length > 1 && (
+              <>
+                {zoomedMedia.index > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setZoomedMedia(prev => prev ? { ...prev, index: prev.index - 1 } : null);
+                    }}
+                    className="absolute left-4 bg-black/50 hover:bg-black/70 text-white w-10 h-10 rounded-full flex items-center justify-center transition active:scale-90 z-[110] focus:outline-none border border-white/10 cursor-pointer"
+                  >
+                    <i className="ti ti-chevron-left text-xl" aria-hidden="true" />
+                  </button>
+                )}
+                {zoomedMedia.index < zoomedMedia.urls.length - 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setZoomedMedia(prev => prev ? { ...prev, index: prev.index + 1 } : null);
+                    }}
+                    className="absolute right-4 bg-black/50 hover:bg-black/70 text-white w-10 h-10 rounded-full flex items-center justify-center transition active:scale-90 z-[110] focus:outline-none border border-white/10 cursor-pointer"
+                  >
+                    <i className="ti ti-chevron-right text-xl" aria-hidden="true" />
+                  </button>
+                )}
+                {/* 줌 인디케이터 배지 */}
+                <span className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[10px] px-3 py-1 rounded-full z-[110]">
+                  {zoomedMedia.index + 1} / {zoomedMedia.urls.length}
+                </span>
+              </>
             )}
+
+            <span className="absolute top-4 right-4 bg-black/60 text-white text-[10px] px-2.5 py-1 rounded-full z-[110]">
+              닫기
+            </span>
           </div>
         </div>
+      )}
+
+      {showEditModal && (
+        <StoreRegisterModal
+          userId={myId!}
+          existingStore={store}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => {
+            setShowEditModal(false);
+            init(); // 데이터 새로고침
+          }}
+        />
       )}
     </main>
   );

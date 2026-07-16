@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
     if (counterpart?.user_type === "employer") {
       const { data: emp } = await supabaseAdmin
         .from("employer_profiles")
-        .select("business_name, business_type, image_url")
+        .select("business_name, business_type, logo_url, image_url")
         .eq("user_id", counterpartId)
         .limit(1)
         .maybeSingle();

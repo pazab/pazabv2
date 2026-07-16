@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
 
     const [empProfilesRes, workerProfilesRes] = await Promise.all([
       employerIds.length > 0
-        ? supabase.from("employer_profiles").select("user_id, business_name, image_url").in("user_id", employerIds)
+        ? supabase.from("employer_profiles").select("user_id, business_name, logo_url, image_url").in("user_id", employerIds)
         : Promise.resolve({ data: [] }),
       workerIds.length > 0
         ? supabase.from("worker_profiles").select("user_id, image_url").in("user_id", workerIds)
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
       const lastMsg = lastMsgMap[match.id];
       
       const avatar = user?.user_type === "employer"
-        ? (emp?.image_url || user?.avatar_url || null)
+        ? (emp?.logo_url || emp?.image_url || user?.avatar_url || null)
         : (worker?.image_url || user?.avatar_url || null);
 
       return {

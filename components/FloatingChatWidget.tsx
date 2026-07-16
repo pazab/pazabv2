@@ -371,7 +371,8 @@ export default function FloatingChatWidget() {
     ? `${counterpart.employer_profile.business_name} 사장님` 
     : (counterpart?.users?.nickname || "알 수 없음");
 
-  const cpAvatar = counterpart?.employer_profile?.image_url 
+  const cpAvatar = counterpart?.employer_profile?.logo_url
+    || counterpart?.employer_profile?.image_url 
     || counterpart?.worker_profile?.image_url 
     || counterpart?.users?.avatar_url 
     || null;
@@ -488,9 +489,9 @@ export default function FloatingChatWidget() {
                       <button key={room.id} onClick={() => handleOpenRoom(room)}
                         className={`w-full text-left p-3 rounded-xl border flex items-center gap-3 transition hover:bg-surface2
                           ${hasUnread ? "bg-primary-light/40 border-primary/15" : "bg-surface border-border"}`}>
-                        <div className="w-10 h-10 rounded-full bg-surface2 flex items-center justify-center text-lg flex-shrink-0 relative border border-border">
+                        <div className={`w-10 h-10 ${room.counterpartType === "employer" ? "rounded-lg" : "rounded-full"} bg-surface2 flex items-center justify-center text-lg flex-shrink-0 relative border border-border`}>
                           {room.counterpartAvatar ? (
-                            <img src={room.counterpartAvatar} alt="avatar" className="w-full h-full object-cover rounded-full" />
+                            <img src={room.counterpartAvatar} alt="avatar" className={`w-full h-full object-cover ${room.counterpartType === "employer" ? "rounded-lg" : "rounded-full"}`} />
                           ) : (
                             <span>{room.counterpartType === "employer" ? "🏪" : "👤"}</span>
                           )}
@@ -527,7 +528,7 @@ export default function FloatingChatWidget() {
                   <button onClick={() => setActiveMatchId(null)} className="text-text-muted hover:text-text">
                     <i className="ti ti-chevron-left text-lg" aria-hidden="true" />
                   </button>
-                  <div className="w-7 h-7 rounded-full overflow-hidden bg-surface border border-border flex items-center justify-center flex-shrink-0">
+                  <div className={`w-7 h-7 ${counterpart?.users?.user_type === "employer" ? "rounded-md" : "rounded-full"} overflow-hidden bg-surface border border-border flex items-center justify-center flex-shrink-0`}>
                     {cpAvatar ? (
                       <img src={cpAvatar} alt="avatar" className="w-full h-full object-cover" />
                     ) : (

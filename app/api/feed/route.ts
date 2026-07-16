@@ -49,13 +49,13 @@ export async function GET(req: NextRequest) {
 
     const [employerProfiles, workerProfiles, storeProfiles] = await Promise.all([
       employerUserIds.length > 0
-        ? supabaseAdmin.from("employer_profiles").select("user_id, business_name, image_url").in("user_id", employerUserIds)
+        ? supabaseAdmin.from("employer_profiles").select("user_id, business_name, logo_url, image_url").in("user_id", employerUserIds)
         : Promise.resolve({ data: [] }),
       workerUserIds.length > 0
         ? supabaseAdmin.from("worker_profiles").select("user_id, image_url").in("user_id", workerUserIds)
         : Promise.resolve({ data: [] }),
       storeIds.length > 0
-        ? supabaseAdmin.from("employer_profiles").select("id, business_name, image_url").in("id", storeIds)
+        ? supabaseAdmin.from("employer_profiles").select("id, business_name, logo_url, image_url").in("id", storeIds)
         : Promise.resolve({ data: [] })
     ]);
 
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
 
       // 프로필 아바타 결정
       const authorAvatar = isStorePost
-        ? (storeProfile!.image_url || writer?.avatar_url || null)
+        ? (storeProfile!.logo_url || storeProfile!.image_url || writer?.avatar_url || null)
         : (wrkProfile?.image_url || writer?.avatar_url || null);
 
       return {
@@ -139,11 +139,11 @@ export async function POST(req: NextRequest) {
     const { content, media_urls, media_type, employerProfileId } = body;
 
     // 매장 지정 시 본인 소유 매장인지 검증
-    let store: { id: string; business_name: string | null; image_url: string | null } | null = null;
+    let store: { id: string; business_name: string | null; logo_url: string | null; image_url: string | null } | null = null;
     if (employerProfileId) {
       const { data: ownedStore } = await supabaseAdmin
         .from("employer_profiles")
-        .select("id, business_name, image_url")
+        .select("id, business_name, logo_url, image_url")
         .eq("id", employerProfileId)
         .eq("user_id", user.id)
         .maybeSingle();
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
 
     if (store) {
       authorName = store.business_name || writer?.nickname || "매장";
-      authorAvatar = store.image_url || writer?.avatar_url || null;
+      authorAvatar = store.logo_url || store.image_url || writer?.avatar_url || null;
     } else {
       // 개인 글 — 닉네임 + 개인 아바타
       authorName = writer?.nickname || "알 수 없음";

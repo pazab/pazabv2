@@ -191,7 +191,7 @@ export default function JobDetailPage() {
     let data: Record<string, unknown> | null = null;
     // jobs 테이블 먼저 시도 (새 구조)
     const { data: jobRow } = await supabase.from("jobs")
-      .select("*, employer_profiles!inner(id, business_name, business_type, region, address, address_detail, image_url, image_urls, video_url, biz_reg_number, ceo_name, biz_tel, lat, lng)")
+      .select("*, employer_profiles!inner(id, business_name, business_type, region, address, address_detail, logo_url, image_url, image_urls, video_url, biz_reg_number, ceo_name, biz_tel, lat, lng)")
       .eq("id", id).maybeSingle();
     if (jobRow) {
       const ep = jobRow.employer_profiles as Record<string, unknown>;
@@ -428,7 +428,8 @@ export default function JobDetailPage() {
             {!!job.employer_profile_id && (
               <EntityLink
                 href={`/store/${job.employer_profile_id}`}
-                avatarUrl={String(job.image_url || (Array.isArray(job.image_urls) && job.image_urls[0]) || "")}
+                avatarUrl={String(job.logo_url || job.image_url || (Array.isArray(job.image_urls) && job.image_urls[0]) || "")}
+                avatarShape="square"
                 fallbackEmoji="🏪"
                 fallbackGradient="linear-gradient(135deg,#ec4899,#be185d)"
                 name={String(job.business_name || "")}

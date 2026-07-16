@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import InviteBottomSheet from "@/components/InviteBottomSheet";
+import ImageCropModal from "@/components/ImageCropModal";
 
 import AppHeader from "@/components/AppHeader";
 import { Suspense } from "react";
@@ -551,13 +552,33 @@ function MyPageContent() {
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [showNicknameConfirm, setShowNicknameConfirm] = useState(false);
-  const [avatarPreview, setAvatarPreview] = useState<{ file: File; previewUrl: string } | null>(null);
-  const [avatarConfirm, setAvatarConfirm] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [tempImageSrc, setTempImageSrc] = useState<string | null>(null);
   const [nicknameInput, setNicknameInput] = useState("");
   const [confirmModal, setConfirmModal] = useState<{
     title: string; desc: string; confirmLabel: string; confirmColor?: string; onConfirm: () => void;
   } | null>(null);
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    if (!user) return;
+    setAvatarUploading(true);
+    setTempImageSrc(null);
+    const path = `${user.id}.jpg`;
+    const file = new File([croppedBlob], `profile.jpg`, { type: "image/jpeg" });
+    const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true });
+    if (!error) {
+      const { data } = supabase.storage.from("media").getPublicUrl(path);
+      const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
+      await supabase.from("users").update({ avatar_url: avatarUrl }).eq("id", user.id);
+      await supabase.from("worker_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
+      await supabase.from("employer_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
+      setUser(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev);
+      setToastMsg("프로필 사진이 변경됐어요!");
+    } else {
+      alert("프로필 사진 업로드 실패: " + error.message);
+    }
+    setAvatarUploading(false);
+  };
 
   const [myWorkerProfile, setMyWorkerProfile] = useState<any>(null);
   const [myEmployerProfile, setMyEmployerProfile] = useState<any>(null);
@@ -1009,9 +1030,11 @@ function MyPageContent() {
               <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const previewUrl = URL.createObjectURL(file);
-                setAvatarPreview({ file, previewUrl });
-                setAvatarConfirm(true);
+                const reader = new FileReader();
+                reader.onload = () => {
+                  setTempImageSrc(reader.result as string);
+                };
+                reader.readAsDataURL(file);
                 e.target.value = "";
               }} />
                {(user as any).avatar_url ? (
@@ -1399,54 +1422,15 @@ function MyPageContent() {
           </div>
         )}
 
-        {/* 사진 변경 확인 모달 */}
-        {avatarPreview && avatarConfirm && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
-            <div style={{ ...modalSheet, maxWidth: 640, margin: "0 auto" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>프로필 사진을 변경할까요?</h3>
-              <div style={{ display: "flex", alignItems: "center", gap: 20, justifyContent: "center", margin: "16px 0 20px" }}>
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 6px" }}>현재</p>
-                  {(user as any)?.avatar_url
-                    ? <img src={(user as any).avatar_url} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--border)" }} />
-                    : <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>👤</div>
-                  }
-                </div>
-                <span style={{ fontSize: 20, color: "var(--text-muted)" }}>→</span>
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 6px" }}>새 사진</p>
-                  <img src={avatarPreview.previewUrl} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid #7c3aed" }} />
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { URL.revokeObjectURL(avatarPreview.previewUrl); setAvatarPreview(null); setAvatarConfirm(false); }} style={{ ...btnSecondary, flex: 1 }}>취소</button>
-                <button disabled={avatarUploading} onClick={async () => {
-                  if (!user) return;
-                  setAvatarUploading(true);
-                  const { file } = avatarPreview;
-                  const ext = file.name.split(".").pop();
-                  const path = `${user.id}.${ext}`;
-                  const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true });
-                  if (!error) {
-                    const { data } = supabase.storage.from("media").getPublicUrl(path);
-                    const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
-                    await supabase.from("users").update({ avatar_url: avatarUrl }).eq("id", user.id);
-                    await supabase.from("worker_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
-                    await supabase.from("employer_profiles").update({ image_url: avatarUrl }).eq("user_id", user.id);
-                    setUser(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev);
-                    setToastMsg("프로필 사진이 변경됐어요!");
-                  }
-                  URL.revokeObjectURL(avatarPreview.previewUrl);
-                  setAvatarPreview(null);
-                  setAvatarConfirm(false);
-                  setAvatarUploading(false);
-                }} style={{ ...btnPrimary, flex: 1, opacity: avatarUploading ? 0.6 : 1 }}>
-                  {avatarUploading ? "업로드 중..." : "확인"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+      {tempImageSrc && (
+        <ImageCropModal
+          imageSrc={tempImageSrc}
+          aspect={1}
+          isCircle={true}
+          onClose={() => setTempImageSrc(null)}
+          onCrop={handleCropComplete}
+        />
+      )}
 
         {/* 매칭 성사 모달 */}
       {/* 토스트 메시지 */}

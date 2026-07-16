@@ -251,7 +251,7 @@ export default function ChatListPage() {
                   {/* 아바타 */}
                   <div style={{ position: "relative", flexShrink: 0 }}>
                     <div style={{
-                      width: 50, height: 50, borderRadius: "50%",
+                      width: 50, height: 50, borderRadius: room.counterpartType === "employer" ? "8px" : "50%",
                       background: "linear-gradient(135deg, #f59e0b, #ef4444)",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: 22, overflow: "hidden",

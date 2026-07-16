@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
-import ImageCropperModal from "@/components/ImageCropperModal";
+import ImageCropModal from "@/components/ImageCropModal";
 
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
 
@@ -1667,7 +1667,15 @@ function EmployerRegisterContent() {
         </div>
       )}
       {cropperOpen && tempImageSrc && (
-        <ImageCropperModal imageSrc={tempImageSrc} onCrop={handleCropComplete} onClose={() => { setCropperOpen(false); setTempImageSrc(null); }} />
+        <ImageCropModal
+          imageSrc={tempImageSrc}
+          aspect={16 / 9}
+          onCrop={handleCropComplete}
+          onClose={() => {
+            setCropperOpen(false);
+            setTempImageSrc(null);
+          }}
+        />
       )}
     </main>
   );

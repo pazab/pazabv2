@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { modalOverlay, modalSheet, btnPrimary, btnSecondary, inputStyle } from "@/lib/styles";
+import ImageCropModal from "@/components/ImageCropModal";
 
 const BIZ_CATEGORIES = [
   { emoji: "🍽️", name: "식당/음식점" },
@@ -55,6 +56,8 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
   const [lat, setLat] = useState<number | null>(existingStore?.lat || null);
   const [lng, setLng] = useState<number | null>(existingStore?.lng || null);
   const [bizTel, setBizTel] = useState(existingStore?.biz_tel || "");
+  const [description, setDescription] = useState(existingStore?.description || "");
+  const [logoUrl, setLogoUrl] = useState<string | null>(existingStore?.logo_url || null);
   const [imageUrls, setImageUrls] = useState<string[]>(existingStore?.image_urls || (existingStore?.image_url ? [existingStore.image_url] : []));
   const [videoUrl, setVideoUrl] = useState<string | null>(existingStore?.video_url || null);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -63,7 +66,10 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
   const [error, setError] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [tempImage, setTempImage] = useState<{ src: string; aspect: number; type: "logo" | "cover" } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const logoFileRef = useRef<HTMLInputElement>(null);
 
   const handleNameSearch = async (val: string) => {
     setBizName(val);
@@ -117,12 +123,37 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
     document.head.appendChild(s);
   };
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
+  const uploadLogoBlob = async (blob: Blob) => {
+    setLogoUploading(true);
+    setError("");
+    const path = `employer/logos/${userId}_${Date.now()}.jpg`;
+    const { error: upErr } = await supabase.storage.from("media").upload(path, blob, { upsert: true });
+    if (upErr) {
+      setError("로고 업로드 실패: " + upErr.message);
+    } else {
+      const { data } = supabase.storage.from("media").getPublicUrl(path);
+      setLogoUrl(`${data.publicUrl}?t=${Date.now()}`);
+    }
+    setLogoUploading(false);
+  };
+
+  const uploadCoverBlob = async (blob: Blob) => {
     setUploading(true);
-    const isVideo = file.type.startsWith("video/");
+    setError("");
+    const path = `employer/${userId}_${Date.now()}.jpg`;
+    const { error: upErr } = await supabase.storage.from("media").upload(path, blob, { upsert: true });
+    if (upErr) {
+      setError("업로드 실패: " + upErr.message);
+    } else {
+      const { data } = supabase.storage.from("media").getPublicUrl(path);
+      setImageUrls(p => [...p.slice(0, 9), `${data.publicUrl}?t=${Date.now()}`]);
+    }
+    setUploading(false);
+  };
+
+  const uploadFileDirectly = async (file: File, isVideo: boolean) => {
+    setUploading(true);
+    setError("");
     const ext = file.name.split(".").pop() || "jpg";
     const path = `employer/${isVideo ? "videos/" : ""}${userId}_${Date.now()}.${ext}`;
     const { error: upErr } = await supabase.storage.from("media").upload(path, file, { upsert: true });
@@ -134,6 +165,33 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
       else setImageUrls(p => [...p.slice(0, 9), `${data.publicUrl}?t=${Date.now()}`]);
     }
     setUploading(false);
+  };
+
+  const handleLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setTempImage({ src: reader.result as string, aspect: 1, type: "logo" });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isVideo = file.type.startsWith("video/");
+    if (isVideo) {
+      uploadFileDirectly(file, true);
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setTempImage({ src: reader.result as string, aspect: 16 / 9, type: "cover" });
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = "";
   };
 
   const handleSave = async () => {
@@ -179,6 +237,8 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
       category_ids: categoryIds,
       lat, lng,
       biz_tel: bizTel,
+      description: description.trim(),
+      logo_url: logoUrl,
       image_url: imageUrls[0] || null,
       image_urls: imageUrls,
       video_url: videoUrl,
@@ -233,6 +293,39 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
         </div>
 
         <div style={{ padding: "20px 20px 0", display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* 매장 로고 */}
+          <div>
+            <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>🏪 매장 로고 (아바타용)</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ position: "relative", width: 68, height: 68, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {logoUrl ? (
+                  <img src={logoUrl} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: 24 }}>🏪</span>
+                )}
+                {logoUploading && (
+                  <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff" }}>업로드...</div>
+                )}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <input ref={logoFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleLogoFile} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button type="button" onClick={() => logoFileRef.current?.click()} disabled={logoUploading}
+                    style={{ ...btnSecondary, width: "auto", padding: "6px 12px", fontSize: 11 }}>
+                    사진 변경
+                  </button>
+                  {logoUrl && (
+                    <button type="button" onClick={() => setLogoUrl(null)}
+                      style={{ ...btnSecondary, width: "auto", padding: "6px 12px", fontSize: 11, color: "#f87171" }}>
+                      삭제
+                    </button>
+                  )}
+                </div>
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>채팅, 피드 아바타 등에 둥근 사각형으로 표시될 로고입니다.</span>
+              </div>
+            </div>
+          </div>
 
           {/* 상호명 */}
           <div style={{ position: "relative" }}>
@@ -309,9 +402,21 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
             <input value={bizTel} onChange={e => setBizTel(e.target.value)} placeholder="02-0000-0000" style={inputStyle} />
           </div>
 
+          {/* 설명(소개글) */}
+          <div>
+            <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>📝 매장 소개글 (선택)</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="매장 소개 및 안내 문구를 입력하세요."
+              rows={3}
+              style={{ ...inputStyle, resize: "none", height: "auto", padding: "10px 12px" }}
+            />
+          </div>
+
           {/* 미디어 */}
           <div>
-            <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>📸 매장 사진 / 영상 <span style={{ fontSize: 11, opacity: 0.6 }}>(사진 최대 10장, 영상 1개)</span></label>
+            <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>📸 매장 커버 및 홍보 사진 / 영상 <span style={{ fontSize: 11, opacity: 0.6 }}>(사진 최대 10장, 영상 1개)</span></label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
               {videoUrl && (
                 <div style={{ position: "relative", width: 80, height: 80, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
@@ -367,6 +472,22 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
             </div>
           </div>
         </div>
+      )}
+
+      {tempImage && (
+        <ImageCropModal
+          imageSrc={tempImage.src}
+          aspect={tempImage.aspect}
+          onClose={() => setTempImage(null)}
+          onCrop={async (blob) => {
+            setTempImage(null);
+            if (tempImage.type === "logo") {
+              await uploadLogoBlob(blob);
+            } else {
+              await uploadCoverBlob(blob);
+            }
+          }}
+        />
       )}
     </div>
   );

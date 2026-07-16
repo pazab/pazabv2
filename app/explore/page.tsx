@@ -199,7 +199,7 @@ function ExploreContent() {
   const loadRaw = async (mode: "worker" | "employer") => {
     if (mode === "worker") {
       const { data: rawJobs } = await supabase.from("jobs")
-        .select(`*, employer_profiles!inner(id, business_name, business_type, region, address, image_url, image_urls, video_url, is_deleted, lat, lng), users!jobs_user_id_fkey(avatar_url, real_name, nickname)`)
+        .select(`*, employer_profiles!inner(id, business_name, business_type, region, address, logo_url, image_url, image_urls, video_url, is_deleted, lat, lng), users!jobs_user_id_fkey(avatar_url, real_name, nickname)`)
         .eq("is_active", true)
         .eq("job_status", "active")
         .neq("job_type", "urgent")
@@ -630,11 +630,13 @@ function ExploreContent() {
                     if (storeId) { router.push(`/store/${storeId}`); setBottomSheet(null); }
                   } else {
                     const uid = String(bottomSheet.user_id || bottomSheet.id || "");
-                    if (uid) { router.push(`/worker/${uid}`); setBottomSheet(null); }
+                    if (uid) { router.push(`/profile/${uid}`); setBottomSheet(null); }
                   }
-                }} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: (viewMode === "worker" ? (bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) ? `url(${viewMode === "worker" ? (bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar}) center/cover` : "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
-                    {!(viewMode === "worker" ? (bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) && (viewMode === "worker" ? "🏪" : "👤")}
+                }}
+                 className="transition-all hover:opacity-80 active:scale-98 duration-150"
+                 style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: viewMode === "worker" ? "8px" : "50%", flexShrink: 0, background: (viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) ? `url(${viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar}) center/cover` : "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+                    {!(viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) && (viewMode === "worker" ? "🏪" : "👤")}
                   </div>
                   <div style={{ flex: 1 }}>
                     <h3 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 2px", letterSpacing: "-0.3px" }}>

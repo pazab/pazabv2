@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Suspense } from "react";
 import { cardStyle, btnPrimary, btnSecondary, toggleTrack, toggleThumb } from "@/lib/styles";
-import ImageCropperModal from "@/components/ImageCropperModal";
+import ImageCropModal from "@/components/ImageCropModal";
 import { REGIONS } from "@/lib/regions";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
 
@@ -1155,8 +1155,10 @@ function WorkerProfileContent() {
         )}
       </div>
       {cropperOpen && tempImageSrc && (
-        <ImageCropperModal
+        <ImageCropModal
           imageSrc={tempImageSrc}
+          aspect={1}
+          isCircle={true}
           onCrop={handleCropComplete}
           onClose={() => {
             setCropperOpen(false);
