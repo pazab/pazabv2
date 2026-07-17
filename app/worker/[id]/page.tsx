@@ -86,8 +86,11 @@ export default function WorkerDetailPage() {
   const [sent, setSent] = useState(false);
   const [existingMatch, setExistingMatch] = useState<Record<string, unknown> | null>(null);
   const [employerProfileId, setEmployerProfileId] = useState<string | null>(null);
+  const [employerProfiles, setEmployerProfiles] = useState<{ id: string; business_name: string }[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
+  const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [teamCompat, setTeamCompat] = useState<Record<string, unknown> | null>(null);
   const [isLiked, setIsLiked] = useState(false);
@@ -189,10 +192,15 @@ export default function WorkerDetailPage() {
     if (uid) {
       if (uid === id || role === "admin") setIsOwner(true);
 
-      const { data: empProfile } = await supabase.from("employer_profiles")
-        .select("id").eq("user_id", uid).eq("is_active", true)
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (empProfile) setEmployerProfileId(empProfile.id);
+      const { data: empProfiles } = await supabase.from("employer_profiles")
+        .select("id, business_name").eq("user_id", uid)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .not("business_name", "is", null)
+        .order("created_at", { ascending: false });
+      if (empProfiles && empProfiles.length > 0) {
+        setEmployerProfiles(empProfiles as { id: string; business_name: string }[]);
+        setEmployerProfileId(empProfiles[0].id);
+      }
 
       const { data: likeData } = await supabase.from("job_likes")
         .select("id").eq("user_id", uid).eq("target_id", id).eq("target_type", "worker").maybeSingle();
@@ -238,8 +246,7 @@ export default function WorkerDetailPage() {
 
   const handleLoveCall = async () => {
     if (!isLoggedIn || !userId) { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); return; }
-    if (existingMatch && (existingMatch.progress_status === "cancelled" || existingMatch.progress_status === "rejected")) { setShowConfirm(true); return; }
-    await sendLoveCall();
+    setShowConfirm(true);
   };
 
   const sendLoveCall = async () => {
@@ -247,9 +254,56 @@ export default function WorkerDetailPage() {
     try {
       const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: userId, workerId: id, matchScore: matchScore || 0, senderType: "employer", employerProfileId }) });
       const data = await res.json();
-      if (data.success) { setSent(true); setShowConfirm(false); }
-      else showToast(data.error || "오류가 발생했어요", "error");
-    } catch { showToast("오류가 발생했어요", "error"); }
+      if (data.success) {
+        setSent(true);
+        setShowConfirm(false);
+        setSuccessMatchId(data.data.id);
+      } else {
+        showToast(data.error || "오류가 발생했어요", "error");
+      }
+    } catch {
+      showToast("오류가 발생했어요", "error");
+    }
+    setSending(false);
+  };
+
+  const handleRespondDirect = async (action: "accept" | "reject") => {
+    if (!existingMatch || !userId) return;
+    const matchId = String(existingMatch.id);
+    setSending(true);
+    try {
+      const res = await fetch("/api/lovecall", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId, action }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (action === "accept") {
+          const counterpartId = existingMatch.employer_id === userId ? existingMatch.worker_id : existingMatch.employer_id;
+          await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              matchId,
+              senderId: userId,
+              receiverId: counterpartId,
+              message: "🎉 매칭이 성사됐어요! 서로 인사를 나눠보세요 😊",
+              messageType: "system",
+            }),
+          });
+          setExistingMatch(prev => prev ? { ...prev, progress_status: "accepted" } : null);
+          setMatchModal({ matchId });
+        } else {
+          setExistingMatch(prev => prev ? { ...prev, progress_status: "rejected" } : null);
+          showToast("제안을 거절했습니다.");
+        }
+      } else {
+        showToast(data.error || "오류가 발생했습니다.", "error");
+      }
+    } catch (e) {
+      showToast("오류가 발생했습니다.", "error");
+    }
     setSending(false);
   };
 
@@ -498,15 +552,24 @@ export default function WorkerDetailPage() {
             <span style={{ fontSize: 12 }}>{likeCount}</span>
           </button>
           {isOwner ? null : isReceived && status === "pending" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "default" }}>📥 지원 받음 · MY에서 수락/거절</button>
+            <div style={{ display: "flex", gap: 8, flex: 1 }}>
+              <button onClick={() => handleRespondDirect("reject")} disabled={sending}
+                style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                거절하기
+              </button>
+              <button onClick={() => handleRespondDirect("accept")} disabled={sending}
+                style={{ flex: 2, height: 52, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                수락하기
+              </button>
+            </div>
           ) : status === "sent" || status === "pending" ? (
             <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>📤 제안 완료 (수락 대기중)</button>
           ) : status === "accepted" ? (
             <button onClick={() => router.push(`/chat/${existingMatch?.id}`)} style={{ flex: 1, height: 52, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💬 대화 중 · 채팅방 가기</button>
           ) : status === "hired" ? (
             <button disabled style={{ flex: 1, height: 52, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fde68a", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>✅ 채용 완료</button>
-          ) : status === "rejected" ? (
-            <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 거절됨 · 다시 보내기</button>
+          ) : ["rejected", "failed", "cancelled"].includes(status) ? (
+            <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 결렬됨 · 다시 보내기</button>
           ) : (
             <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: isLoggedIn ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.08)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 15, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
               {sending ? "처리 중..." : isLoggedIn ? "채용 제안하기" : "로그인하고 채용 제안하기 →"}
@@ -519,11 +582,57 @@ export default function WorkerDetailPage() {
       {showConfirm && (
         <div style={{ ...modalOverlay }}>
           <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>다시 채용 제안하기</h3>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.progress_status === "rejected" ? "거절된 제안이에요. 다시 보낼까요?" : "이전에 취소한 제안이에요. 다시 보낼까요?"}</p>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>
+              {existingMatch && ["cancelled", "rejected", "failed"].includes(String(existingMatch.progress_status)) ? "재제안 확인" : "채용 제안 확인"}
+            </h3>
+            {existingMatch && ["cancelled", "rejected", "failed"].includes(String(existingMatch.progress_status)) && (
+              <p style={{ fontSize: 13, color: "#fbbf24", margin: "0 0 12px", lineHeight: 1.6, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 10, padding: "8px 12px" }}>
+                ⚠️ 이전에 매칭이 결렬된 이력이 있습니다. 다시 제안하시겠어요?
+              </p>
+            )}
+            {employerProfiles.length > 1 && (
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, margin: "0 0 8px" }}>어느 매장으로 제안할까요?</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {employerProfiles.map(ep => (
+                    <button key={ep.id} onClick={() => setEmployerProfileId(ep.id)}
+                      style={{ background: employerProfileId === ep.id ? "rgba(139,92,246,0.15)" : "var(--surface2)", border: `1px solid ${employerProfileId === ep.id ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", textAlign: "left", fontSize: 14, fontWeight: employerProfileId === ep.id ? 700 : 400, color: employerProfileId === ep.id ? "#c4b5fd" : "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span>{employerProfileId === ep.id ? "✅" : "🏪"}</span>
+                      {ep.business_name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {employerProfiles.length === 1 && (
+              <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px", lineHeight: 1.6 }}>
+                🏪 <strong style={{ color: "var(--text)" }}>{employerProfiles[0].business_name}</strong> 매장으로 채용 제안을 보냅니다.
+              </p>
+            )}
+            {employerProfiles.length === 0 && (
+              <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px", lineHeight: 1.6 }}>
+                이 알바생에게 채용 제안을 보내시겠습니까?
+              </p>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={sendLoveCall} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "보내기 →"}</button>
+              <button onClick={sendLoveCall} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "제안하기"}</button>
               <button onClick={() => setShowConfirm(false)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 제안 완료 모달 */}
+      {successMatchId && (
+        <div style={{ ...modalOverlay }}>
+          <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>제안 완료 🎉</h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
+              채용 제안이 정상적으로 완료되었으며 알바생에게 알림이 전송되었습니다.<br />
+              알바생이 제안을 수락하면 대화방이 열립니다.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setSuccessMatchId(null)} style={{ ...btnPrimary, flex: 1 }}>확인</button>
             </div>
           </div>
         </div>
@@ -574,6 +683,31 @@ export default function WorkerDetailPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {matchModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--surface)", borderRadius: 24, padding: 28, width: "100%", maxWidth: 360, textAlign: "center" }}>
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🎉</div>
+            <h3 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 8px", color: "var(--text)" }}>매칭 성사!</h3>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 24px", lineHeight: 1.6 }}>
+              본격적인 채팅 전에<br />AI 사전미팅으로 먼저 알아가볼까요? 😊
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
+                style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
+                🤖 AI 사전미팅 하기
+              </button>
+              <button onClick={() => { setMatchModal(null); router.push(`/chat/${matchModal.matchId}`); }}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>
+                💬 바로 채팅하기
+              </button>
+              <button onClick={() => setMatchModal(null)}
+                style={{ width: "100%", background: "none", border: "none", color: "var(--text-muted)", fontSize: 13, cursor: "pointer", padding: 8 }}>
+                나중에
+              </button>
+            </div>
           </div>
         </div>
       )}

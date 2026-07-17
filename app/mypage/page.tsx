@@ -50,6 +50,14 @@ const GRADE_INFO: Record<string, { label: string; emoji: string; color: string }
   platinum: { label: "플래티넘", emoji: "💎", color: "#60a5fa" },
 };
 
+const isVideoUrl = (url: string) => {
+  if (!url || typeof url !== "string") return false;
+  if (url.startsWith("data:video/")) return true;
+  const cleanUrl = url.split("?")[0].split("#")[0];
+  const ext = cleanUrl.split(".").pop()?.toLowerCase();
+  return ext ? ["mp4", "webm", "ogg", "mov", "avi", "mkv", "quicktime"].includes(ext) : false;
+};
+
 function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: string; trustScore: number; userType?: "worker" | "employer" | "both" }) {
   const [allBadges, setAllBadges] = useState<any[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
@@ -370,9 +378,9 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
   return (
     <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, marginBottom: 12 }}>
       <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>{title}
-        {calls.filter(lc => lc.status === "pending").length > 0 && (
+        {calls.filter(lc => (lc.progress_status || lc.status) === "pending").length > 0 && (
           <span style={{ marginLeft: 8, background: "#8b5cf6", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 20 }}>
-            {calls.filter(lc => lc.status === "pending").length}
+            {calls.filter(lc => (lc.progress_status || lc.status) === "pending").length}
           </span>
         )}
       </h3>
@@ -441,15 +449,15 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
               )}
 
               {/* 수락/거절 버튼 */}
-              {showRespond && lc.status === "pending" && (
+              {showRespond && (lc.progress_status || lc.status) === "pending" && (
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => onRespond(lc.id, "accept")} disabled={respondingId === lc.id}
-                    style={{ flex: 1, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 13 }}>
-                    ✓ 수락
-                  </button>
                   <button onClick={() => onRespond(lc.id, "reject")} disabled={respondingId === lc.id}
-                    style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 13 }}>
-                    ✗ 거절
+                    style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontWeight: 700, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+                    거절하기
+                  </button>
+                  <button onClick={() => onRespond(lc.id, "accept")} disabled={respondingId === lc.id}
+                    style={{ flex: 2, background: "linear-gradient(135deg,#8b5cf6,#7c3aed)", border: "none", color: "#fff", fontWeight: 800, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+                    {respondingId === lc.id ? "처리 중..." : "수락하기"}
                   </button>
                 </div>
               )}
@@ -582,8 +590,8 @@ function MyPageContent() {
 
   const [myWorkerProfile, setMyWorkerProfile] = useState<any>(null);
   const [myEmployerProfile, setMyEmployerProfile] = useState<any>(null);
-  const [showWorkerCalls, setShowWorkerCalls] = useState(false);
-  const [showEmployerCalls, setShowEmployerCalls] = useState(false);
+  const [showWorkerCalls, setShowWorkerCalls] = useState(true);
+  const [showEmployerCalls, setShowEmployerCalls] = useState(true);
 
   // 피드 및 북마크 탭 관련 상태
   const [myPosts, setMyPosts] = useState<any[]>([]);
@@ -597,6 +605,27 @@ function MyPageContent() {
 
   useEffect(() => { fetchUser(); }, []);
   useEffect(() => { if (user) loadResultsForType(viewType, user.id); }, [viewType]);
+
+  // 사장님: 알바생이 채용 제안 수락 시 실시간 팝업
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`match-accept-${userId}-${Date.now()}`)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "matches",
+        filter: `employer_id=eq.${userId}`,
+      }, (payload) => {
+        const updated = payload.new as Record<string, unknown>;
+        if (updated.progress_status === "accepted" && updated.employer_interest === true) {
+          setMatchModal({ matchId: String(updated.id) });
+          fetchLoveCalls(userId, "both");
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [userId]);
 
   const fetchUser = async () => {
     try {
@@ -1518,15 +1547,22 @@ function MyPageContent() {
                 {myPosts.map(post => (
                   <button key={post.id} onClick={() => handlePostClick(post)}
                     className="aspect-square bg-zinc-900 rounded-xl relative overflow-hidden group focus:outline-none border border-border/20">
-                    {post.media_type === "video" ? (
+                    {post.media_urls && post.media_urls[0] && isVideoUrl(post.media_urls[0]) ? (
                       <div className="w-full h-full relative">
-                        <video src={post.media_urls[0]} className="w-full h-full object-cover" />
+                        <video src={post.media_urls[0].includes("#") ? post.media_urls[0] : `${post.media_urls[0]}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover" />
                         <div className="absolute top-1.5 right-1.5 bg-black/60 w-5 h-5 rounded-full flex items-center justify-center">
                           <i className="ti ti-video text-white text-[10px]" aria-hidden="true" />
                         </div>
                       </div>
                     ) : (
-                      <img src={post.media_urls[0]} alt="my-post" className="w-full h-full object-cover" />
+                      <div className="w-full h-full relative">
+                        <img src={post.media_urls?.[0] || ""} alt="my-post" className="w-full h-full object-cover" />
+                        {post.media_urls && post.media_urls.length > 1 && (
+                          <div className="absolute top-1.5 right-1.5 bg-black/60 w-5 h-5 rounded-full flex items-center justify-center">
+                            <i className="ti ti-layers-difference text-white text-[10px]" aria-hidden="true" />
+                          </div>
+                        )}
+                      </div>
                     )}
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-2.5 text-xs font-bold text-white">
                       <span>❤️ {post.like_count || 0}</span>
@@ -1544,15 +1580,22 @@ function MyPageContent() {
                 {savedPosts.map(post => (
                   <button key={post.id} onClick={() => handlePostClick(post)}
                     className="aspect-square bg-zinc-900 rounded-xl relative overflow-hidden group focus:outline-none border border-border/20">
-                    {post.media_type === "video" ? (
+                    {post.media_urls && post.media_urls[0] && isVideoUrl(post.media_urls[0]) ? (
                       <div className="w-full h-full relative">
-                        <video src={post.media_urls[0]} className="w-full h-full object-cover" />
+                        <video src={post.media_urls[0].includes("#") ? post.media_urls[0] : `${post.media_urls[0]}#t=0.1`} preload="metadata" playsInline muted className="w-full h-full object-cover" />
                         <div className="absolute top-1.5 right-1.5 bg-black/60 w-5 h-5 rounded-full flex items-center justify-center">
                           <i className="ti ti-video text-white text-[10px]" aria-hidden="true" />
                         </div>
                       </div>
                     ) : (
-                      <img src={post.media_urls[0]} alt="saved-post" className="w-full h-full object-cover" />
+                      <div className="w-full h-full relative">
+                        <img src={post.media_urls?.[0] || ""} alt="saved-post" className="w-full h-full object-cover" />
+                        {post.media_urls && post.media_urls.length > 1 && (
+                          <div className="absolute top-1.5 right-1.5 bg-black/60 w-5 h-5 rounded-full flex items-center justify-center">
+                            <i className="ti ti-layers-difference text-white text-[10px]" aria-hidden="true" />
+                          </div>
+                        )}
+                      </div>
                     )}
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-2.5 text-xs font-bold text-white">
                       <span>❤️ {post.like_count || 0}</span>
@@ -1592,17 +1635,20 @@ function MyPageContent() {
               {/* 미디어 */}
               {selectedPost.media_urls && selectedPost.media_urls.length > 0 && (
                 <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
-                  {selectedPost.media_type === "video" ? (
-                    <video src={selectedPost.media_urls[0]} controls playsInline className="w-full h-full object-contain" />
-                  ) : (
-                    <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
-                      {selectedPost.media_urls.map((url: string, idx: number) => (
-                        <div key={idx} className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center">
-                          <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
+                  <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
+                    {selectedPost.media_urls.map((url: string, idx: number) => {
+                      const isVid = isVideoUrl(url);
+                      return (
+                        <div key={idx} className="w-full h-full flex-shrink-0 snap-start flex items-center justify-center relative bg-black">
+                          {isVid ? (
+                            <video src={url} controls playsInline className="w-full h-full object-contain" />
+                          ) : (
+                            <img src={url} alt={`media-${idx}`} className="w-full h-full object-contain" />
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 

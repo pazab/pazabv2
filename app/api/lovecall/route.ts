@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createNotification } from "@/lib/notify";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,6 +62,86 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    try {
+      const { data: workerUser } = await supabase.from("users").select("nickname, real_name").eq("id", workerId).maybeSingle();
+      const workerName = workerUser?.nickname || workerUser?.real_name || "알바생";
+
+      let businessName = "매장";
+      if (employerProfileId) {
+        const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", employerProfileId).maybeSingle();
+        if (ep?.business_name) businessName = ep.business_name;
+      } else if (jobId) {
+        const { data: jobRow } = await supabase
+          .from("jobs")
+          .select("employer_profiles(business_name)")
+          .eq("id", jobId)
+          .maybeSingle();
+        if (jobRow?.employer_profiles && (jobRow.employer_profiles as any).business_name) {
+          businessName = (jobRow.employer_profiles as any).business_name;
+        }
+      }
+
+      if (senderType === "worker") {
+        // Insert system message for worker applying
+        await supabase.from("chats").insert({
+          match_id: data.id,
+          sender_id: workerId,
+          receiver_id: employerId,
+          message: `📤 ${workerName}님이 ${businessName} 매장에 지원했습니다. 사장님의 수락을 기다려주세요.`,
+          message_type: "system",
+          is_read: false,
+        });
+
+        await createNotification({
+          userId: employerId,
+          type: "lovecall",
+          title: `📥 새 지원서 도착 (${businessName})`,
+          body: `💡 ${workerName}님이 매장에 지원했습니다. 지금 확인해보세요!`,
+          url: `/worker/${workerId}`,
+          data: { matchId: data.id }
+        });
+        await createNotification({
+          userId: workerId,
+          type: "lovecall",
+          title: `📤 지원 완료 (${businessName})`,
+          body: `✨ ${businessName} 매장에 지원이 완료되었습니다. 사장님의 답변을 기다려주세요.`,
+          url: `/mypage`,
+          data: { matchId: data.id }
+        });
+      } else {
+        // Insert system message for employer proposing
+        await supabase.from("chats").insert({
+          match_id: data.id,
+          sender_id: employerId,
+          receiver_id: workerId,
+          message: `💌 ${businessName} 사장님이 ${workerName}님에게 채용 제안을 보냈습니다.`,
+          message_type: "system",
+          is_read: false,
+        });
+
+        const targetUrl = employerProfileId ? `/store/${employerProfileId}` : jobId ? `/job/${jobId}` : `/mypage`;
+        await createNotification({
+          userId: workerId,
+          type: "lovecall",
+          title: `📥 채용 제안 도착 (${businessName})`,
+          body: `💌 ${businessName} 사장님이 채용 제안을 보냈습니다!`,
+          url: targetUrl,
+          data: { matchId: data.id }
+        });
+        await createNotification({
+          userId: employerId,
+          type: "lovecall",
+          title: `📤 채용 제안 완료 (${workerName}님)`,
+          body: `✨ ${workerName}님에게 채용 제안을 정상적으로 보냈습니다.`,
+          url: `/mypage`,
+          data: { matchId: data.id }
+        });
+      }
+    } catch (err) {
+      console.error("[lovecall notify error]", err);
+    }
+
     return NextResponse.json({ data, success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message, success: false }, { status: 500 });
@@ -87,9 +168,9 @@ export async function GET(req: NextRequest) {
     const workerMatches = (workerRes.data || []).map(m => ({ ...m, _myRole: "worker" }));
     const employerMatches = (employerRes.data || []).map(m => ({ ...m, _myRole: "employer" }));
 
-    // 중복 제거 및 초대로 생성된 매칭(job_id와 daeta_posting_id 둘 다 null)은 러브콜 목록에서 제외
+    // 중복 제거 및 초대로 생성된 매칭(job_id/daeta_posting_id 없고 interest도 없음)은 러브콜 목록에서 제외
     const all = [...workerMatches, ...employerMatches]
-      .filter(m => m.job_id || m.daeta_posting_id)
+      .filter(m => m.job_id || m.daeta_posting_id || m.employer_interest || m.worker_interest)
       .filter(
         (m, i, arr) => arr.findIndex(x => x.id === m.id) === i
       );
@@ -240,23 +321,7 @@ export async function PATCH(req: NextRequest) {
             }
           }
 
-          // 이전 매칭 있었는지 확인
-          const { data: prevMatches } = await supabase.from("matches")
-            .select("id").eq("employer_id", acceptMatchData.employer_id)
-            .eq("worker_id", acceptMatchData.worker_id)
-            .neq("id", matchId);
-          
-          if (prevMatches?.length) {
-            // 이전 매칭 있으면 새 매칭 시작 시스템 메시지
-            await supabase.from("chats").insert({
-              match_id: matchId,
-              sender_id: acceptMatchData.employer_id,
-              receiver_id: acceptMatchData.worker_id,
-              message: "🎉 새 매칭이 시작됐어요! 이전 대화에 이어서 진행해요 😊",
-              message_type: "system",
-              is_read: false,
-            });
-          }
+
 
           // 알바생: 해당 공고만 matched (active 상태인 것 중 최신 1개)
           const { data: workerProfiles } = await supabase.from("worker_profiles")
@@ -274,6 +339,27 @@ export async function PATCH(req: NextRequest) {
               .order("created_at", { ascending: false }).limit(1).maybeSingle();
             if (latestJob?.id) await supabase.from("jobs").update({ job_status: "matched" }).eq("id", latestJob.id);
           }
+
+          // 사장님에게 수락 알림 발송
+          try {
+            const { data: workerUser } = await supabase.from("users").select("nickname, real_name").eq("id", acceptMatchData.worker_id).maybeSingle();
+            const workerName = workerUser?.nickname || workerUser?.real_name || "알바생";
+            let businessName = "매장";
+            if (acceptMatchData.employer_profile_id) {
+              const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", acceptMatchData.employer_profile_id).maybeSingle();
+              if (ep?.business_name) businessName = ep.business_name;
+            }
+            await createNotification({
+              userId: acceptMatchData.employer_id,
+              type: "lovecall",
+              title: `🎉 채용 제안 수락! (${businessName})`,
+              body: `✨ ${workerName}님이 채용 제안을 수락했어요! 지금 채팅을 시작해보세요.`,
+              url: `/chat/${matchId}`,
+              data: { matchId }
+            });
+          } catch (err) {
+            console.error("[accept notify error]", err);
+          }
         }
         break;
       case "reject":
@@ -283,7 +369,7 @@ export async function PATCH(req: NextRequest) {
         updateData.progress_status = "cancelled";
         const { data: cancelMatchData } = await supabase
           .from("matches")
-          .select("worker_id, employer_id, employer_profile_id, job_id")
+          .select("worker_id, employer_id, employer_profile_id, job_id, initiated_by")
           .eq("id", matchId).single();
         if (cancelMatchData) {
           await supabase.from("worker_profiles")
@@ -296,6 +382,88 @@ export async function PATCH(req: NextRequest) {
               .eq("employer_profile_id", cancelMatchData.employer_profile_id)
               .order("created_at", { ascending: false }).limit(1).maybeSingle();
             if (latestJob?.id) await supabase.from("jobs").update({ job_status: "active", is_active: true }).eq("id", latestJob.id);
+          }
+
+          // Send cancellation notifications
+          try {
+            const { data: workerUser } = await supabase.from("users").select("nickname, real_name").eq("id", cancelMatchData.worker_id).maybeSingle();
+            const workerName = workerUser?.nickname || workerUser?.real_name || "알바생";
+
+            let businessName = "매장";
+            if (cancelMatchData.employer_profile_id) {
+              const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", cancelMatchData.employer_profile_id).maybeSingle();
+              if (ep?.business_name) businessName = ep.business_name;
+            }
+
+            const isWorkerCancelling = cancelMatchData.initiated_by === cancelMatchData.worker_id;
+
+            if (isWorkerCancelling) {
+              await createNotification({
+                userId: cancelMatchData.employer_id,
+                type: "lovecall",
+                title: `🚫 지원 취소 (${businessName})`,
+                body: `💡 ${workerName}님이 매장 지원을 취소했습니다.`,
+                url: `/mypage`,
+                data: { matchId }
+              });
+            } else {
+              await createNotification({
+                userId: cancelMatchData.worker_id,
+                type: "lovecall",
+                title: `🚫 채용 제안 취소 (${businessName})`,
+                body: `💌 ${businessName} 사장님이 채용 제안을 취소했습니다.`,
+                url: `/mypage`,
+                data: { matchId }
+              });
+            }
+          } catch (err) {
+            console.error("[cancel notify error]", err);
+          }
+        }
+        break;
+      case "hire_reject":
+        updateData.progress_status = "failed";
+        updateData.hire_confirmed_by_employer = false;
+        
+        const { data: hireRejectMatch } = await supabase.from("matches")
+          .select("worker_id, employer_id, employer_profile_id, job_id")
+          .eq("id", matchId).single();
+          
+        if (hireRejectMatch) {
+          await supabase.from("worker_profiles")
+            .update({ job_status: "active", is_active: true })
+            .eq("user_id", hireRejectMatch.worker_id);
+            
+          if (hireRejectMatch.job_id) {
+            await supabase.from("jobs").update({ job_status: "active", is_active: true }).eq("id", hireRejectMatch.job_id);
+          } else if (hireRejectMatch.employer_profile_id) {
+            const { data: latestJob } = await supabase.from("jobs").select("id")
+              .eq("employer_profile_id", hireRejectMatch.employer_profile_id)
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (latestJob?.id) await supabase.from("jobs").update({ job_status: "active", is_active: true }).eq("id", latestJob.id);
+          }
+
+          // Send rejection notification to employer
+          try {
+            const { data: workerUser } = await supabase.from("users").select("nickname, real_name").eq("id", hireRejectMatch.worker_id).maybeSingle();
+            const workerName = workerUser?.nickname || workerUser?.real_name || "알바생";
+
+            let businessName = "매장";
+            if (hireRejectMatch.employer_profile_id) {
+              const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", hireRejectMatch.employer_profile_id).maybeSingle();
+              if (ep?.business_name) businessName = ep.business_name;
+            }
+
+            await createNotification({
+              userId: hireRejectMatch.employer_id,
+              type: "lovecall",
+              title: `💔 채용 거절 (${businessName})`,
+              body: `💡 ${workerName}님이 채용 제안을 거절했습니다.`,
+              url: `/mypage`,
+              data: { matchId }
+            });
+          } catch (err) {
+            console.error("[hire_reject notify error]", err);
           }
         }
         break;

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { EntityLink } from "@/components/EntityLink";
 import StoreRegisterModal from "@/components/StoreRegisterModal";
+import { useToast } from "@/lib/useToast";
 
 interface StoreInfo {
   id: string;
@@ -63,6 +64,9 @@ export default function StoreHomePage() {
   const [followerCount, setFollowerCount] = useState(0);
   const [followBusy, setFollowBusy] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [pendingOffer, setPendingOffer] = useState<{ id: string; employer_id: string } | null>(null);
+  const [offerSending, setOfferSending] = useState(false);
+  const { showToast, ToastUI } = useToast();
 
   // 상세 라이트박스
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
@@ -137,9 +141,59 @@ export default function StoreHomePage() {
         .eq("user_id", uid)
         .maybeSingle();
       setFollowing(!!myFollow);
+
+      // 이 매장에서 나(알바생)에게 보낸 pending 채용 제안 확인
+      const { data: offerMatch } = await supabase
+        .from("matches")
+        .select("id, employer_id")
+        .eq("employer_profile_id", storeId)
+        .eq("worker_id", uid)
+        .eq("employer_interest", true)
+        .eq("progress_status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setPendingOffer(offerMatch ?? null);
     }
 
     setLoading(false);
+  };
+
+  const handleRespondOffer = async (action: "accept" | "reject") => {
+    if (!pendingOffer || !myId) return;
+    setOfferSending(true);
+    try {
+      const res = await fetch("/api/lovecall", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: pendingOffer.id, action }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (action === "accept") {
+          await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              matchId: pendingOffer.id,
+              senderId: myId,
+              receiverId: pendingOffer.employer_id,
+              message: "🎉 매칭이 성사됐어요! 서로 인사를 나눠보세요 😊",
+              messageType: "system",
+            }),
+          });
+          router.push(`/chat/${pendingOffer.id}`);
+        } else {
+          showToast("제안을 거절했습니다.");
+          setPendingOffer(null);
+        }
+      } else {
+        showToast(data.error || "오류가 발생했어요", "error");
+      }
+    } catch {
+      showToast("오류가 발생했어요", "error");
+    }
+    setOfferSending(false);
   };
 
   const toggleFollow = async () => {
@@ -602,6 +656,26 @@ export default function StoreHomePage() {
           </div>
         </div>
       )}
+
+      {/* 채용 제안 수락/거절 하단 고정 바 */}
+      {pendingOffer && (
+        <div style={{ position: "fixed", bottom: 81, left: 0, right: 0, padding: "12px 16px", background: "rgba(18,18,22,0.97)", backdropFilter: "blur(16px)", borderTop: "1px solid rgba(139,92,246,0.3)", zIndex: 40 }}>
+          <div style={{ maxWidth: 480, margin: "0 auto" }}>
+            <p style={{ fontSize: 12, color: "#c4b5fd", fontWeight: 700, margin: "0 0 8px", textAlign: "center" }}>💌 이 매장에서 채용 제안을 보냈어요!</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => handleRespondOffer("reject")} disabled={offerSending}
+                style={{ flex: 1, height: 50, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>
+                거절하기
+              </button>
+              <button onClick={() => handleRespondOffer("accept")} disabled={offerSending}
+                style={{ flex: 2, height: 50, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>
+                {offerSending ? "처리 중..." : "수락하기 →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {ToastUI}
 
       {showEditModal && (
         <StoreRegisterModal

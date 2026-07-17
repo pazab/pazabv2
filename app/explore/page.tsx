@@ -8,6 +8,7 @@ import { getMatchLevel } from "@/lib/utils";
 import AppHeader from "@/components/AppHeader";
 import { getGrade } from "@/lib/trustScore";
 import { JobCard, CardProps } from "@/components/JobCard";
+import { modalOverlay, modalSheet, btnPrimary, btnSecondary } from "@/lib/styles";
 
 const SORT_OPTIONS = [
   { key: "추천순", icon: "✦" },
@@ -74,6 +75,15 @@ function ExploreContent() {
   const [fabScrolled, setFabScrolled] = useState(false);
   const [userType, setUserType] = useState<string | null>(null);
   const [showAllSection, setShowAllSection] = useState<string | null>(null);
+  const [matches, setMatches] = useState<any[]>([]);
+  const [myEmployerProfile, setMyEmployerProfile] = useState<any | null>(null);
+  const [myEmployerProfiles, setMyEmployerProfiles] = useState<{ id: string; business_name: string }[]>([]);
+  const [selectedEmployerProfileId, setSelectedEmployerProfileId] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmItem, setConfirmItem] = useState<any | null>(null);
+  const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
+  const [hasWorkerProfile, setHasWorkerProfile] = useState(false);
 
   interface SheetItem {
     id?: string; user_id?: string; image_url?: string;
@@ -164,11 +174,19 @@ function ExploreContent() {
       setShowBothTabs(true);
       const mode = (typeParam as "worker" | "employer") || "worker";
       setViewMode(mode);
-      const [{ data: wps }, { data: eps }] = await Promise.all([
+      const [{ data: wps }, { data: eps }, { data: matchesData }] = await Promise.all([
         supabase.from("worker_profiles").select("desired_region").eq("user_id", uid).order("created_at", { ascending: false }).limit(1),
-        supabase.from("employer_profiles").select("region").eq("user_id", uid).order("created_at", { ascending: false }).limit(1),
+        supabase.from("employer_profiles").select("id, region, business_name, user_id").eq("user_id", uid).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null).order("created_at", { ascending: false }),
+        supabase.from("matches").select("id, job_id, employer_id, worker_id, employer_profile_id, progress_status, employer_interest, worker_interest, initiated_by").or(`worker_id.eq.${uid},employer_id.eq.${uid}`).order("created_at", { ascending: false }),
       ]);
       setMyRegion(String(wps?.[0]?.desired_region || eps?.[0]?.region || ""));
+      if (matchesData) setMatches(matchesData);
+      setHasWorkerProfile(!!(wps && wps.length > 0));
+      if (eps && eps.length > 0) {
+        setMyEmployerProfile(eps[0]);
+        setMyEmployerProfiles(eps as { id: string; business_name: string }[]);
+        setSelectedEmployerProfileId(eps[0].id);
+      }
       await fetchItems(mode, uid);
     } else {
       setShowBothTabs(true);
@@ -182,8 +200,12 @@ function ExploreContent() {
     isFetching.current = true;
     try {
       if (uid) {
-        const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: uid, userType: mode }) });
-        const data = await res.json();
+        const [matchRes, matchFetchRes] = await Promise.all([
+          supabase.from("matches").select("id, job_id, employer_id, worker_id, employer_profile_id, progress_status, employer_interest, worker_interest, initiated_by").or(`worker_id.eq.${uid},employer_id.eq.${uid}`).order("created_at", { ascending: false }),
+          fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: uid, userType: mode }) })
+        ]);
+        if (matchRes.data) setMatches(matchRes.data);
+        const data = await matchFetchRes.json();
         if (data.success && data.results?.length > 0) {
           setAllItems(data.results);
           setLikedIds(new Set<string>(data.results.filter((r: Record<string, unknown>) => r.is_liked).map((r: Record<string, unknown>) => String(r.id || r.user_id))));
@@ -192,7 +214,10 @@ function ExploreContent() {
         }
       }
       await loadRaw(mode);
-    } catch { await loadRaw(mode); }
+    } catch (e) {
+      console.error(e);
+      await loadRaw(mode);
+    }
     isFetching.current = false;
   }, []);
 
@@ -244,7 +269,94 @@ function ExploreContent() {
 
   const handleLovecall = async (targetId: string) => {
     if (!userId) { router.push("/login"); return; }
-    router.push(`${viewMode === "worker" ? `/job/${targetId}` : `/worker/${targetId}`}?action=lovecall`);
+    const item = allItems.find(x => String(x.id || x.user_id) === targetId);
+    if (item) {
+      setConfirmItem(item);
+      setShowConfirm(true);
+    }
+  };
+
+  const sendLovecallDirect = async () => {
+    if (!confirmItem || !userId) return;
+    setSending(true);
+    try {
+      const targetId = String(confirmItem.id || confirmItem.user_id);
+      const matchScore = confirmItem.match_score || 0;
+      
+      if (viewMode === "worker") {
+        if (!hasWorkerProfile) {
+          try {
+            const { data: u } = await supabase.from("users").select("nickname, real_name").eq("id", userId).single();
+            const profileName = u?.nickname || u?.real_name || "알바생";
+            const { error: insertErr } = await supabase.from("worker_profiles").insert({
+              user_id: userId,
+              name: profileName,
+              is_active: true,
+              is_public: true,
+              desired_region: "협의",
+              desired_type: "기타",
+              worker_type: "묵묵수행형"
+            });
+            if (!insertErr) {
+              setHasWorkerProfile(true);
+            }
+          } catch (err) {
+            console.error("자동 프로필 생성 오류:", err);
+          }
+        }
+        
+        const employerId = confirmItem.user_id;
+        const res = await fetch("/api/lovecall", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employerId,
+            workerId: userId,
+            matchScore,
+            senderType: "worker",
+            employerProfileId: confirmItem.employer_profile_id ?? confirmItem.id,
+            jobId: confirmItem.id
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setShowConfirm(false);
+          setBottomSheet(null);
+          setSuccessMatchId(data.data.id);
+          const { data: updatedMatches } = await supabase.from("matches").select("id, job_id, employer_id, worker_id, employer_profile_id, progress_status, employer_interest, worker_interest, initiated_by").or(`worker_id.eq.${userId},employer_id.eq.${userId}`).order("created_at", { ascending: false });
+          if (updatedMatches) setMatches(updatedMatches);
+        } else {
+          alert(data.error || "오류가 발생했어요");
+        }
+      } else {
+        const workerId = targetId;
+        const res = await fetch("/api/lovecall", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employerId: userId,
+            workerId,
+            matchScore,
+            senderType: "employer",
+            employerProfileId: selectedEmployerProfileId || myEmployerProfile?.id || null
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setShowConfirm(false);
+          setBottomSheet(null);
+          setSuccessMatchId(data.data.id);
+          const { data: updatedMatches } = await supabase.from("matches").select("id, job_id, employer_id, worker_id, employer_profile_id, progress_status, employer_interest, worker_interest, initiated_by").or(`worker_id.eq.${userId},employer_id.eq.${userId}`).order("created_at", { ascending: false });
+          if (updatedMatches) setMatches(updatedMatches);
+        } else {
+          alert(data.error || "오류가 발생했어요");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert("오류가 발생했어요");
+    }
+    setSending(false);
   };
 
   const filtered = allItems.filter(item => {
@@ -381,29 +493,63 @@ function ExploreContent() {
   const sectionData: Record<string, typeof sorted> = { top: topSectionItems, all: sorted };
   const fullSection = showAllSection ? (sectionData[showAllSection] || sorted) : null;
 
-  const cardProps = (item: Record<string, unknown>): CardProps => ({
-    item, mode: viewMode, isLoggedIn, myRegion,
-    isOwner: !!userId && userId === String(item.user_id || ""),
-    onLike: handleLike, onLovecall: handleLovecall, likedIds,
-    onEdit: (id) => {
-      if (viewMode === "worker") router.push(`/employer/register?profileId=${id}&return=/explore`);
-      else router.push(`/worker/profile?edit=true&profileId=${id}&return=/explore`);
-    },
-    onDelete: (id) => {
-      if (viewMode === "worker") fetch("/api/job/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: id }) }).then(() => setAllItems(prev => prev.filter(i => String(i.id) !== id)));
-      else fetch("/api/worker/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: id }) }).then(() => setAllItems(prev => prev.filter(i => String(i.user_id) !== id)));
-    },
-    onClick: () => {
-      setBottomSheet(item as SheetItem);
-      const targetId = String(item.id || item.user_id);
-      const targetType = viewMode === "worker" ? "employer" : "worker";
-      const viewKey = `viewed_${targetType}_${targetId}`;
-      if (!sessionStorage.getItem(viewKey)) {
-        sessionStorage.setItem(viewKey, "1");
-        fetch("/api/views", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetId, targetType }) }).catch(() => {});
-      }
-    },
-  });
+  const getMatchInfo = (item: Record<string, any> | null) => {
+    if (!userId || !item || !matches || matches.length === 0) return null;
+    const itemId = String(item.id || item.user_id || "");
+    if (viewMode === "worker") {
+      const m = matches.find(x => 
+        String(x.worker_id) === String(userId) && 
+        (String(x.job_id) === itemId || String(x.employer_profile_id) === String(item.employer_profile_id || item.id))
+      );
+      if (!m) return null;
+      return {
+        status: m.progress_status,
+        isSent: m.initiated_by === userId || (m.worker_interest === true && m.initiated_by == null),
+        id: m.id
+      };
+    } else {
+      const m = matches.find(x => 
+        String(x.employer_id) === String(userId) && 
+        String(x.worker_id) === itemId
+      );
+      if (!m) return null;
+      return {
+        status: m.progress_status,
+        isSent: m.initiated_by === userId || (m.employer_interest === true && m.initiated_by == null),
+        id: m.id
+      };
+    }
+  };
+
+  const cardProps = (item: Record<string, unknown>): CardProps => {
+    const matchInfo = getMatchInfo(item);
+    return {
+      item, mode: viewMode, isLoggedIn, myRegion,
+      isOwner: !!userId && userId === String(item.user_id || ""),
+      onLike: handleLike, onLovecall: handleLovecall, likedIds,
+      matchStatus: matchInfo?.status,
+      matchIsSent: matchInfo?.isSent,
+      matchId: matchInfo?.id,
+      onEdit: (id) => {
+        if (viewMode === "worker") router.push(`/employer/register?profileId=${id}&return=/explore`);
+        else router.push(`/worker/profile?edit=true&profileId=${id}&return=/explore`);
+      },
+      onDelete: (id) => {
+        if (viewMode === "worker") fetch("/api/job/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: id }) }).then(() => setAllItems(prev => prev.filter(i => String(i.id) !== id)));
+        else fetch("/api/worker/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: id }) }).then(() => setAllItems(prev => prev.filter(i => String(i.user_id) !== id)));
+      },
+      onClick: () => {
+        setBottomSheet(item as SheetItem);
+        const targetId = String(item.id || item.user_id);
+        const targetType = viewMode === "worker" ? "employer" : "worker";
+        const viewKey = `viewed_${targetType}_${targetId}`;
+        if (!sessionStorage.getItem(viewKey)) {
+          sessionStorage.setItem(viewKey, "1");
+          fetch("/api/views", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetId, targetType }) }).catch(() => {});
+        }
+      },
+    };
+  };
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 90 }}>
@@ -681,16 +827,129 @@ function ExploreContent() {
                 if (!tags.length && !bottomSheet.meal_provided) return null;
                 return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>{tags.map((t: string) => <span key={t} style={{ fontSize: 11, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#c4b5fd", padding: "4px 10px", borderRadius: 20 }}>#{t}</span>)}{!!bottomSheet.meal_provided && <span style={{ fontSize: 11, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", padding: "4px 10px", borderRadius: 20 }}>🍱 식사 제공</span>}</div>;
               })()}
+              {(() => {
+                const matchInfo = getMatchInfo(bottomSheet);
+                return (
+                  <div style={{ display: "flex", gap: 8, width: "100%" }}>
+                    <button onClick={() => { const id = String(bottomSheet.id || bottomSheet.user_id); router.push(viewMode === "worker" ? `/job/${id}` : `/worker/${id}`); }} className="btn-bottomsheet-secondary">상세보기 →</button>
+                    {!isLoggedIn ? (
+                      <button onClick={() => router.push("/login")} className="btn-bottomsheet-login">🔒 로그인하고 지원하기</button>
+                    ) : matchInfo ? (
+                      matchInfo.status === "pending" ? (
+                        matchInfo.isSent ? (
+                          <button disabled style={{ flex: 1, height: 48, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "default" }}>
+                            {viewMode === "worker" ? "📤 지원 완료 (수락 대기중)" : "📤 제안 완료 (수락 대기중)"}
+                          </button>
+                        ) : (
+                          <button onClick={() => { router.push(`/chat/${matchInfo.id}`); setBottomSheet(null); }} style={{ flex: 1, height: 48, background: viewMode === "worker" ? "rgba(236,72,153,0.15)" : "rgba(139,92,246,0.15)", border: viewMode === "worker" ? "1px solid rgba(236,72,153,0.3)" : "1px solid rgba(139,92,246,0.3)", color: viewMode === "worker" ? "#fbcfe8" : "#c4b5fd", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
+                            {viewMode === "worker" ? "📥 제안 받음 · 채팅방 가기" : "📥 지원 받음 · 채팅방 가기"}
+                          </button>
+                        )
+                      ) : matchInfo.status === "accepted" || matchInfo.status === "interviewing" ? (
+                        <button onClick={() => { router.push(`/chat/${matchInfo.id}`); setBottomSheet(null); }} style={{ flex: 1, height: 48, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
+                          💬 대화 중 · 채팅방 가기
+                        </button>
+                      ) : matchInfo.status === "hired" ? (
+                        <button disabled style={{ flex: 1, height: 48, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fde68a", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "default" }}>
+                          ✅ 채용 완료
+                        </button>
+                      ) : (
+                        <button onClick={() => handleLovecall(String(bottomSheet.id || bottomSheet.user_id))} className={`btn-bottomsheet-primary ${viewMode}`}>
+                          {viewMode === "worker" ? "지원하기" : "채용 제안하기"}
+                        </button>
+                      )
+                    ) : (
+                      <button onClick={() => handleLovecall(String(bottomSheet.id || bottomSheet.user_id))} className={`btn-bottomsheet-primary ${viewMode}`}>
+                        {viewMode === "worker" ? "지원하기" : "채용 제안하기"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 지원/제안 확인 모달 */}
+      {showConfirm && confirmItem && (() => {
+        const hasHistory = (() => {
+          if (viewMode === "worker") {
+            return matches.some(m => 
+              (m.job_id === confirmItem.id || m.employer_profile_id === (confirmItem.employer_profile_id || confirmItem.id)) &&
+              ["cancelled", "rejected", "failed"].includes(m.progress_status)
+            );
+          } else {
+            const targetWorkerId = confirmItem.user_id || confirmItem.id;
+            return matches.some(m => 
+              m.worker_id === targetWorkerId &&
+              ["cancelled", "rejected", "failed"].includes(m.progress_status)
+            );
+          }
+        })();
+
+        return (
+          <div style={{ ...modalOverlay }}>
+            <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>
+                {hasHistory 
+                  ? (viewMode === "worker" ? "재지원 확인" : "재제안 확인")
+                  : (viewMode === "worker" ? "지원 확인" : "채용 제안 확인")}
+              </h3>
+              {hasHistory && (
+                <p style={{ fontSize: 13, color: "#fbbf24", margin: "0 0 12px", lineHeight: 1.6, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 10, padding: "8px 12px" }}>
+                  ⚠️ {viewMode === "worker"
+                    ? `이전에 [${confirmItem.business_name || "매장"}]과 매칭이 결렬된 이력이 있습니다.`
+                    : `이전에 [${confirmItem.worker_name || confirmItem.name || "알바생"}]님과 매칭이 결렬된 이력이 있습니다.`}
+                </p>
+              )}
+              {viewMode === "employer" && myEmployerProfiles.length > 1 && (
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, margin: "0 0 8px" }}>어느 매장으로 제안할까요?</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {myEmployerProfiles.map(ep => (
+                      <button key={ep.id} onClick={() => setSelectedEmployerProfileId(ep.id)}
+                        style={{ background: selectedEmployerProfileId === ep.id ? "rgba(139,92,246,0.15)" : "var(--surface2)", border: `1px solid ${selectedEmployerProfileId === ep.id ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", textAlign: "left", fontSize: 14, fontWeight: selectedEmployerProfileId === ep.id ? 700 : 400, color: selectedEmployerProfileId === ep.id ? "#c4b5fd" : "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
+                        <span>{selectedEmployerProfileId === ep.id ? "✅" : "🏪"}</span>
+                        {ep.business_name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {viewMode === "employer" && myEmployerProfiles.length === 1 && (
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px", lineHeight: 1.6 }}>
+                  🏪 <strong style={{ color: "var(--text)" }}>{myEmployerProfiles[0].business_name}</strong> 매장으로 채용 제안을 보냅니다.
+                </p>
+              )}
+              {viewMode === "worker" && (
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px", lineHeight: 1.6 }}>
+                  {hasHistory ? "다시 지원서를 보내시겠습니까?" : `[${confirmItem.business_name || "매장"}]에 지원서를 보내시겠습니까?`}
+                </p>
+              )}
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { const id = String(bottomSheet.id || bottomSheet.user_id); router.push(viewMode === "worker" ? `/job/${id}` : `/worker/${id}`); }} className="btn-bottomsheet-secondary">상세보기 →</button>
-                {isLoggedIn ? (
-                  <button onClick={() => { handleLovecall(String(bottomSheet.id || bottomSheet.user_id)); setBottomSheet(null); }} className={`btn-bottomsheet-primary ${viewMode}`}>
-                    {viewMode === "worker" ? "지원하기" : "채용 제안하기"}
-                  </button>
-                ) : (
-                  <button onClick={() => router.push("/login")} className="btn-bottomsheet-login">🔒 로그인하고 지원하기</button>
-                )}
+                <button onClick={sendLovecallDirect} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "보내기"}</button>
+                <button onClick={() => setShowConfirm(false)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 지원/제안 완료 모달 */}
+      {successMatchId && (
+        <div style={{ ...modalOverlay }}>
+          <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>
+              {viewMode === "worker" ? "지원 완료 🎉" : "제안 완료 🎉"}
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+              {viewMode === "worker"
+                ? "지원이 정상적으로 완료되었으며 사장님께 알림이 전송되었습니다.\n상대방이 지원을 수락하면 대화방이 열립니다."
+                : "채용 제안이 정상적으로 완료되었으며 알바생에게 알림이 전송되었습니다.\n상대방이 제안을 수락하면 대화방이 열립니다."}
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setSuccessMatchId(null)} style={{ ...btnPrimary, flex: 1 }}>확인</button>
             </div>
           </div>
         </div>
