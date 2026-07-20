@@ -4,11 +4,12 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
+import { fetchMinWage } from "@/lib/minWage";
 
 interface DaetaRegisterModalProps {
   userId: string;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (postingId?: string) => void;
   postingId?: string | null;
 }
 
@@ -78,8 +79,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const [endHour, setEndHour] = useState("18");
   const [endMin, setEndMin] = useState("00");
   const [wage, setWage] = useState("11000"); // 기본 추천 우대 시급
+  const [wageTouched, setWageTouched] = useState(false); // 사장님이 직접 수정하면 자동 할증 제안 중단
+  const [urgentPct, setUrgentPct] = useState({ sameDay: 20, h3: 30 }); // DB daeta_sos_config에서 로드
+  const [minWage, setMinWage] = useState(10030);
+  const [wageHint, setWageHint] = useState("");
   const [duty, setDuty] = useState("");
   const [secureOption, setSecureOption] = useState(false); // 사장님 안심 옵션 수수료 동의
+  const [allowNew, setAllowNew] = useState(false); // 🔵 신규(Tier2) 알바생에게도 노출 opt-in
 
   // 자격 요건 마스터 및 선택 상태
   const [credentialsMaster, setCredentialsMaster] = useState<any[]>([]);
@@ -101,12 +107,55 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
 
   useEffect(() => {
     loadCredentials();
+    loadWageConfig();
     if (postingId) {
       loadPostingDetails(postingId);
     } else {
       checkEmployerProfile();
     }
   }, [postingId, userId]);
+
+  const loadWageConfig = async () => {
+    const mw = await fetchMinWage();
+    setMinWage(mw);
+    const { data } = await supabase
+      .from("daeta_sos_config")
+      .select("key, value")
+      .in("key", ["urgent_pct_same_day", "urgent_pct_3h"]);
+    if (data) {
+      const map: Record<string, number> = {};
+      data.forEach((r: { key: string; value: number }) => { map[r.key] = r.value; });
+      setUrgentPct({ sameDay: map.urgent_pct_same_day ?? 20, h3: map.urgent_pct_3h ?? 30 });
+    }
+  };
+
+  // 긴급 할증 시급 기본값 제안 (당일 +20%, 3시간 내 +30%) — 사장님이 직접 수정하면 중단
+  useEffect(() => {
+    if (!workDate) { setWageHint(""); return; }
+    const start = new Date(`${workDate}T${startHour}:${startMin}:00`);
+    const hoursUntil = (start.getTime() - Date.now()) / 3600000;
+    const isSameDay = workDate === new Date().toISOString().split("T")[0];
+
+    let pct = 0;
+    let label = "";
+    if (hoursUntil <= 3 && hoursUntil > -1) {
+      pct = urgentPct.h3;
+      label = `⚡ 3시간 내 초긴급 — 할증 +${pct}% 추천 시급 적용`;
+    } else if (isSameDay) {
+      pct = urgentPct.sameDay;
+      label = `🔥 당일 긴급 — 할증 +${pct}% 추천 시급 적용`;
+    }
+
+    if (pct > 0) {
+      setWageHint(label);
+      if (!wageTouched) {
+        const suggested = Math.ceil((minWage * (1 + pct / 100)) / 10) * 10;
+        setWage(String(suggested));
+      }
+    } else {
+      setWageHint("");
+    }
+  }, [workDate, startHour, startMin, urgentPct, minWage, wageTouched]);
 
   const loadPostingDetails = async (id: string) => {
     setLoading(true);
@@ -131,8 +180,10 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
           setEndMin(endParts[1] || "00");
         }
         setWage(String(data.wage || 10030));
+        setWageTouched(true); // 수정 모드에서는 저장된 시급 유지
         setDuty(data.duty || "");
         setSecureOption(data.secure_option || false);
+        setAllowNew(!!data.allow_new);
         if (data.required_credentials) {
           const parsed = typeof data.required_credentials === "string"
             ? JSON.parse(data.required_credentials)
@@ -372,6 +423,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         wage: finalWage,
         duty: finalDuty,
         secure_option: secureOption,
+        allow_new: allowNew,
         status: "pending",
         expires_at: expiresAt,
         required_credentials: JSON.stringify(selectedCreds),
@@ -386,17 +438,23 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
             wage: finalWage,
             duty: finalDuty,
             secure_option: secureOption,
+            allow_new: allowNew,
             required_credentials: JSON.stringify(selectedCreds),
           })
           .eq("id", postingId);
         if (error) throw error;
         showToast("⚡ 대타 공고가 성공적으로 수정되었습니다!");
+        setTimeout(() => onSuccess(postingId), 1500);
       } else {
-        const { error } = await supabase.from("daeta_postings").insert(insertData);
+        const { data: inserted, error } = await supabase
+          .from("daeta_postings")
+          .insert(insertData)
+          .select("id")
+          .single();
         if (error) throw error;
-        showToast("⚡ 긴급 대타 공고가 성공적으로 등록되었습니다!");
+        showToast("⚡ SOS 발동! 우리 팀에게 가장 먼저 알릴게요");
+        setTimeout(() => onSuccess(inserted?.id), 1500);
       }
-      setTimeout(onSuccess, 1500);
     } catch (err: any) {
       console.error(err);
       setErrMsg("대타 공고 등록에 실패했습니다: " + err.message);
@@ -620,11 +678,14 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                 <div>
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>💰 제시 시급 *</label>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="number" value={wage} onChange={e => setWage(e.target.value)}
-                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                    <input type="number" value={wage} onChange={e => { setWage(e.target.value); setWageTouched(true); }}
+                      style={{ flex: 1, background: "var(--surface2)", border: wageHint ? "1px solid rgba(251,146,60,0.5)" : "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
                     <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>원/시간</span>
                   </div>
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginTop: 4 }}>* 최저시급(10,030원) 이상. 대타는 우대 시급(11,000원 이상)이 매칭율이 높습니다.</span>
+                  {wageHint && (
+                    <span style={{ fontSize: 11, color: "#fb923c", fontWeight: 700, display: "block", marginTop: 4 }}>{wageHint}</span>
+                  )}
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginTop: 4 }}>* 최저시급({minWage.toLocaleString()}원) 이상. 급한 대타일수록 할증 시급이 매칭율을 크게 높여요.</span>
                 </div>
 
                 {/* 업종 및 담당 업무 선택 */}
@@ -864,6 +925,22 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                     )}
                   </div>
                 )}
+
+                {/* 신규(Tier2) 알바생 노출 opt-in — STRATEGY.md §4 */}
+                <div style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.18)", borderRadius: 14, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <input type="checkbox" id="allowNewCheck" checked={allowNew} onChange={e => setAllowNew(e.target.checked)}
+                      style={{ width: 20, height: 20, cursor: "pointer", marginTop: 2, flexShrink: 0 }} />
+                    <div>
+                      <label htmlFor="allowNewCheck" style={{ fontSize: 13, fontWeight: 800, color: "#93c5fd", cursor: "pointer", display: "block", marginBottom: 4 }}>
+                        🔵 신규 알바생에게도 열기
+                      </label>
+                      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.5, display: "block" }}>
+                        기본은 ✅검증된 인력(팀 이력·대타 이력 보유)에게 먼저 공개돼요. 체크하면 검증 인력이 응답하지 않을 때 신규 알바생에게도 순차 공개됩니다.
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
                 {/* 안심 보장 수수료 옵션 */}
                 <div style={{ background: "rgba(236,72,153,0.06)", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "12px 14px", marginTop: 4 }}>

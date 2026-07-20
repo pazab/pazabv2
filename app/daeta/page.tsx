@@ -6,6 +6,10 @@ import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
+import DaetaSosHome from "@/components/daeta/DaetaSosHome";
+import DaetaWorkerHome from "@/components/daeta/DaetaWorkerHome";
+import TierBadge from "@/components/TierBadge";
+import { getWorkerTiers, DaetaTier } from "@/lib/daetaTier";
 import { useToast } from "@/lib/useToast";
 
 const FALLBACK_BASE = { lat: 37.5665, lng: 126.9780 };
@@ -41,6 +45,7 @@ interface Candidate {
   bg: string;
   accent: string;
   badge: string;
+  tier: DaetaTier;
   imageUrl?: string;
   videoUrl?: string;
 }
@@ -71,6 +76,10 @@ async function getDbBase(userId: string): Promise<{ lat: number; lng: number; so
 
 export default function DaetaPage() {
   const router = useRouter();
+
+  // SOS 홈 우선 구조 (DESIGN_PLAN.md P1): 로그인 유저는 역할별 홈, 카드덱은 "직접 고르기" 보조 경로
+  const [view, setView] = useState<"boot" | "home" | "deck">("boot");
+  const [roleView, setRoleView] = useState<"employer" | "worker">("worker"); // userType이 both일 때 전환용
 
   // "ask" = GPS 허용 요청 화면, "loading" = 매칭 중, "feed" = 피드
   const [step, setStep] = useState<"ask" | "loading" | "feed">("ask");
@@ -219,60 +228,78 @@ export default function DaetaPage() {
     });
   };
 
+  // 카드덱(직접 고르기) 진입 시 위치 기반 후보 로드
+  async function startDeckFlow() {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Check if we have a saved localStorage GPS mode first
+    const savedMode = localStorage.getItem("daeta_gps_mode");
+    if (savedMode === "gps") {
+      setStep("loading");
+      const pos = await new Promise<GeolocationPosition | null>(resolve => {
+        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), { timeout: 6000 });
+      });
+      if (pos) {
+        await loadCandidates({ lat: pos.coords.latitude, lng: pos.coords.longitude }, "GPS");
+        return;
+      }
+    } else if (savedMode === "no_gps") {
+      const savedLat = localStorage.getItem("daeta_custom_lat");
+      const savedLng = localStorage.getItem("daeta_custom_lng");
+      const savedSource = localStorage.getItem("daeta_custom_source") || "기본값";
+      if (savedLat && savedLng) {
+        setStep("loading");
+        await loadCandidates({ lat: parseFloat(savedLat), lng: parseFloat(savedLng) }, savedSource);
+        return;
+      }
+    }
+
+    // 디폴트 매칭 기준점 로드 시도 (등록한 매장 주소)
+    setStep("loading");
+    if (user) {
+      const db = await getDbBase(user.id);
+      if (db) {
+        await loadCandidates(db, db.source);
+        return;
+      }
+    }
+
+    // 매장 정보가 없거나 비로그인인 경우 GPS 선택 화면 노출
+    setStep("ask");
+  }
+
   useEffect(() => {
-    async function initLocationAndUser() {
+    async function initUser() {
       const { data: { user } } = await supabase.auth.getUser();
-      let userTypeTemp = "worker";
-      let isEmployerTemp = false;
 
       if (user) {
         setCurrentUserId(user.id);
         const { data } = await supabase.from("users").select("user_type").eq("id", user.id).single();
-        userTypeTemp = data?.user_type || "worker";
+        const userTypeTemp = data?.user_type || "worker";
         setUserType(userTypeTemp);
-        if (userTypeTemp === "employer" || userTypeTemp === "both") {
-          isEmployerTemp = true;
-          setIsEmployer(true);
-        }
+        const employer = userTypeTemp === "employer" || userTypeTemp === "both";
+        if (employer) setIsEmployer(true);
+        setRoleView(employer ? "employer" : "worker");
+        setView("home"); // 로그인 유저는 역할별 SOS 홈이 기본
+        return;
       }
 
-      // Check if we have a saved localStorage GPS mode first
-      const savedMode = localStorage.getItem("daeta_gps_mode");
-      if (savedMode === "gps") {
-        setStep("loading");
-        const pos = await new Promise<GeolocationPosition | null>(resolve => {
-          navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), { timeout: 6000 });
-        });
-        if (pos) {
-          await loadCandidates({ lat: pos.coords.latitude, lng: pos.coords.longitude }, "GPS");
-          return;
-        }
-      } else if (savedMode === "no_gps") {
-        const savedLat = localStorage.getItem("daeta_custom_lat");
-        const savedLng = localStorage.getItem("daeta_custom_lng");
-        const savedSource = localStorage.getItem("daeta_custom_source") || "기본값";
-        if (savedLat && savedLng) {
-          setStep("loading");
-          await loadCandidates({ lat: parseFloat(savedLat), lng: parseFloat(savedLng) }, savedSource);
-          return;
-        }
-      }
-
-      // 디폴트 매칭 기준점 로드 시도 (등록한 매장 주소)
-      setStep("loading");
-      if (user) {
-        const db = await getDbBase(user.id);
-        if (db) {
-          await loadCandidates(db, db.source);
-          return;
-        }
-      }
-      
-      // 매장 정보가 없거나 비로그인/알바인 경우 GPS 선택 화면 노출
-      setStep("ask");
+      // 비로그인 → 기존 카드덱 탐색 흐름
+      setView("deck");
+      await startDeckFlow();
     }
-    initLocationAndUser();
+    initUser();
   }, []);
+
+  const openDeck = () => {
+    setView("deck");
+    startDeckFlow();
+  };
+
+  const backToHome = () => {
+    if (currentUserId) setView("home");
+    else router.back();
+  };
 
   useEffect(() => {
     setShowVideo(false);
@@ -375,6 +402,10 @@ export default function DaetaPage() {
       return reqCreds.every(req => workerCreds.some((wc: any) => wc.name === req.name));
     });
 
+    // 2-Tier 판정 (Tier1 ✅검증 상단 우선 — STRATEGY.md §4)
+    const workerIds = [...new Set(matchedData.map((wp: any) => wp.user_id as string))];
+    const tierMap = await getWorkerTiers(supabase, workerIds);
+
     const list: Candidate[] = matchedData
       .map((p: any, i: number) => {
         const user = p.users;
@@ -399,11 +430,14 @@ export default function DaetaPage() {
           bg: BG_LIST[i % BG_LIST.length],
           accent: ACCENT_LIST[i % ACCENT_LIST.length],
           badge: `AI ${i + 1}순위`,
+          tier: tierMap[p.user_id] || "tier2",
           imageUrl,
           videoUrl,
         };
       })
       .sort((a: any, b: any) => {
+        // Tier1(검증) 항상 상단, 그 안에서 거리→신뢰점수
+        if (a.tier !== b.tier) return a.tier === "tier1" ? -1 : 1;
         if (Math.abs(a.distNum - b.distNum) < 0.5) return b.score - a.score;
         return a.distNum - b.distNum;
       })
@@ -444,13 +478,48 @@ export default function DaetaPage() {
     return () => window.removeEventListener("keydown", handler);
   }, [index, candidates.length]);
 
+  // ── 부팅 중 ──
+  if (view === "boot") return (
+    <div style={{ position: "fixed", inset: 0, background: "var(--bg, #0a0a0f)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg, #f97316, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, animation: "pulse 1.5s ease-in-out infinite" }}>⚡</div>
+      <style>{`@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }`}</style>
+    </div>
+  );
+
+  // ── 역할별 SOS 홈 (로그인 유저 기본 화면) ──
+  if (view === "home" && currentUserId) {
+    return (
+      <>
+        {userType === "both" && (
+          <div style={{ position: "fixed", top: 62, left: "50%", transform: "translateX(-50%)", zIndex: 40, display: "flex", background: "rgba(24,24,27,0.92)", backdropFilter: "blur(12px)", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 20, padding: 3 }}>
+            {(["employer", "worker"] as const).map(r => (
+              <button key={r} onClick={() => setRoleView(r)}
+                style={{
+                  padding: "6px 14px", borderRadius: 17, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  background: roleView === r ? "linear-gradient(135deg, #f97316, #ef4444)" : "none",
+                  color: roleView === r ? "#fff" : "rgba(255,255,255,0.5)",
+                }}>
+                {r === "employer" ? "🏪 사장님" : "👤 알바생"}
+              </button>
+            ))}
+          </div>
+        )}
+        {roleView === "employer" ? (
+          <DaetaSosHome userId={currentUserId} userType={userType} onOpenDeck={openDeck} />
+        ) : (
+          <DaetaWorkerHome userId={currentUserId} />
+        )}
+      </>
+    );
+  }
+
   // ── GPS 허용 요청 화면 ──
   if (step === "ask") return (
     <div style={{ position: "fixed", inset: 0, background: "#0a0a0f", display: "flex", flexDirection: "column" }}>
       {/* 배경 그라디언트 */}
       <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 30%, #1a1060 0%, transparent 65%)", pointerEvents: "none" }} />
       <div style={{ position: "relative", zIndex: 2 }}>
-        <AppHeader showBack title="대타" showBellAndMenu />
+        <AppHeader showBack onBack={backToHome} title="대타" showBellAndMenu />
       </div>
 
       {/* 중앙 콘텐츠 */}
@@ -568,7 +637,7 @@ export default function DaetaPage() {
   // ── 로딩 ──
   if (step === "loading") return (
     <div style={{ position: "fixed", inset: 0, background: "#0a0a0f", display: "flex", flexDirection: "column" }}>
-      <AppHeader showBack title="대타" showBellAndMenu />
+      <AppHeader showBack onBack={backToHome} title="대타" showBellAndMenu />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
       <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, #8b5cf6, #ec4899)", display: "flex", alignItems: "center", justifyContent: "center", animation: "pulse 1.5s ease-in-out infinite" }}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M12 21s-8-7.5-8-12a8 8 0 1 1 16 0c0 4.5-8 12-8 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
@@ -583,7 +652,7 @@ export default function DaetaPage() {
   // ── 결과 없음 ──
   if (!c) return (
     <div style={{ position: "fixed", inset: 0, background: "#0a0a0f", display: "flex", flexDirection: "column" }}>
-      <AppHeader showBack title="대타" showBellAndMenu />
+      <AppHeader showBack onBack={backToHome} title="대타" showBellAndMenu />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
         <div style={{ fontSize: 40 }}>😅</div>
         <div style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>현재 근처에 대타 가능한 인원이 없어요</div>
@@ -689,6 +758,7 @@ export default function DaetaPage() {
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
         <AppHeader
           showBack
+          onBack={backToHome}
           title="대타"
           showBellAndMenu
           rightActions={
@@ -810,10 +880,11 @@ export default function DaetaPage() {
 
       {/* 콘텐츠 */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "60px 20px 36px", position: "relative", zIndex: 5 }}>
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: c.accent, background: `${c.accent}22`, border: `1px solid ${c.accent}55`, padding: "5px 12px", borderRadius: 20 }}>
             {c.badge}
           </span>
+          <TierBadge tier={c.tier} size="md" />
         </div>
 
         <div style={{ marginBottom: 8 }}>
@@ -978,35 +1049,25 @@ export default function DaetaPage() {
             setShowRegisterModal(false);
             setEditingPostingId(null);
           }}
-          onSuccess={() => {
+          onSuccess={async (newPostingId) => {
+            const wasEditing = !!editingPostingId;
             setShowRegisterModal(false);
             setEditingPostingId(null);
+            // 신규 등록이면 SOS 에스컬레이션 발동 (팀 내 → 동네 Tier1)
+            if (!wasEditing && newPostingId) {
+              try {
+                await fetch("/api/daeta/sos", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ postingId: newPostingId }),
+                });
+              } catch (e) {
+                console.error("SOS 발동 실패:", e);
+              }
+            }
             startWithoutGps();
           }}
         />
-      )}
-
-      {pendingConfirm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
-          <div style={{ background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: 24, width: "100%", maxWidth: 430, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "#fff" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 8px" }}>{pendingConfirm.title}</h3>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{pendingConfirm.message}</p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={pendingConfirm.onConfirm}
-                style={{ flex: 2, padding: "14px", background: "linear-gradient(135deg, #ef4444, #dc2626)", border: "none", borderRadius: 14, color: "#fff", fontWeight: 700, cursor: "pointer" }}
-              >
-                확인
-              </button>
-              <button
-                onClick={() => setPendingConfirm(null)}
-                style={{ flex: 1, padding: "14px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, color: "var(--text-muted)", fontWeight: 700, cursor: "pointer" }}
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {pendingConfirm && (

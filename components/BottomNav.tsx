@@ -65,7 +65,8 @@ export default function BottomNav() {
       });
 
       const checkUpdates = async () => {
-        const since = new Date(Date.now() - 8000).toISOString();
+        if (document.hidden) return; // 백그라운드 탭에서는 폴링 정지
+        const since = new Date(Date.now() - 35000).toISOString();
 
         // 새 지원/채용제안 받은 것 (pending)
         const { data: newPending } = await supabase
@@ -101,7 +102,8 @@ export default function BottomNav() {
         });
       };
 
-      interval = setInterval(checkUpdates, 5000);
+      // 채팅 뱃지는 Realtime이 담당 — 매칭 토스트만 저빈도 폴링 (P5: 5초→30초)
+      interval = setInterval(checkUpdates, 30000);
     };
     startPolling();
     return () => { if (interval) clearInterval(interval); };
@@ -218,10 +220,10 @@ export default function BottomNav() {
   };
 
   if (isHiddenPath || !isLoggedIn) return null;
+  // DESIGN_PLAN.md P4 확정형: [홈][대타⚡중앙][채팅][MY] 4탭 — 탐색·피드는 ⋮ 메뉴로 강등
   const tabs = [
-    { icon: "ti-compass", label: "탐색", path: "/explore", active: pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
-    { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta") },
-    { icon: "ti-calendar-event", label: "근태", path: "/myteam", active: pathname.startsWith("/myteam"), center: true },
+    { icon: "ti-home", label: "홈", path: "/myteam", active: pathname === "/" || pathname.startsWith("/myteam") || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
+    { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta"), center: true },
     { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat"), badge: unreadCount },
     { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];
@@ -230,7 +232,7 @@ export default function BottomNav() {
     <>
       {/* 토스트 알림 */}
       {toast && (
-        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "rgba(24,24,27,0.97)", border: "1px solid var(--border)", color: "#fff", fontSize: 13, padding: "12px 20px", borderRadius: 20, zIndex: 300, whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,0.4)", maxWidth: "90vw", textAlign: "center" }}>
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "var(--nav-bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 13, padding: "12px 20px", borderRadius: 20, zIndex: 300, whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,0.4)", maxWidth: "90vw", textAlign: "center" }}>
           {toast}
         </div>
       )}
@@ -267,10 +269,10 @@ export default function BottomNav() {
         transform: hidden ? "translateY(100%)" : "translateY(0)",
         transition: "transform 0.3s ease",
         display: "flex", justifyContent: "center",
-        background: "rgba(24,24,27,0.96)",
+        background: "var(--nav-bg)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
-        borderTop: "1px solid var(--border)",
+        borderTop: "1px solid var(--nav-border)",
       }}>
         <div style={{ width: "100%", maxWidth: 480 }}>
           <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", padding: "8px 4px calc(8px + env(safe-area-inset-bottom))" }}>
@@ -281,17 +283,17 @@ export default function BottomNav() {
                   style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", position: "relative", padding: "0 10px", marginBottom: 10, marginTop: -20, flexShrink: 0 }}>
                   <div style={{
                     width: 54, height: 54, borderRadius: "50%",
-                    background: "linear-gradient(135deg, #7c3aed, #ec4899)",
+                    background: "linear-gradient(135deg, #f97316, #ef4444)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     boxShadow: tab.active
-                      ? "0 0 0 3px rgba(139,92,246,0.35), 0 6px 20px rgba(139,92,246,0.5)"
-                      : "0 4px 16px rgba(139,92,246,0.4)",
-                    border: "3px solid rgba(24,24,27,0.96)",
+                      ? "0 0 0 3px rgba(249,115,22,0.35), 0 6px 20px rgba(249,115,22,0.5)"
+                      : "0 4px 16px rgba(249,115,22,0.4)",
+                    border: "3px solid var(--nav-bg)",
                     transition: "box-shadow 0.2s",
                   }}>
                     <i className={`ti ${tab.icon}`} style={{ fontSize: 24, color: "#fff" }} aria-hidden="true" />
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: tab.active ? "#c4b5fd" : "#8b5cf6" }}>{tab.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: tab.active ? "#fdba74" : "#fb923c" }}>{tab.label}</span>
                 </button>
               ) : (
                 <button key={tab.label} onClick={() => handleTabClick(tab.path)}
@@ -299,14 +301,14 @@ export default function BottomNav() {
                   {/* 상단 액티브 인디케이터 바 */}
                   <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: tab.active ? 20 : 0, height: 2, borderRadius: 2, background: "linear-gradient(90deg, #8b5cf6, #ec4899)", transition: "width 0.25s ease" }} />
                   <div style={{ position: "relative" }}>
-                    <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#a78bfa" : "#52525b", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
+                    <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#a78bfa" : "var(--text-muted)", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
                     {(tab as any).badge > 0 && (
-                      <span style={{ position: "absolute", top: -3, right: -8, background: "linear-gradient(135deg, #ec4899, #f43f5e)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 10, minWidth: 16, textAlign: "center", border: "1.5px solid rgba(24,24,27,0.96)" }}>
+                      <span style={{ position: "absolute", top: -3, right: -8, background: "linear-gradient(135deg, #ec4899, #f43f5e)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 10, minWidth: 16, textAlign: "center", border: "1.5px solid var(--nav-bg)" }}>
                         {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
                       </span>
                     )}
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: tab.active ? 700 : 500, color: tab.active ? "#a78bfa" : "#52525b", transition: "color 0.2s" }}>{tab.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: tab.active ? 700 : 500, color: tab.active ? "#a78bfa" : "var(--text-muted)", transition: "color 0.2s" }}>{tab.label}</span>
                 </button>
               );
             })}

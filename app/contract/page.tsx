@@ -398,6 +398,7 @@ function ContractContent() {
 
   const loadInit = async () => {
     const { data: { user } } = await supabase.auth.getUser();
+    let capturedEps: any[] = [];
     if (user) {
       setMyUserId(user.id);
       await fetchPrevContract(user.id);
@@ -427,26 +428,27 @@ function ContractContent() {
         }
       }
       if (finalEps && finalEps.length > 0) {
+        capturedEps = finalEps;
         setMyEps(finalEps);
         setSelEp(finalEps[0]);
         applyEpToForm(finalEps[0], user.id, null);
       }
     }
-    if (memberId) await loadByMember();
-    else if (matchId) await load();
+    if (memberId) await loadByMember(capturedEps);
+    else if (matchId) await load(capturedEps);
     else setLoading(false);
   };
 
-  const load = async () => {
+  const load = async (availableEps: any[] = []) => {
     const { data: cur } = await supabase.from("matches")
-      .select("employer_id, worker_id").eq("id", matchId).single();
+      .select("employer_id, worker_id, job_id").eq("id", matchId).single();
     if (!cur) {
       setLoading(false);
       return;
     }
 
     const { data: all } = await supabase.from("matches")
-      .select("id, employer_id, worker_id, employer_profile_id, created_at, matched_at")
+      .select("id, employer_id, worker_id, employer_profile_id, job_id, created_at, matched_at")
       .eq("employer_id", cur.employer_id).eq("worker_id", cur.worker_id)
       .eq("progress_status", "hired").order("created_at", { ascending: false });
 
@@ -457,10 +459,17 @@ function ContractContent() {
           .select("business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
           .eq("id", m.employer_profile_id).maybeSingle();
         ep = data;
-        const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
-          .eq("employer_profile_id", m.employer_profile_id)
-          .order("created_at", { ascending: false }).limit(1).maybeSingle();
-        if (job) ep = { ...ep, ...job };
+        // job_id 있으면 해당 공고 조건 우선 사용, 없으면 최신 공고로 폴백
+        if (m.job_id) {
+          const { data: specificJob } = await supabase.from("jobs").select("wage, work_days, work_hours")
+            .eq("id", m.job_id).maybeSingle();
+          if (specificJob) ep = { ...ep, ...specificJob };
+        } else {
+          const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
+            .eq("employer_profile_id", m.employer_profile_id)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (job) ep = { ...ep, ...job };
+        }
       }
       if (!ep) {
         const { data: epData } = await supabase.from("employer_profiles")
@@ -486,6 +495,11 @@ function ContractContent() {
     if (cur2) {
       initF(cur2, eu.data, wu.data);
       await fetchPrevContract(cur.employer_id, cur2.employer_profile_id);
+      // 해당 매치의 employer_profile_id에 맞는 ep 칩 자동 선택
+      if (cur2.employer_profile_id && availableEps.length > 0) {
+        const matchingEp = availableEps.find((e: any) => e.id === cur2.employer_profile_id);
+        if (matchingEp) setSelEp(matchingEp);
+      }
     }
 
     if (mode === "update" && matchId) {
@@ -522,7 +536,7 @@ function ContractContent() {
     setLoading(false);
   };
 
-  const loadByMember = async () => {
+  const loadByMember = async (availableEps: any[] = []) => {
     const { data: tm } = await supabase
       .from("team_members")
       .select("id, match_id, employer_id, worker_id, employer_profile_id, wage, work_days, work_hours, member_role, status, hire_date")
@@ -583,6 +597,12 @@ function ContractContent() {
     setMatches([memberAsMatch]);
     initF(memberAsMatch, eu.data, wu.data);
     await fetchPrevContract(tm.employer_id, tm.employer_profile_id);
+
+    // 해당 팀원의 employer_profile_id에 맞는 ep 칩 자동 선택
+    if (tm.employer_profile_id && availableEps.length > 0) {
+      const matchingEp = availableEps.find((e: any) => e.id === tm.employer_profile_id);
+      if (matchingEp) setSelEp(matchingEp);
+    }
 
     if (mode === "update") {
       const { data: existing } = await supabase.from("contracts")
@@ -1477,6 +1497,24 @@ function ContractContent() {
 
       {step === "select" ? (
         <div style={{ padding: 16, maxWidth: 480, margin: "0 auto" }}>
+
+          {/* 계약 대상 미리보기 (matchId/memberId 컨텍스트가 있을 때만) */}
+          {selMatch && f.worker && (
+            <div style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 6px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>계약 대상</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>👤 {f.worker}</span>
+                {f.biz && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>🏢 {f.biz}</span>}
+              </div>
+              {(f.wage || selectedDays.length > 0) && (
+                <div style={{ fontSize: 12, color: "#a78bfa" }}>
+                  {f.wage && <span>시급 {f.wage}원</span>}
+                  {f.wage && selectedDays.length > 0 && <span> · </span>}
+                  {selectedDays.length > 0 && <span>{selectedDays.join("·")} 근무</span>}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 업장 선택 */}
           {myEps.length > 0 && (

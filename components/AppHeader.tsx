@@ -50,10 +50,10 @@ export default function AppHeader({
   return (
     <div style={{
       ...(noSticky ? {} : { position: "sticky", top: 0, zIndex: 30 }),
-      background: "rgba(24,24,27,0.95)",
+      background: "var(--nav-bg)",
       backdropFilter: "blur(20px)",
       WebkitBackdropFilter: "blur(20px)",
-      borderBottom: "1px solid var(--border)",
+      borderBottom: "1px solid var(--nav-border)",
     }}>
       {/* 상단 바 */}
       <div style={{
@@ -69,8 +69,8 @@ export default function AppHeader({
           </button>
         )}
 
-        {/* 로고 */}
-        <button onClick={() => router.push("/explore")}
+        {/* 로고 → 역할별 홈(마이팀) */}
+        <button onClick={() => router.push("/myteam")}
           style={{ background: "none", border: "none", cursor: "pointer", padding: 0, flexShrink: 0 }}>
           <span style={{ fontSize: 17, fontWeight: 900, background: "linear-gradient(135deg, #8b5cf6, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: "-0.5px" }}>
             PAZAB
@@ -105,6 +105,10 @@ export default function AppHeader({
                 <button onClick={() => { setMenuOpen(false); router.push("/daeta"); }}
                   style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fb923c", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 16 }}>🔥</span> 대타 SOS
+                </button>
+                <button onClick={() => { setMenuOpen(false); router.push("/explore"); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#a5b4fc", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>🧭</span> 알바 탐색
                 </button>
                 <button onClick={() => { setMenuOpen(false); router.push("/feed"); }}
                   style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#ec4899", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>

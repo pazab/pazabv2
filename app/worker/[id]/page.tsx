@@ -6,6 +6,8 @@ import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import { getMatchLevel, WORKER_TYPE_INFO } from "@/lib/utils";
 import { getGrade } from "@/lib/trustScore";
+import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
+import TierBadge from "@/components/TierBadge";
 import { btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 import { EntityLink } from "@/components/EntityLink";
 
@@ -98,6 +100,13 @@ export default function WorkerDetailPage() {
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [feeds, setFeeds] = useState<Record<string, unknown>[]>([]);
+  const [workerTier, setWorkerTier] = useState<DaetaTier | null>(null);
+
+  useEffect(() => {
+    if (typeof id === "string") {
+      getWorkerTier(supabase, id).then(setWorkerTier).catch(() => setWorkerTier(null));
+    }
+  }, [id]);
 
   useEffect(() => {
     let lastY = 0;
@@ -410,7 +419,8 @@ export default function WorkerDetailPage() {
 
         {/* 히어로 하단 */}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {workerTier && <TierBadge tier={workerTier} />}
             {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "rgba(34,197,94,0.9)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
             {desiredTypes.length > 0 && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>{desiredTypes[0]}</span>}
             <span style={{ fontSize: 10, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", padding: "3px 8px", borderRadius: 8 }}>{grade.emoji} {grade.name}</span>

@@ -1757,12 +1757,35 @@ function MyTeamPageContent() {
           </div>
         </div>
       )}
-      <AppHeader title="팀·소속" showBack showBellAndMenu />
+      <AppHeader title="홈" showBellAndMenu />
       <div style={{ maxWidth:480, margin:"0 auto", padding:"12px 16px 0" }}>
         {loading ? (
           <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>로딩 중...</div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
+
+            {/* ── 대타 SOS 퀵 액션 (DESIGN_PLAN.md P4: 홈에서 펑크 즉시 대응) ── */}
+            {isEmployer ? (
+              <button onClick={() => router.push("/daeta")}
+                style={{ width:"100%", padding:"16px 18px", background:"linear-gradient(135deg, #f97316, #ef4444)", border:"none", borderRadius:18, cursor:"pointer", display:"flex", alignItems:"center", gap:12, boxShadow:"0 6px 24px rgba(249,115,22,0.35)" }}>
+                <div style={{ width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>⚡</div>
+                <div style={{ textAlign:"left", flex:1 }}>
+                  <div style={{ fontSize:15, fontWeight:900, color:"#fff" }}>펑크 났나요? 대타 구하기</div>
+                  <div style={{ fontSize:11, color:"rgba(255,255,255,0.85)", marginTop:2 }}>팀 → 동네 검증 인력 순 자동 알림 · 계약서까지 원스톱</div>
+                </div>
+                <span style={{ color:"#fff", fontSize:18, fontWeight:900 }}>→</span>
+              </button>
+            ) : isWorker && (
+              <button onClick={() => router.push("/daeta")}
+                style={{ width:"100%", padding:"14px 18px", background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.35)", borderRadius:18, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ fontSize:20, flexShrink:0 }}>🟢</div>
+                <div style={{ textAlign:"left", flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:800, color:"var(--text)" }}>동네 대타로 바로 벌기</div>
+                  <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>대타 가능을 켜면 동네 SOS를 가장 먼저 받아요</div>
+                </div>
+                <span style={{ color:"#4ade80", fontSize:16, fontWeight:900 }}>→</span>
+              </button>
+            )}
 
             {/* ── 내 소속 (worker / both) ── */}
             {isWorker && (

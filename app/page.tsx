@@ -24,7 +24,8 @@ export default function Home() {
             .single();
 
           if (userData && userData.onboarded) {
-            router.replace(userData.user_type === "employer" ? "/myteam" : "/explore");
+            // DESIGN_PLAN.md P3: 알바생도 홈은 마이팀(내 근무) — 잡보드가 첫 화면이 되지 않게
+            router.replace("/myteam");
           } else {
             router.replace("/onboarding");
           }
@@ -92,17 +93,11 @@ export default function Home() {
           </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <button 
-              onClick={() => router.push("/auth/signup")} 
+            <button
+              onClick={() => router.push("/auth/signup")}
               style={{ ...btnPrimary, fontSize: 15, padding: "16px" }}
             >
               무료 회원가입
-            </button>
-            <button 
-              onClick={() => router.push("/sudoku")} 
-              style={{ ...btnSecondary, fontSize: 14, padding: "16px", background: "rgba(255, 255, 255, 0.02)", border: "1px solid rgba(255, 255, 255, 0.08)", color: "#a1a1aa" }}
-            >
-              🎮 수도쿠 게임하기 (비로그인 가능)
             </button>
           </div>
         </section>
@@ -147,6 +142,8 @@ export default function Home() {
             <button onClick={() => router.push("/terms")} style={{ background: "none", border: "none", color: "#71717a", fontSize: 12, cursor: "pointer" }}>이용약관</button>
             <span style={{ color: "#27272a", fontSize: 12 }}>|</span>
             <button onClick={() => router.push("/privacy")} style={{ background: "none", border: "none", color: "#71717a", fontSize: 12, cursor: "pointer" }}>개인정보처리방침</button>
+            <span style={{ color: "#27272a", fontSize: 12 }}>|</span>
+            <button onClick={() => router.push("/sudoku")} style={{ background: "none", border: "none", color: "#71717a", fontSize: 12, cursor: "pointer" }}>🎮 스도쿠</button>
           </div>
           <p style={{ fontSize: 11, color: "#52525b", margin: 0, lineHeight: 1.5 }}>
             © {new Date().getFullYear()} PAZAB. All rights reserved.<br />
