@@ -282,7 +282,7 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
           <button onClick={handleCheckIn} disabled={processing || !isInRange || gpsLoading}
             style={{
               width:"100%",
-              background: !isInRange ? "var(--border)" : "linear-gradient(135deg,#10b981,#059669)",
+              background: !isInRange ? "var(--border)" : "var(--success)",
               border:"none",
               borderRadius:14,
               padding:14,
@@ -297,18 +297,18 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
               opacity: !isInRange ? 0.6 : 1
             }}
           >
-            {processing ? "처리 중..." : gpsLoading ? "위치 확인 중..." : <>🟢 출근하기</>}
+            {processing ? "처리 중..." : gpsLoading ? "위치 확인 중..." : <><i className="ti ti-login-2" aria-hidden="true" /> 출근하기</>}
           </button>
           {hasStoreCoords && (
-            <p style={{ fontSize: 11, color: isInRange ? "#10b981" : "var(--text-muted)", margin: "0 0 4px", textAlign: "center", fontWeight: 600 }}>
-              {gpsLoading ? "📡 내 위치를 측정하고 있습니다..." :
-               isInRange ? `✓ 매장 반경 내에 있습니다. (거리: ${Math.round(distance || 0)}m)` :
-               `📍 매장 외부입니다. (거리: ${Math.round(distance || 0)}m / 200m 이내 가능)`}
+            <p style={{ fontSize: 11, color: isInRange ? "#10b981" : "var(--text-muted)", margin: "0 0 4px", textAlign: "center", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              {gpsLoading ? (<><i className="ti ti-broadcast" aria-hidden="true" /> 내 위치를 측정하고 있습니다...</>) :
+               isInRange ? (<><i className="ti ti-check" aria-hidden="true" /> 매장 반경 내에 있습니다. (거리: {Math.round(distance || 0)}m)</>) :
+               (<><i className="ti ti-map-pin" aria-hidden="true" /> 매장 외부입니다. (거리: {Math.round(distance || 0)}m / 200m 이내 가능)</>)}
             </p>
           )}
           {gpsError && (
-            <p style={{ fontSize: 11, color: "#ef4444", margin: 0, textAlign: "center" }}>
-              ⚠️ {gpsError} (GPS를 활성화해 주세요)
+            <p style={{ fontSize: 11, color: "#ef4444", margin: 0, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              <i className="ti ti-alert-triangle" aria-hidden="true" /> {gpsError} (GPS를 활성화해 주세요)
             </p>
           )}
         </div>
@@ -316,18 +316,18 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
       {checkedIn && !checkedOut && (
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
           <div style={{ background:"#10b98115", borderRadius:12, padding:"10px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <span style={{ fontSize:13, color:"#10b981", fontWeight:600 }}>✅ 근무 중</span>
+            <span style={{ fontSize:13, color:"#10b981", fontWeight:600, display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 근무 중</span>
             <span style={{ fontSize:12, color:"var(--text-muted)" }}>{checkInTime} 출근</span>
           </div>
           <button onClick={handleCheckOut} disabled={processing}
-            style={{ width:"100%", background:"linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-            {processing ? "처리 중..." : "🔴 퇴근하기"}
+            style={{ width:"100%", background:"var(--danger)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            {processing ? "처리 중..." : (<><i className="ti ti-logout" aria-hidden="true" /> 퇴근하기</>)}
           </button>
         </div>
       )}
       {checkedIn && checkedOut && (
         <div style={{ background:"var(--surface2)", borderRadius:12, padding:"10px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <span style={{ fontSize:13, color:"var(--text-muted)", fontWeight:600 }}>✅ 오늘 근무 완료</span>
+          <span style={{ fontSize:13, color:"var(--text-muted)", fontWeight:600, display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 오늘 근무 완료</span>
           <span style={{ fontSize:12, color:"var(--text-muted)" }}>{checkInTime} ~ {checkOutTime} ({todayAtt.actual_hours}h)</span>
         </div>
       )}
@@ -386,7 +386,7 @@ function WorkerAttendanceTab({ member, userId }: { member: any; userId: string }
     { id:"absent", label:"결근", color:"#ef4444", bg:"#ef444420" },
     { id:"off", label:"휴무", color:"#6b7280", bg:"#6b728020" },
   ];
-  const statusEmoji: Record<string,string> = { normal:"✅", late:"⏰", early_leave:"🔜", absent:"❌", off:"📅" };
+  const statusIcon: Record<string,string> = { normal:"ti-circle-check", late:"ti-clock", early_leave:"ti-door-exit", absent:"ti-x", off:"ti-calendar-off" };
   const statusShort: Record<string,string> = { normal:"출근", late:"지각", early_leave:"조퇴", absent:"결근", off:"휴무" };
 
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
@@ -468,20 +468,20 @@ function WorkerAttendanceTab({ member, userId }: { member: any; userId: string }
       </div>
 
       {/* 급여 요약 카드 */}
-      <div style={{ background:"linear-gradient(135deg,#7c3aed15,#ec489915)", borderRadius:14, padding:"14px 16px", marginBottom:14, border:"1px solid #7c3aed30" }}>
+      <div style={{ background:"var(--primary-light)", borderRadius:14, padding:"14px 16px", marginBottom:14, border:"1px solid var(--primary-border)" }}>
         <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
           <span style={{ fontSize:12, color:"var(--text-muted)" }}>총 근무시간</span>
           <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{totalActualHours.toFixed(1)}시간</span>
         </div>
         {overtimeHours > 0 && (
           <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
-            <span style={{ fontSize:12, color:"#f59e0b" }}>초과근무 (×1.5)</span>
-            <span style={{ fontSize:13, fontWeight:700, color:"#f59e0b" }}>{overtimeHours.toFixed(1)}시간</span>
+            <span style={{ fontSize:12, color:"var(--warning)" }}>초과근무 (×1.5)</span>
+            <span style={{ fontSize:13, fontWeight:700, color:"var(--warning)" }}>{overtimeHours.toFixed(1)}시간</span>
           </div>
         )}
-        <div style={{ borderTop:"1px solid #7c3aed30", paddingTop:8, display:"flex", justifyContent:"space-between" }}>
+        <div style={{ borderTop:"1px solid var(--primary-border)", paddingTop:8, display:"flex", justifyContent:"space-between" }}>
           <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>이번달 예상 급여</span>
-          <span style={{ fontSize:15, fontWeight:900, color:"#7c3aed" }}>{estimatedPay > 0 ? estimatedPay.toLocaleString()+"원" : "-"}</span>
+          <span style={{ fontSize:15, fontWeight:900, color:"var(--primary)" }}>{estimatedPay > 0 ? estimatedPay.toLocaleString()+"원" : "-"}</span>
         </div>
       </div>
 
@@ -516,12 +516,12 @@ function WorkerAttendanceTab({ member, userId }: { member: any; userId: string }
                     color:status?status.color:isToday?"#7c3aed":"var(--text)" }}>{day}</div>
                   {att ? (
                     <div style={{ textAlign:"center" as const, fontSize:9, color:status?.color, lineHeight:1.3 }}>
-                      {statusEmoji[att.status]}<br/>{statusShort[att.status]}
+                      <i className={`ti ${statusIcon[att.status]}`} aria-hidden="true" /><br/>{statusShort[att.status]}
                       {att.actual_hours && att.status!=="absent" && att.status!=="off" && (
                         <><br/><span style={{ fontSize:8 }}>{att.actual_hours}h</span></>
                       )}
                       {att.memo && (
-                        <><br/><span style={{ fontSize:8, color:"#a78bfa" }}>📝</span></>
+                        <><br/><i className="ti ti-note" style={{ fontSize:8, color:"#a78bfa" }} aria-hidden="true" /></>
                       )}
                     </div>
                   ) : <div style={{ height:24 }} />}
@@ -549,7 +549,7 @@ function WorkerAttLogs({ memberId, refreshKey = 0 }: { memberId: string; refresh
   if (logs.length === 0) return null;
 
   const actionLabel: Record<string, string> = {
-    checkin: "🟢 출근", checkout: "🔴 퇴근", update: "✏️ 수정됨", delete: "🗑️ 삭제됨",
+    checkin: "출근", checkout: "퇴근", update: "수정됨", delete: "삭제됨",
   };
 
   return (
@@ -571,7 +571,7 @@ function WorkerAttLogs({ memberId, refreshKey = 0 }: { memberId: string; refresh
               </div>
               {d.memo && (
                 <p style={{ fontSize:11, color:"var(--text-muted)", margin:"4px 0 0", background:"var(--surface)", borderRadius:6, padding:"4px 8px", lineHeight:1.5 }}>
-                  📝 {d.memo}
+                  {d.memo}
                 </p>
               )}
             </div>
@@ -617,11 +617,11 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
                 <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{p.year}년 {p.month}월</span>
                 <div style={{ display:"flex", gap:4 }}>
                   {p.status === "confirmed" || p.confirmed_at ? (
-                    <span style={{ fontSize:11, background:"rgba(16,185,129,0.15)", color:"#10b981", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✅ 확인됨</span>
+                    <span style={{ fontSize:11, background:"rgba(16,185,129,0.15)", color:"#10b981", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>확인됨</span>
                   ) : p.status === "correction_requested" ? (
-                    <span style={{ fontSize:11, background:"rgba(239,68,68,0.15)", color:"#ef4444", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>✏️ 수정요청됨</span>
+                    <span style={{ fontSize:11, background:"rgba(239,68,68,0.15)", color:"#ef4444", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>수정요청됨</span>
                   ) : (
-                    <span style={{ fontSize:11, background:"rgba(245,158,11,0.15)", color:"#f59e0b", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>⏳ 확인대기</span>
+                    <span style={{ fontSize:11, background:"rgba(245,158,11,0.15)", color:"#f59e0b", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>확인대기</span>
                   )}
                 </div>
               </div>
@@ -630,8 +630,8 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
                 <div><p style={{ fontSize:10, color:"var(--text-muted)", margin:"0 0 2px" }}>지급액</p><p style={{ fontSize:14, fontWeight:700, color:"#7c3aed", margin:0 }}>{Number(p.total_pay).toLocaleString()}원</p></div>
               </div>
               <button onClick={() => router.push(`/payslip?id=${p.id}&tab=mywork`)}
-                style={{ width:"100%", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
-                📄 명세서 보기
+                style={{ width:"100%", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                <i className="ti ti-file-text" aria-hidden="true" /> 명세서 보기
               </button>
             </div>
           ))}
@@ -661,7 +661,7 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
   );
 }
 
-const STATUS_EMOJI: Record<string,string> = { normal:"✅", late:"⏰", early_leave:"🔜", absent:"❌", off:"📅" };
+const STATUS_ICON: Record<string,string> = { normal:"ti-circle-check", late:"ti-clock", early_leave:"ti-door-exit", absent:"ti-x", off:"ti-calendar-off" };
 const STATUS_LABEL: Record<string,string> = { normal:"출근", late:"지각", early_leave:"조퇴", absent:"결근", off:"휴무" };
 const STATUS_COLOR: Record<string,string> = { normal:"#10b981", late:"#f59e0b", early_leave:"#f59e0b", absent:"#ef4444", off:"#6b7280" };
 
@@ -782,9 +782,9 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
       {/* 매장 정보 카드 */}
       <div style={{ ...cardStyle, padding: 0, overflow:"hidden" }}>
-        <div style={{ background:"linear-gradient(135deg,#ec4899 60%,#7c3aed)", padding:"16px 18px" }}>
+        <div style={{ background:"var(--primary)", padding:"16px 18px" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
-            <span style={{ fontSize:26 }}>{BIZ_EMOJI[m.profile?.business_type]||"🏪"}</span>
+            <i className={`ti ${BIZ_ICON[m.profile?.business_type]||"ti-building-store"}`} style={{ fontSize:26, color:"#fff" }} aria-hidden="true" />
             <div style={{ flex:1 }}>
               <p style={{ fontSize:16, fontWeight:800, color:"#fff", margin:"0 0 2px" }}>{storeName}</p>
               <p style={{ fontSize:11, color:"rgba(255,255,255,0.75)", margin:0 }}>
@@ -881,7 +881,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         </div>
         {monthStats.estPay > 0 && monthStats.netPay > 0 && monthStats.netPay !== monthStats.estPay && (
           <div style={{ borderTop: "1px dashed rgba(124,58,237,0.3)", marginTop: 12, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>💰 예상 실수령액 (세후)</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-coin" aria-hidden="true" /> 예상 실수령액 (세후)</span>
             <span style={{ fontSize: 14, fontWeight: 900, color: "#10b981" }}>{monthStats.netPay.toLocaleString()}원</span>
           </div>
         )}
@@ -903,7 +903,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                 const cout = a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
                 return (
                   <div key={a.work_date} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", background:"var(--surface2)", borderRadius:10 }}>
-                    <span style={{ fontSize:14 }}>{STATUS_EMOJI[a.status]||"📅"}</span>
+                    <i className={`ti ${STATUS_ICON[a.status]||"ti-calendar"}`} style={{ fontSize:14 }} aria-hidden="true" />
                     <div style={{ flex:1 }}>
                       <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
                       <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>{cin} ~ {cout}</span>
@@ -940,7 +940,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
       </div>
       {/* 계약서 */}
       <div style={{ ...cardStyle, padding:"14px 16px" }}>
-        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>📄 근로계약서</p>
+        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-file-text" aria-hidden="true" /> 근로계약서</p>
         {contracts.length === 0 ? (
           <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", margin:0 }}>아직 계약서가 없어요</p>
         ) : (
@@ -953,12 +953,12 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                 <div key={c.id} style={{ background:"var(--surface2)", borderRadius:10, padding:"10px 12px", border:`1px solid ${isActive ? "#7c3aed40" : "var(--border)"}`, marginBottom:6, opacity: isActive ? 1 : 0.6 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
                     <span style={{ fontSize:12, fontWeight:700, color:"var(--text)" }}>
-                      {isActive ? "📄 현재 계약" : "📋 이전 계약"}
+                      {isActive ? "현재 계약" : "이전 계약"}
                     </span>
                     <span style={{ fontSize:10, borderRadius:6, padding:"2px 7px", fontWeight:700,
                       background: isSigned ? "#10b98120" : isPending ? "#f59e0b20" : "var(--surface)",
                       color: isSigned ? "#10b981" : isPending ? "#f59e0b" : "var(--text-muted)" }}>
-                      {isSigned ? "✅ 서명완료" : isPending ? "⏳ 서명대기" : "미서명"}
+                      {isSigned ? "서명완료" : isPending ? "서명대기" : "미서명"}
                     </span>
                   </div>
                   <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 8px" }}>
@@ -971,13 +971,13 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                   </p>
                   <div style={{ display:"flex", gap:6 }}>
                     <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
-                      style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer" }}>
-                      📄 보기
+                      style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:"7px", fontSize:12, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                      <i className="ti ti-file-text" aria-hidden="true" /> 보기
                     </button>
                     {isPending && (
                       <button onClick={() => router.push(`/contract/view?contractId=${c.id}`)}
-                        style={{ flex:2, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:8, padding:"7px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>
-                        ✍️ 서명하기
+                        style={{ flex:2, background:"var(--primary)", border:"none", borderRadius:8, padding:"7px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                        <i className="ti ti-signature" aria-hidden="true" /> 서명하기
                       </button>
                     )}
                   </div>
@@ -1010,7 +1010,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
 
       {/* 급여 명세서 */}
       <div style={{ ...cardStyle, padding:"14px 16px" }}>
-        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>📋 급여 명세서</p>
+        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-report-money" aria-hidden="true" /> 급여 명세서</p>
         <WorkerPayslipTab teamMemberId={m.id} workerId={userId} employerId={m.employer_id} router={router} />
       </div>
     </div>
@@ -1025,10 +1025,10 @@ const PERSONALITY_EMOJI: Record<string, string> = {
   "완벽주의형":"✨","리더십형":"👑","팀플레이어형":"🤝",
 };
 
-const BIZ_EMOJI: Record<string, string> = {
-  "카페/음료":"☕","식당/음식점":"🍽️","편의점/마트":"🏪",
-  "뷰티/미용":"💄","물류/배송":"📦","사무/행정":"💼",
-  "판매/매장":"🛍️","이벤트/행사":"🎪","교육/돌봄":"📚",
+const BIZ_ICON: Record<string, string> = {
+  "카페/음료":"ti-coffee","식당/음식점":"ti-tools-kitchen-2","편의점/마트":"ti-building-store",
+  "뷰티/미용":"ti-sparkles","물류/배송":"ti-truck-delivery","사무/행정":"ti-briefcase",
+  "판매/매장":"ti-shopping-bag","이벤트/행사":"ti-confetti","교육/돌봄":"ti-school",
 };
 
 function MyTeamPageContent() {
@@ -1641,10 +1641,10 @@ function MyTeamPageContent() {
   const workPendingCount = current.filter((m: any) => m.contractStatus !== "done").length;
 
   const contractBadge = (status: string) => ({
-    none: { label:"⚠️ 계약서미작성", color:"#ef4444", bg:"#ef444415" },
-    pending: { label:"⏳ 서명대기", color:"#f59e0b", bg:"#f59e0b15" },
-    done: { label:"🎉 정상계약 완료", color:"#10b981", bg:"#10b98115" },
-  }[status] || { label:"⚠️ 미작성", color:"#ef4444", bg:"#ef444415" });
+    none: { label:"계약서미작성", color:"#ef4444", bg:"#ef444415" },
+    pending: { label:"서명대기", color:"#f59e0b", bg:"#f59e0b15" },
+    done: { label:"정상계약 완료", color:"#10b981", bg:"#10b98115" },
+  }[status] || { label:"미작성", color:"#ef4444", bg:"#ef444415" });
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:160 }}>
@@ -1678,8 +1678,8 @@ function MyTeamPageContent() {
                 닫기
               </button>
               <button onClick={() => { setCancelContractTarget(null); router.push(`/contract/view?memberId=${cancelContractTarget.memberId}`); }}
-                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text)", fontSize:14, fontWeight:600, cursor:"pointer" }}>
-                📄 계약서 보기
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text)", fontSize:14, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <i className="ti ti-file-text" aria-hidden="true" /> 계약서 보기
               </button>
               <button onClick={async () => {
                 const { memberId, contractId } = cancelContractTarget;
@@ -1695,8 +1695,8 @@ function MyTeamPageContent() {
                 });
                 showToast("계약서 발행이 취소됐어요.");
               }}
-                style={{ flex:1, background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", borderRadius:14, padding:14, color:"#ef4444", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-                🗑️ 발행 취소
+                style={{ flex:1, background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", borderRadius:14, padding:14, color:"#ef4444", fontSize:14, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <i className="ti ti-trash" aria-hidden="true" /> 발행 취소
               </button>
             </div>
           </div>
@@ -1708,8 +1708,8 @@ function MyTeamPageContent() {
           onClick={() => setResignTarget(null)}>
           <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:480, margin:"0 auto" }}
             onClick={e => e.stopPropagation()}>
-            <p style={{ fontSize:16, fontWeight:800, color:"#f87171", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
-              ⚠️ 정말 퇴사 처리하시겠습니까?
+            <p style={{ fontSize:16, fontWeight:800, color:"var(--danger)", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
+              <i className="ti ti-alert-triangle" aria-hidden="true" /> 정말 퇴사 처리하시겠습니까?
             </p>
             <p style={{ fontSize:14, fontWeight:700, color:"var(--text)", marginBottom:10 }}>
               [{resignTarget.name}] 님을 매장에서 퇴사 처리합니다.
@@ -1719,14 +1719,14 @@ function MyTeamPageContent() {
             <div style={{ borderRadius:10, padding:"10px 14px", marginBottom:14, border:`1px solid ${resignTarget.hasWorkedThisMonth ? "rgba(245,158,11,0.4)" : "rgba(16,185,129,0.3)"}`, background: resignTarget.hasWorkedThisMonth ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.08)" }}>
               {resignTarget.hasWorkedThisMonth ? (
                 <>
-                  <p style={{ fontSize:12, fontWeight:700, color:"#f59e0b", margin:"0 0 4px" }}>⚠️ 이번 달 근무 기록이 있습니다</p>
+                  <p style={{ fontSize:12, fontWeight:700, color:"#f59e0b", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-alert-triangle" aria-hidden="true" /> 이번 달 근무 기록이 있습니다</p>
                   <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
                     퇴사 처리 전에 <strong>이번 달 급여 명세서를 먼저 발행</strong>해 주세요.<br/>급여 미정산 상태로는 퇴사 처리가 되지 않습니다.
                   </p>
                 </>
               ) : (
                 <>
-                  <p style={{ fontSize:12, fontWeight:700, color:"#10b981", margin:"0 0 4px" }}>✅ 이번 달 출근 기록 없음 — 즉시 퇴사 처리 가능</p>
+                  <p style={{ fontSize:12, fontWeight:700, color:"#10b981", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 이번 달 출근 기록 없음 — 즉시 퇴사 처리 가능</p>
                   <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
                     이번 달 실제 출근 내역이 없어 급여 명세서 없이 퇴사 처리할 수 있습니다.
                   </p>
@@ -1735,8 +1735,8 @@ function MyTeamPageContent() {
             </div>
 
             <div style={{ background:"var(--surface2)", borderRadius:12, padding:"12px 14px", marginBottom:20, border:"1px solid var(--border)" }}>
-              <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 6px", fontWeight:700 }}>
-                💡 법적 서류 보존 안내
+              <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 6px", fontWeight:700, display:"flex", alignItems:"center", gap:4 }}>
+                <i className="ti ti-bulb" aria-hidden="true" /> 법적 서류 보존 안내
               </p>
               <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
                 • 작성된 <strong>근로계약서</strong>와 <strong>급여명세서/지급내역</strong>은 근로기준법 및 관련 법령에 의거하여 <strong>법적 보존 연한(3년~5년) 동안 안전하게 보존</strong>되며, 퇴사 처리 후에도 필요 시 양측 모두 언제든지 열람할 수 있습니다.
@@ -1758,8 +1758,8 @@ function MyTeamPageContent() {
                 await handleResign(target, name);
               }}
                 disabled={resignTarget.hasWorkedThisMonth}
-                style={{ flex:1, background: resignTarget.hasWorkedThisMonth ? "var(--border)" : "linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:14, padding:14, color: resignTarget.hasWorkedThisMonth ? "var(--text-muted)" : "#fff", fontSize:14, fontWeight:700, cursor: resignTarget.hasWorkedThisMonth ? "not-allowed" : "pointer", opacity: resignTarget.hasWorkedThisMonth ? 0.6 : 1 }}>
-                🚨 퇴사 처리 확정
+                style={{ flex:1, background: resignTarget.hasWorkedThisMonth ? "var(--border)" : "var(--danger)", border:"none", borderRadius:14, padding:14, color: resignTarget.hasWorkedThisMonth ? "var(--text-muted)" : "#fff", fontSize:14, fontWeight:700, cursor: resignTarget.hasWorkedThisMonth ? "not-allowed" : "pointer", opacity: resignTarget.hasWorkedThisMonth ? 0.6 : 1, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <i className="ti ti-alert-triangle" aria-hidden="true" /> 퇴사 처리 확정
               </button>
             </div>
           </div>
@@ -1775,8 +1775,8 @@ function MyTeamPageContent() {
             {/* ── 대타 SOS 퀵 액션 (DESIGN_PLAN.md P4: 홈에서 펑크 즉시 대응) ── */}
             {isEmployer ? (
               <button onClick={() => router.push("/daeta")}
-                style={{ width:"100%", padding:"16px 18px", background:"linear-gradient(135deg, #f97316, #ef4444)", border:"none", borderRadius:18, cursor:"pointer", display:"flex", alignItems:"center", gap:12, boxShadow:"0 6px 24px rgba(249,115,22,0.35)" }}>
-                <div style={{ width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>⚡</div>
+                style={{ width:"100%", padding:"16px 18px", background:"var(--gradient-hero)", border:"none", borderRadius:18, cursor:"pointer", display:"flex", alignItems:"center", gap:12, boxShadow:"var(--shadow-elevate)" }}>
+                <div style={{ width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}><i className="ti ti-bolt" style={{ color:"#fff" }} aria-hidden="true" /></div>
                 <div style={{ textAlign:"left", flex:1 }}>
                   <div style={{ fontSize:15, fontWeight:900, color:"#fff" }}>펑크 났나요? 대타 구하기</div>
                   <div style={{ fontSize:11, color:"rgba(255,255,255,0.85)", marginTop:2 }}>팀 → 동네 검증 인력 순 자동 알림 · 계약서까지 원스톱</div>
@@ -1786,7 +1786,7 @@ function MyTeamPageContent() {
             ) : isWorker && (
               <button onClick={() => router.push("/daeta")}
                 style={{ width:"100%", padding:"14px 18px", background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.35)", borderRadius:18, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-                <div style={{ fontSize:20, flexShrink:0 }}>🟢</div>
+                <i className="ti ti-circle-filled" style={{ fontSize:20, flexShrink:0, color:"var(--success)" }} aria-hidden="true" />
                 <div style={{ textAlign:"left", flex:1 }}>
                   <div style={{ fontSize:14, fontWeight:800, color:"var(--text)" }}>동네 대타로 바로 벌기</div>
                   <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>대타 가능을 켜면 동네 SOS를 가장 먼저 받아요</div>
@@ -1801,7 +1801,7 @@ function MyTeamPageContent() {
                 <button onClick={() => setWorkOpen(v => !v)}
                   style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#ec4899,#f43f5e)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>💼</div>
+                    <div style={{ width:34, height:34, borderRadius:10, background:"var(--accent)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}><i className="ti ti-briefcase" style={{ color:"#fff" }} aria-hidden="true" /></div>
                     <div>
                       <p style={{ fontSize:16, fontWeight:900, color:"var(--text)", margin:0, letterSpacing:"-0.3px" }}>내 직장</p>
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{current.length > 0 ? `${current.length}곳 재직 중` : "소속 없음"}</p>
@@ -1819,7 +1819,7 @@ function MyTeamPageContent() {
                     ].map(s => (
                       <div key={s.label} style={{ background:"var(--surface)", padding:"9px 4px", textAlign:"center" }}>
                         <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
-                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "#f87171" : "var(--text)", margin:0 }}>{s.value}</p>
+                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
                       </div>
                     ))}
                   </div>
@@ -1830,7 +1830,7 @@ function MyTeamPageContent() {
                     <div style={{ ...cardStyle, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                       <span style={{ color:"var(--text-muted)", fontSize:13 }}>소속 매장이 없어요</span>
                       <button onClick={() => router.push("/explore")}
-                        style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", whiteSpace:"nowrap" }}>
+                        style={{ background:"var(--primary)", border:"none", borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", whiteSpace:"nowrap" }}>
                         공고 탐색 →
                       </button>
                     </div>
@@ -1850,7 +1850,7 @@ function MyTeamPageContent() {
             {isWorker && pastWorks.length > 0 && (
               <section style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: 12 }}>
-                  <p style={{ fontSize:15, fontWeight:800, color:"var(--text)", margin:0 }}>🏛️ 이전 근무 이력 (경력)</p>
+                  <p style={{ fontSize:15, fontWeight:800, color:"var(--text)", margin:0, display:"flex", alignItems:"center", gap:6 }}><i className="ti ti-history" aria-hidden="true" /> 이전 근무 이력 (경력)</p>
                   <span style={{ fontSize:11, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 8px", fontWeight:700 }}>{pastWorks.length}곳</span>
                 </div>
                 <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
@@ -1868,7 +1868,7 @@ function MyTeamPageContent() {
                           <div>
                             <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
                               <span style={{ fontSize:14, fontWeight:800, color:"var(--text)" }}>{storeName}</span>
-                              <span style={{ fontSize:10, background:"rgba(239,68,68,0.1)", color:"#f87171", borderRadius:6, padding:"1px 6px", fontWeight:700 }}>퇴직</span>
+                              <span style={{ fontSize:10, background:"rgba(239,68,68,0.1)", color:"var(--danger)", borderRadius:6, padding:"1px 6px", fontWeight:700 }}>퇴직</span>
                             </div>
                             <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>
                               {bizType} · {m.role_desc || "스태프"}
@@ -1882,7 +1882,7 @@ function MyTeamPageContent() {
                         <div style={{ display:"flex", gap:8, borderTop:"1px solid var(--border)", paddingTop:10, marginTop:2 }}>
                           <button onClick={() => router.push(`/contract/view?memberId=${m.id}`)}
                             style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"6px", fontSize:11, color:"var(--text-muted)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
-                            📄 근로계약서 조회
+                            <i className="ti ti-file-text" aria-hidden="true" /> 근로계약서 조회
                           </button>
                         </div>
                         <WorkerPayslipTab teamMemberId={m.id} workerId={user?.id||""} employerId={m.employer_id} router={router} />
@@ -1908,12 +1908,12 @@ function MyTeamPageContent() {
                 marginBottom: 10
               }}>
                 <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>💼 매장 운영하세요?</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-building-store" aria-hidden="true" /> 매장 운영하세요?</p>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>사장님 역할을 추가하면 직원 구인이 가능해요</p>
                 </div>
                 <button onClick={() => upgradeToBoth("employer")}
                   style={{
-                    background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                    background: "var(--primary)",
                     border: "none", borderRadius: 20, padding: "6px 14px",
                     color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0
                   }}>
@@ -1928,7 +1928,7 @@ function MyTeamPageContent() {
                 <button onClick={() => setTeamOpen(v => !v)}
                   style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#7c3aed,#a855f7)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>🏪</div>
+                    <div style={{ width:34, height:34, borderRadius:10, background:"var(--primary)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}><i className="ti ti-building-store" style={{ color:"#fff" }} aria-hidden="true" /></div>
                     <div>
                       <p style={{ fontSize:16, fontWeight:900, color:"var(--text)", margin:0, letterSpacing:"-0.3px" }}>우리 매장</p>
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{myStores.length > 0 ? `${myStores.length}곳 운영 중` : "매장 없음"}</p>
@@ -1948,7 +1948,7 @@ function MyTeamPageContent() {
                     ].map(s => (
                       <div key={s.label} style={{ background:"var(--surface)", padding:"9px 4px", textAlign:"center" }}>
                         <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
-                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "#f87171" : "var(--text)", margin:0 }}>{s.value}</p>
+                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
                       </div>
                     ))}
                   </div>
@@ -1965,10 +1965,10 @@ function MyTeamPageContent() {
                     background: "var(--surface)",
                     border: "1px solid var(--border)",
                     borderRadius: 18,
-                    boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+                    boxShadow: "var(--shadow-elevate)",
                   }}>
                     <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span>🚀 사장님 3단계 시작 가이드</span>
+                      <span style={{ display:"flex", alignItems:"center", gap:6 }}><i className="ti ti-rocket" aria-hidden="true" /> 사장님 3단계 시작 가이드</span>
                       <span style={{ fontSize: 10, background: "rgba(124,58,237,0.12)", color: "var(--purple-text)", borderRadius: 10, padding: "2px 8px", fontWeight: 700 }}>
                         {[hasStore, hasEmployee, hasContract].filter(Boolean).length} / 3 완료
                       </span>
@@ -1993,7 +1993,7 @@ function MyTeamPageContent() {
                         {!hasStore && (
                           <button onClick={() => { setEditingStore(null); setStoreModalOpen(true); }}
                             style={{
-                              background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                              background: "var(--primary)",
                               border: "none", borderRadius: 20, padding: "4px 12px",
                               color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer"
                             }}>
@@ -2029,7 +2029,7 @@ function MyTeamPageContent() {
                             </button>
                             <button onClick={() => setInviteOpen(true)}
                               style={{
-                                background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                                background: "var(--primary)",
                                 border: "none", borderRadius: 20, padding: "4px 10px",
                                 color: "#fff", fontSize: 9, fontWeight: 700, cursor: "pointer"
                               }}>
@@ -2059,7 +2059,7 @@ function MyTeamPageContent() {
                           return firstMember ? (
                             <button onClick={() => router.push(`/contract?memberId=${firstMember.id}`)}
                               style={{
-                                background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                                background: "var(--primary)",
                                 border: "none", borderRadius: 20, padding: "4px 12px",
                                 color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer"
                               }}>
@@ -2085,14 +2085,8 @@ function MyTeamPageContent() {
                   ];
                   const inactiveCount = sorted.length - 1;
 
-                  const CARD_GRADIENTS = [
-                    "linear-gradient(135deg,#4c1d95 0%,#5b21b6 100%)",
-                    "linear-gradient(135deg,#1e40af 0%,#1d4ed8 100%)",
-                    "linear-gradient(135deg,#065f46 0%,#047857 100%)",
-                    "linear-gradient(135deg,#9d174d 0%,#be185d 100%)",
-                    "linear-gradient(135deg,#92400e 0%,#b45309 100%)",
-                    "linear-gradient(135deg,#1e3a5f 0%,#164e63 100%)",
-                  ];
+                  // 방향 A: 매장마다 색을 돌리던 그라데이션 제거 — 스택 카드는 항상 동일한 톤(순서는 위치로만 구분)
+                  const STACK_CARD_BG = "#3f3f46";
 
                   return (
                     <div>
@@ -2112,15 +2106,15 @@ function MyTeamPageContent() {
                                 borderRadius:16,
                                 cursor:"pointer",
                                 zIndex: inactiveCount - i,
-                                background: CARD_GRADIENTS[i % CARD_GRADIENTS.length],
-                                boxShadow:"0 4px 16px rgba(0,0,0,0.5)",
+                                background: STACK_CARD_BG,
+                                boxShadow:"var(--shadow-elevate)",
                               }}>
                               {/* 한 줄만 보이는 헤더 */}
                               <div style={{ display:"flex", alignItems:"center", gap:10, padding:"0 14px", height: PEEK }}>
-                                <span style={{ fontSize:18, flexShrink:0 }}>{BIZ_EMOJI[store.business_type]||"🏪"}</span>
+                                <i className={`ti ${BIZ_ICON[store.business_type]||"ti-building-store"}`} style={{ fontSize:18, flexShrink:0, color:"#fff" }} aria-hidden="true" />
                                 <span style={{ fontSize:13, fontWeight:700, color:"rgba(255,255,255,0.8)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{store.business_name}</span>
                                 <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)", whiteSpace:"nowrap", flexShrink:0 }}>{store.business_type||"업종미정"} · {storeMembers.length}명</span>
-                                {stats.pending > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"#ef4444", flexShrink:0 }} />}
+                                {stats.pending > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"var(--danger)", flexShrink:0 }} />}
                                 <button onClick={e => { e.stopPropagation(); openDeleteModal(store); }}
                                   style={{ background:"rgba(0,0,0,0.25)", border:"none", borderRadius:"50%", width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.7)", fontSize:12, cursor:"pointer", flexShrink:0, lineHeight:1 }}>
                                   ✕
@@ -2132,17 +2126,17 @@ function MyTeamPageContent() {
                       </div>
 
                       {/* 활성 카드 — 맨 아래, 전체 표시 */}
-                      <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 8px 32px rgba(124,58,237,0.35)" }}>
+                      <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"var(--shadow-elevate)" }}>
                         {/* 활성 카드 헤더 — 색상 */}
-                        <div style={{ background:"linear-gradient(135deg,#7c3aed 0%,#a855f7 55%,#ec4899 100%)", height: PEEK, display:"flex", alignItems:"center", gap:10, padding:"0 14px" }}>
-                          <span style={{ fontSize:20, flexShrink:0 }}>{BIZ_EMOJI[activeStore.business_type]||"🏪"}</span>
+                        <div style={{ background:"var(--primary)", height: PEEK, display:"flex", alignItems:"center", gap:10, padding:"0 14px" }}>
+                          <i className={`ti ${BIZ_ICON[activeStore.business_type]||"ti-building-store"}`} style={{ fontSize:20, flexShrink:0, color:"#fff" }} aria-hidden="true" />
                           <div style={{ flex:1, minWidth:0 }}>
                             <p style={{ fontSize:14, fontWeight:800, color:"#fff", margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeStore.business_name}</p>
                             <p style={{ fontSize:10, color:"rgba(255,255,255,0.65)", margin:0 }}>{activeStore.business_type||"업종미정"}{activeStore.address ? " · "+activeStore.address.slice(0,12) : ""}</p>
                           </div>
                           <button onClick={() => { setEditingStore(activeStore); setStoreModalOpen(true); }}
-                            style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, padding:"5px 10px", color:"rgba(255,255,255,0.9)", fontSize:11, cursor:"pointer", flexShrink:0, whiteSpace:"nowrap" }}>
-                            ✏️ 매장 정보 수정
+                            style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, padding:"5px 10px", color:"rgba(255,255,255,0.9)", fontSize:11, cursor:"pointer", flexShrink:0, whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:4 }}>
+                            <i className="ti ti-pencil" aria-hidden="true" /> 매장 정보 수정
                           </button>
                           <button onClick={() => openDeleteModal(activeStore)}
                             style={{ background:"rgba(239,68,68,0.25)", border:"none", borderRadius:"50%", width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.8)", fontSize:13, cursor:"pointer", flexShrink:0 }}>
@@ -2158,7 +2152,7 @@ function MyTeamPageContent() {
                           ].map(s => (
                             <div key={s.label} style={{ background:"var(--surface)", padding:"9px 8px", textAlign:"center" }}>
                               <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
-                              <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "#f87171" : "var(--text)", margin:0 }}>{s.value}</p>
+                              <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
                             </div>
                           ))}
                         </div>
@@ -2166,7 +2160,7 @@ function MyTeamPageContent() {
                         {/* 📅 요일별 근무 시간표 타임라인 */}
                         <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "14px 16px" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>📅 요일별 근무 시간표</span>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", display:"flex", alignItems:"center", gap:6 }}><i className="ti ti-calendar" aria-hidden="true" /> 요일별 근무 시간표</span>
                             {/* 요일 선택 칩 */}
                             <div style={{ display: "flex", gap: 3 }}>
                               {["월", "화", "수", "목", "금", "토", "일"].map(day => {
@@ -2184,7 +2178,7 @@ function MyTeamPageContent() {
                                       fontSize: 10,
                                       fontWeight: 800,
                                       cursor: "pointer",
-                                      background: isSelected ? "linear-gradient(135deg, #7c3aed, #ec4899)" : "var(--surface2)",
+                                      background: isSelected ? "var(--primary)" : "var(--surface2)",
                                       color: isSelected ? "#fff" : "var(--text-muted)",
                                       display: "flex",
                                       alignItems: "center",
@@ -2305,7 +2299,7 @@ function MyTeamPageContent() {
                                                 left: `${left}%`,
                                                 width: `${width}%`,
                                                 height: "100%",
-                                                background: "linear-gradient(90deg, #7c3aed, #ec4899)",
+                                                background: "var(--primary)",
                                                 borderRadius: 10,
                                                 display: "flex",
                                                 alignItems: "center",
@@ -2313,7 +2307,6 @@ function MyTeamPageContent() {
                                                 fontSize: 9,
                                                 color: "#fff",
                                                 fontWeight: 800,
-                                                boxShadow: "0 2px 6px rgba(124,58,237,0.25)",
                                                 whiteSpace: "nowrap",
                                                 overflow: "hidden"
                                               }}
@@ -2340,12 +2333,12 @@ function MyTeamPageContent() {
                         <div style={{ background:"var(--surface)" }}>
                           <div style={{ padding:"10px 12px", borderBottom:"1px solid var(--border)", display:"flex", gap:8 }}>
                             <button onClick={() => setInviteOpen(true)}
-                              style={{ flex:1, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:10, padding:"9px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                              📨 팀원 초대
+                              style={{ flex:1, background:"var(--primary)", border:"none", borderRadius:10, padding:"9px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                              <i className="ti ti-mail-forward" aria-hidden="true" /> 팀원 초대
                             </button>
                             <button onClick={() => router.push(`/employer/register?storeId=${activeStore.id}`)}
-                              style={{ flex:1, background: activeStore.activeJob?.is_active ? "var(--surface2)" : "linear-gradient(135deg,#059669,#10b981)", border: activeStore.activeJob?.is_active ? "1px solid var(--border)" : "none", borderRadius:10, padding:"9px", color: activeStore.activeJob?.is_active ? "var(--text-muted)" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                              {activeStore.activeJob?.is_active ? "📋 공고수정" : "📢 공고올리기"}
+                              style={{ flex:1, background: activeStore.activeJob?.is_active ? "var(--surface2)" : "var(--success)", border: activeStore.activeJob?.is_active ? "1px solid var(--border)" : "none", borderRadius:10, padding:"9px", color: activeStore.activeJob?.is_active ? "var(--text-muted)" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                              {activeStore.activeJob?.is_active ? (<><i className="ti ti-clipboard-text" aria-hidden="true" /> 공고수정</>) : (<><i className="ti ti-speakerphone" aria-hidden="true" /> 공고올리기</>)}
                             </button>
                           </div>
                           {activeMembers.length === 0 ? (
@@ -2370,8 +2363,8 @@ function MyTeamPageContent() {
                                   transition:"background-color 0.1s ease, transform 0.1s ease",
                                 }}>
                                 <div onClick={(e) => { e.stopPropagation(); setActiveQuickProfile(m.worker_id); }}
-                                  style={{ width:40, height:40, borderRadius:"50%", background:"linear-gradient(135deg,#f59e0b,#ef4444)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, cursor:"pointer" }}>
-                                  {m.worker?.avatar_url ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : (PERSONALITY_EMOJI[pType]||"👤")}
+                                  style={{ width:40, height:40, borderRadius:"50%", background:"var(--accent)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, cursor:"pointer" }}>
+                                  {m.worker?.avatar_url ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : PERSONALITY_EMOJI[pType] ? PERSONALITY_EMOJI[pType] : <i className="ti ti-user" aria-hidden="true" />}
                                 </div>
                                 <div style={{ flex:1, minWidth:0 }}>
                                   <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:2 }}>
@@ -2433,7 +2426,7 @@ function MyTeamPageContent() {
                                       .eq("team_member_id", m.id).gte("work_date", monthStart).lte("work_date", monthEnd)
                                       .not("status", "in", '("absent","off")').limit(1);
                                     setResignTarget({ member: m, name, hasWorkedThisMonth: !!(attRows && attRows.length > 0) });
-                                  }} style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:7, padding:"3px 7px", fontSize:10, color:"#f87171", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
+                                  }} style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:7, padding:"3px 7px", fontSize:10, color:"var(--danger)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     퇴사
                                   </button>
                                 </div>
@@ -2450,7 +2443,7 @@ function MyTeamPageContent() {
                       </button>
                       <button onClick={() => router.push("/employer/records")}
                         style={{ width:"100%", marginTop:6, background:"rgba(139,92,246,0.08)", border:"1px solid rgba(139,92,246,0.2)", borderRadius:14, padding:"10px", color:"var(--purple-text)", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-                        📂 직원 서류 보관함
+                        <i className="ti ti-folder" aria-hidden="true" /> 직원 서류 보관함
                       </button>
                     </div>
                   );
@@ -2480,7 +2473,7 @@ function MyTeamPageContent() {
                 </div>
                 <button onClick={() => upgradeToBoth("worker")}
                   style={{
-                    background: "linear-gradient(135deg,#ec4899,#f43f5e)",
+                    background: "var(--accent)",
                     border: "none", borderRadius: 20, padding: "6px 16px",
                     color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer"
                   }}>
@@ -2520,18 +2513,18 @@ function MyTeamPageContent() {
         return (
           <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 24px" }}>
             <div style={{ background:"var(--surface)", borderRadius:20, padding:"24px 20px", width:"100%", maxWidth:320 }}>
-              <div style={{ fontSize:36, textAlign:"center", marginBottom:12 }}>🗑️</div>
+              <div style={{ fontSize:36, textAlign:"center", marginBottom:12, color:"var(--danger)" }}><i className="ti ti-trash" aria-hidden="true" /></div>
               <p style={{ fontSize:16, fontWeight:800, color:"var(--text)", textAlign:"center", margin:"0 0 8px" }}>매장 삭제</p>
               {hasMembers ? (
                 <>
                   <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", margin:"0 0 12px", lineHeight:1.5 }}>
-                    재직 중인 팀원이 <strong style={{ color:"#f87171" }}>{storeMembers.length}명</strong> 있어요.<br/>
+                    재직 중인 팀원이 <strong style={{ color:"var(--danger)" }}>{storeMembers.length}명</strong> 있어요.<br/>
                     팀원 퇴직 처리 후 매장을 삭제할 수 있어요.
                   </p>
                   <div style={{ background:"var(--surface2)", borderRadius:10, padding:"8px 12px", marginBottom:16, maxHeight:120, overflowY:"auto" }}>
                     {storeMembers.map((m: any) => (
                       <div key={m.id} style={{ fontSize:12, color:"var(--text-muted)", padding:"3px 0", display:"flex", alignItems:"center", gap:6 }}>
-                        <span>👤</span>
+                        <i className="ti ti-user" aria-hidden="true" />
                         <span>{(m as any).users?.nickname || "팀원"}</span>
                         {m.member_role === "manager" && <span style={{ fontSize:10, color:"#f59e0b" }}>매니저</span>}
                       </div>

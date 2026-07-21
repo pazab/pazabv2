@@ -37,10 +37,10 @@ interface PostingMatchMeta {
 }
 
 const STAGE_STEPS = [
-  { n: 1, label: "우리 팀", emoji: "👥" },
-  { n: 2, label: "동네 검증", emoji: "✅" },
-  { n: 3, label: "신규 포함", emoji: "🔵" },
-  { n: 4, label: "공개 SOS", emoji: "📢" },
+  { n: 1, label: "우리 팀", icon: "ti-users" },
+  { n: 2, label: "동네 검증", icon: "ti-circle-check" },
+  { n: 3, label: "신규 포함", icon: "ti-circle-plus" },
+  { n: 4, label: "공개 SOS", icon: "ti-speakerphone" },
 ];
 
 interface DaetaSosHomeProps {
@@ -199,18 +199,18 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
           style={{
             width: "100%",
             padding: "22px 20px",
-            background: "linear-gradient(135deg, #f97316, #ef4444)",
+            background: "var(--gradient-hero)",
             border: "none",
             borderRadius: 22,
             cursor: "pointer",
-            boxShadow: "0 8px 32px rgba(249,115,22,0.4)",
+            boxShadow: "var(--shadow-elevate)",
             display: "flex",
             alignItems: "center",
             gap: 14,
             marginBottom: 10,
           }}
         >
-          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>⚡</div>
+          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}><i className="ti ti-bolt" aria-hidden="true" /></div>
           <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.5px" }}>대타 구하기</div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 }}>펑크 났나요? 한 번이면 팀 → 동네 검증 인력 순으로 자동 알림</div>
@@ -226,7 +226,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
           <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>불러오는 중...</div>
         ) : postings.length > 0 && (
           <div style={{ marginBottom: 24 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 10px" }}>🔥 진행 중인 요청</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}><i className="ti ti-flame" aria-hidden="true" /> 진행 중인 요청</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {postings.map(p => {
                 const meta = matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null };
@@ -281,7 +281,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
                                   background: current ? "rgba(251,146,60,0.15)" : active ? "rgba(255,255,255,0.06)" : "transparent",
                                   border: current ? "1px solid rgba(251,146,60,0.45)" : "1px solid transparent",
                                 }}>
-                                  <div style={{ fontSize: 12 }}>{s.emoji}</div>
+                                  <i className={`ti ${s.icon}`} style={{ fontSize: 12 }} aria-hidden="true" />
                                   <div style={{ fontSize: 9, fontWeight: current ? 800 : 500, color: current ? "#fb923c" : active ? "var(--text, #fff)" : "var(--text-muted, rgba(255,255,255,0.3))", marginTop: 1 }}>
                                     {s.label}
                                   </div>
@@ -326,13 +326,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
         <div style={{ display: "flex", gap: 10 }}>
           <button
             onClick={onOpenDeck}
-            style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            👀 직접 고르기
+            style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <i className="ti ti-eye" aria-hidden="true" /> 직접 고르기
           </button>
           <button
             onClick={() => setShowHistory(true)}
-            style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            📋 대타 내역
+            style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <i className="ti ti-list" aria-hidden="true" /> 대타 내역
           </button>
         </div>
       </div>
@@ -362,7 +362,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
             <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{pendingConfirm.message}</p>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={pendingConfirm.onConfirm}
-                style={{ flex: 2, padding: "14px", background: "linear-gradient(135deg, #ef4444, #dc2626)", border: "none", borderRadius: 14, color: "#fff", fontWeight: 700, cursor: "pointer" }}>
+                style={{ flex: 2, padding: "14px", background: "var(--danger)", border: "none", borderRadius: 14, color: "#fff", fontWeight: 700, cursor: "pointer" }}>
                 확인
               </button>
               <button onClick={() => setPendingConfirm(null)}

@@ -255,7 +255,7 @@ export default function BottomNav() {
     <>
       {/* 토스트 알림 */}
       {toast && (
-        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "var(--nav-bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 13, padding: "12px 20px", borderRadius: 20, zIndex: 300, whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,0.4)", maxWidth: "90vw", textAlign: "center" }}>
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "var(--nav-bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 13, padding: "12px 20px", borderRadius: 20, zIndex: 300, whiteSpace: "nowrap", boxShadow: "var(--shadow-elevate)", maxWidth: "90vw", textAlign: "center" }}>
           {toast}
         </div>
       )}
@@ -271,12 +271,12 @@ export default function BottomNav() {
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button onClick={() => { setMatchModal(null); router.push(`/chat/${matchModal.matchId}`); }}
-                style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
-                💬 바로 채팅하기
+                style={{ width: "100%", background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <i className="ti ti-message-circle" aria-hidden="true" /> 바로 채팅하기
               </button>
               <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
-                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
-                🤖 AI 사전미팅으로 먼저 알아보기 (선택)
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <i className="ti ti-robot" aria-hidden="true" /> AI 사전미팅으로 먼저 알아보기 (선택)
               </button>
               <button onClick={() => setMatchModal(null)}
                 style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 13, cursor: "pointer", padding: 8 }}>
@@ -303,7 +303,7 @@ export default function BottomNav() {
               const isDaeta = (tab as any).center;
               // 대타만 색으로 구분(전략상 1순위 기능) — 크기·형태는 다른 탭과 동일하게 통일
               const activeColor = isDaeta ? "#fb923c" : "#a78bfa";
-              const barColor = isDaeta ? "linear-gradient(90deg, #f97316, #ef4444)" : "linear-gradient(90deg, #8b5cf6, #ec4899)";
+              const barColor = isDaeta ? "#fb923c" : "var(--primary)";
               return (
                 <button key={tab.label} onClick={() => handleTabClick(tab.path)}
                   style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "8px 14px 6px", position: "relative", flex: 1, transition: "opacity 0.15s" }}>
@@ -312,7 +312,7 @@ export default function BottomNav() {
                   <div style={{ position: "relative" }}>
                     <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? activeColor : isDaeta ? "#fb923c99" : "var(--text-muted)", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
                     {(tab as any).badge > 0 && (
-                      <span style={{ position: "absolute", top: -3, right: -8, background: "linear-gradient(135deg, #ec4899, #f43f5e)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 10, minWidth: 16, textAlign: "center", border: "1.5px solid var(--nav-bg)" }}>
+                      <span style={{ position: "absolute", top: -3, right: -8, background: "var(--danger)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 10, minWidth: 16, textAlign: "center", border: "1.5px solid var(--nav-bg)" }}>
                         {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
                       </span>
                     )}

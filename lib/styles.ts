@@ -16,15 +16,15 @@ export const cardInnerStyle: CSSProperties = {
 };
 
 export const cardGradientStyle: CSSProperties = {
-  background: "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(236,72,153,0.08))",
+  background: "var(--primary-light)",
   border: "1px solid var(--primary-border)",
   borderRadius: 20,
   padding: 20,
 };
 
-// ─── 버튼 ───────────────────────────────────────────
+// ─── 버튼 (방향 A: 플랫 단색, 그라데이션은 --gradient-hero 하나만) ──
 export const btnPrimary: CSSProperties = {
-  background: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+  background: "var(--primary)",
   border: "none",
   borderRadius: 16,
   padding: "14px 16px",
@@ -48,13 +48,26 @@ export const btnSecondary: CSSProperties = {
 };
 
 export const btnAccent: CSSProperties = {
-  background: "linear-gradient(135deg, #ec4899, #be185d)",
+  background: "var(--accent)",
   border: "none",
   borderRadius: 16,
   padding: "14px 16px",
   color: "#fff",
   fontWeight: 700,
   fontSize: 14,
+  cursor: "pointer",
+  width: "100%",
+};
+
+// SOS·긴급 전용 히어로 버튼 — 그라데이션 예외를 쓸 수 있는 유일한 자리
+export const btnHero: CSSProperties = {
+  background: "var(--gradient-hero)",
+  border: "none",
+  borderRadius: 16,
+  padding: "16px 18px",
+  color: "#fff",
+  fontWeight: 800,
+  fontSize: 15,
   cursor: "pointer",
   width: "100%",
 };
@@ -104,7 +117,28 @@ export const chipPrimary: CSSProperties = {
   ...chipStyle,
   background: "var(--primary-light)",
   border: "1px solid var(--primary-border)",
-  color: "#c4b5fd",
+  color: "var(--purple-text)",
+};
+
+export const chipWarning: CSSProperties = {
+  ...chipStyle,
+  background: "var(--warning-bg)",
+  border: "1px solid var(--warning-border)",
+  color: "var(--warning)",
+};
+
+export const chipDanger: CSSProperties = {
+  ...chipStyle,
+  background: "var(--danger-bg)",
+  border: "1px solid var(--danger-border)",
+  color: "var(--danger)",
+};
+
+export const chipSuccess: CSSProperties = {
+  ...chipStyle,
+  background: "var(--success-bg)",
+  border: "1px solid var(--success-border)",
+  color: "var(--success)",
 };
 
 // ─── 섹션 헤더 ──────────────────────────────────────

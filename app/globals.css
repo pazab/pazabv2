@@ -35,6 +35,23 @@
   --nav-border: rgba(0, 0, 0, 0.08);
   --search-bg: rgba(0, 0, 0, 0.05);
   --search-border: rgba(0, 0, 0, 0.08);
+
+  /* ─── 방향 A: 플랫 미니멀 토큰 ───────────────────────
+     그라데이션은 --gradient-hero 하나만, 나머지는 전부 단색.
+     새 화면/컴포넌트는 색상 하드코딩 대신 이 토큰만 참조할 것. */
+  --warning: #d97706;
+  --warning-bg: rgba(217, 119, 6, 0.08);
+  --warning-border: rgba(217, 119, 6, 0.25);
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.08);
+  --danger-border: rgba(220, 38, 38, 0.25);
+  --success: #16a34a;
+  --success-bg: rgba(22, 163, 74, 0.08);
+  --success-border: rgba(22, 163, 74, 0.22);
+  --gradient-hero: linear-gradient(135deg, #f97316, #ef4444); /* 대타 SOS 전용, 화면당 1곳만 */
+  --shadow-elevate: 0 2px 10px rgba(0, 0, 0, 0.06);
+  --radius-card: 16px;
+  --radius-btn: 14px;
 }
 
 @theme inline {
@@ -97,6 +114,18 @@
     --nav-border: rgba(255, 255, 255, 0.06);
     --search-bg: rgba(255, 255, 255, 0.06);
     --search-border: rgba(255, 255, 255, 0.08);
+
+    /* 방향 A 토큰 — 다크 재정의 */
+    --warning: #f59e0b;
+    --warning-bg: rgba(245, 158, 11, 0.12);
+    --warning-border: rgba(245, 158, 11, 0.3);
+    --danger: #f87171;
+    --danger-bg: rgba(248, 113, 113, 0.1);
+    --danger-border: rgba(248, 113, 113, 0.28);
+    --success: #4ade80;
+    --success-bg: rgba(74, 222, 128, 0.1);
+    --success-border: rgba(74, 222, 128, 0.25);
+    --shadow-elevate: 0 2px 10px rgba(0, 0, 0, 0.35);
   }
 }
 

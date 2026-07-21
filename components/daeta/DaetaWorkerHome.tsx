@@ -261,7 +261,7 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
             width: "100%",
             padding: "18px 20px",
             background: available
-              ? "linear-gradient(135deg, rgba(34,197,94,0.18), rgba(34,197,94,0.08))"
+              ? "var(--success-bg)"
               : "var(--surface, rgba(255,255,255,0.04))",
             border: available ? "1.5px solid rgba(34,197,94,0.5)" : "1px solid var(--border, rgba(255,255,255,0.1))",
             borderRadius: 20,
@@ -273,7 +273,7 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontSize: 24 }}>{available ? "🟢" : "⚪"}</div>
+            <i className={`ti ${available ? "ti-circle-filled" : "ti-circle"}`} style={{ fontSize: 24, color: available ? "var(--success)" : "var(--text-muted)" }} aria-hidden="true" />
             <div style={{ textAlign: "left" }}>
               <div style={{ fontSize: 15, fontWeight: 900, color: "var(--text, #fff)" }}>
                 {available ? "대타 가능" : "대타 알림 꺼짐"}
@@ -309,7 +309,7 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
         {/* 들어온 요청 */}
         {incoming.length > 0 && (
           <div style={{ marginBottom: 24 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 10px" }}>📥 나에게 온 대타 요청</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}><i className="ti ti-inbox" aria-hidden="true" /> 나에게 온 대타 요청</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {incoming.map(r => (
                 <div key={r.matchId} style={{ background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 18, padding: 16 }}>
@@ -324,8 +324,8 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
                     <button
                       onClick={() => respond(r.matchId, "accept")}
                       disabled={actionLoading === r.matchId}
-                      style={{ flex: 2, padding: "12px", background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 14, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", opacity: actionLoading === r.matchId ? 0.6 : 1 }}>
-                      {actionLoading === r.matchId ? "처리 중..." : "✅ 수락 (계약 자동 작성)"}
+                      style={{ flex: 2, padding: "12px", background: "var(--success)", border: "none", borderRadius: 14, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", opacity: actionLoading === r.matchId ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      {actionLoading === r.matchId ? "처리 중..." : (<><i className="ti ti-circle-check" aria-hidden="true" /> 수락 (계약 자동 작성)</>)}
                     </button>
                     <button
                       onClick={() => respond(r.matchId, "reject")}
@@ -342,8 +342,8 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
 
         {/* 동네 대타 자리 */}
         <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 10px" }}>
-            📍 지금 열려 있는 동네 대타
+          <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
+            <i className="ti ti-map-pin" aria-hidden="true" /> 지금 열려 있는 동네 대타
           </h3>
           {loading ? (
             <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>불러오는 중...</div>
@@ -386,7 +386,7 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
                         style={{
                           flexShrink: 0,
                           padding: "10px 16px",
-                          background: applied ? "rgba(34,197,94,0.12)" : "linear-gradient(135deg, #f97316, #ef4444)",
+                          background: applied ? "rgba(34,197,94,0.12)" : "#fb923c",
                           border: applied ? "1px solid rgba(34,197,94,0.35)" : "none",
                           borderRadius: 14,
                           color: applied ? "#4ade80" : "#fff",
@@ -394,8 +394,9 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
                           fontWeight: 800,
                           cursor: applied ? "default" : "pointer",
                           opacity: actionLoading === p.id ? 0.6 : 1,
+                          display: "flex", alignItems: "center", gap: 4,
                         }}>
-                        {applied ? "지원됨" : actionLoading === p.id ? "..." : "🚀 지원"}
+                        {applied ? "지원됨" : actionLoading === p.id ? "..." : (<><i className="ti ti-send" aria-hidden="true" /> 지원</>)}
                       </button>
                     </div>
                   </div>
@@ -407,8 +408,8 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
 
         <button
           onClick={() => setShowHistory(true)}
-          style={{ width: "100%", padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          📋 내 대타 내역
+          style={{ width: "100%", padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <i className="ti ti-list" aria-hidden="true" /> 내 대타 내역
         </button>
       </div>
 

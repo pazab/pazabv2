@@ -23,13 +23,8 @@ function calcDistance(a: { lat: number; lng: number }, b: { lat: number; lng: nu
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-const BG_LIST = [
-  "linear-gradient(160deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%)",
-  "linear-gradient(160deg, #0d1b2a 0%, #1b263b 40%, #415a77 100%)",
-  "linear-gradient(160deg, #1a0a2e 0%, #2d1b69 40%, #11998e 100%)",
-  "linear-gradient(160deg, #0a2a1a 0%, #1b4332 40%, #2d6a4f 100%)",
-  "linear-gradient(160deg, #2a0a1a 0%, #69182d 40%, #c0392b 100%)",
-];
+// 방향 A: 후보 카드마다 랜덤 그라데이션을 돌리던 배경 제거 — 사진 없을 때만 보이는 폴백이라 무채색 하나로 통일
+const BG_LIST = ["#18181b"];
 const ACCENT_LIST = ["#ff9800", "#8b5cf6", "#ec4899", "#22c55e", "#ef4444"];
 
 interface Candidate {
@@ -481,7 +476,7 @@ export default function DaetaPage() {
   // ── 부팅 중 ──
   if (view === "boot") return (
     <div style={{ position: "fixed", inset: 0, background: "var(--bg, #0a0a0f)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg, #f97316, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, animation: "pulse 1.5s ease-in-out infinite" }}>⚡</div>
+      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--gradient-hero)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, animation: "pulse 1.5s ease-in-out infinite", color: "#fff" }}><i className="ti ti-bolt" aria-hidden="true" /></div>
       <style>{`@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }`}</style>
     </div>
   );
@@ -496,10 +491,11 @@ export default function DaetaPage() {
               <button key={r} onClick={() => setRoleView(r)}
                 style={{
                   padding: "6px 14px", borderRadius: 17, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                  background: roleView === r ? "linear-gradient(135deg, #f97316, #ef4444)" : "none",
+                  background: roleView === r ? "#fb923c" : "none",
                   color: roleView === r ? "#fff" : "rgba(255,255,255,0.5)",
+                  display: "flex", alignItems: "center", gap: 4,
                 }}>
-                {r === "employer" ? "🏪 사장님" : "👤 알바생"}
+                <i className={`ti ${r === "employer" ? "ti-building-store" : "ti-user"}`} aria-hidden="true" /> {r === "employer" ? "사장님" : "알바생"}
               </button>
             ))}
           </div>
@@ -525,7 +521,7 @@ export default function DaetaPage() {
       {/* 중앙 콘텐츠 */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 32px", position: "relative", zIndex: 2 }}>
         {/* 아이콘 */}
-        <div style={{ width: 96, height: 96, borderRadius: "50%", background: "linear-gradient(135deg, #8b5cf6, #ec4899)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 32, boxShadow: "0 0 60px rgba(139,92,246,0.4)" }}>
+        <div style={{ width: 96, height: 96, borderRadius: "50%", background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 32, boxShadow: "var(--shadow-elevate)" }}>
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8">
             <path d="M12 21s-8-7.5-8-12a8 8 0 1 1 16 0c0 4.5-8 12-8 12z"/>
             <circle cx="12" cy="9" r="2.5"/>
@@ -542,9 +538,9 @@ export default function DaetaPage() {
         {/* 허용 버튼 */}
         <button
           onClick={startWithGps}
-          style={{ width: "100%", maxWidth: 320, padding: "18px", background: "linear-gradient(135deg, #8b5cf6, #ec4899)", border: "none", borderRadius: 18, fontSize: 16, fontWeight: 800, color: "#fff", cursor: "pointer", marginBottom: 14, boxShadow: "0 8px 32px rgba(139,92,246,0.4)" }}
+          style={{ width: "100%", maxWidth: 320, padding: "18px", background: "var(--primary)", border: "none", borderRadius: 18, fontSize: 16, fontWeight: 800, color: "#fff", cursor: "pointer", marginBottom: 14, boxShadow: "var(--shadow-elevate)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
         >
-          📍 현재 위치로 찾기
+          <i className="ti ti-map-pin" aria-hidden="true" /> 현재 위치로 찾기
         </button>
 
         {/* 거부 버튼 */}
@@ -557,7 +553,7 @@ export default function DaetaPage() {
 
         {/* 직접 주소 검색 추가 */}
         <div style={{ width: "100%", maxWidth: 320, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.4)", marginBottom: 10, textAlign: "center" }}>🔍 또는 위치 직접 검색</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.4)", marginBottom: 10, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}><i className="ti ti-search" aria-hidden="true" /> 또는 위치 직접 검색</div>
           <div style={{ display: "flex", gap: 8, position: "relative" }}>
             <input
               type="text"
@@ -605,7 +601,7 @@ export default function DaetaPage() {
                 maxHeight: 180,
                 overflowY: "auto",
                 zIndex: 100,
-                boxShadow: "0 10px 25px rgba(0,0,0,0.5)"
+                boxShadow: "var(--shadow-elevate)"
               }}>
                 {searchResults.map((item, idx) => (
                   <div
@@ -639,7 +635,7 @@ export default function DaetaPage() {
     <div style={{ position: "fixed", inset: 0, background: "#0a0a0f", display: "flex", flexDirection: "column" }}>
       <AppHeader showBack onBack={backToHome} title="대타" showBellAndMenu />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
-      <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, #8b5cf6, #ec4899)", display: "flex", alignItems: "center", justifyContent: "center", animation: "pulse 1.5s ease-in-out infinite" }}>
+      <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", animation: "pulse 1.5s ease-in-out infinite" }}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M12 21s-8-7.5-8-12a8 8 0 1 1 16 0c0 4.5-8 12-8 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
       </div>
       <div style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>근처 대타 매칭 중...</div>
@@ -746,11 +742,11 @@ export default function DaetaPage() {
             alignItems: "center",
             gap: 6,
             backdropFilter: "blur(8px)",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+            boxShadow: "var(--shadow-elevate)",
             outline: "none"
           }}
         >
-          {showVideo ? "📷 사진 프로필" : "📹 영상 프로필 (5초)"}
+          {showVideo ? (<><i className="ti ti-photo" aria-hidden="true" /> 사진 프로필</>) : (<><i className="ti ti-video" aria-hidden="true" /> 영상 프로필 (5초)</>)}
         </button>
       )}
 
@@ -780,7 +776,7 @@ export default function DaetaPage() {
                     gap: "4px"
                   }}
                 >
-                  📋 내 대타내역
+                  <i className="ti ti-list" aria-hidden="true" /> 내 대타내역
                 </button>
               )}
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -810,10 +806,10 @@ export default function DaetaPage() {
           justifyContent: "space-between",
           alignItems: "center",
           backdropFilter: "blur(8px)",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.3)"
+          boxShadow: "var(--shadow-elevate)"
         }}>
           <div style={{ flex: 1, overflow: "hidden", marginRight: 8 }}>
-            <span style={{ fontSize: 10, color: "#c4b5fd", fontWeight: 700, display: "block" }}>📢 매칭 기준 공고</span>
+            <span style={{ fontSize: 10, color: "#c4b5fd", fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}><i className="ti ti-speakerphone" aria-hidden="true" /> 매칭 기준 공고</span>
             <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {activePosting.business_name} ({activePosting.work_date})
             </div>
@@ -828,7 +824,7 @@ export default function DaetaPage() {
                 setShowRegisterModal(true);
               }}
               style={{
-                background: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                background: "var(--primary)",
                 border: "none",
                 borderRadius: 8,
                 padding: "6px 10px",
@@ -913,9 +909,13 @@ export default function DaetaPage() {
 
         {/* 칩 */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
-          {[`📍 ${c.distance}`, `⏱ ${c.eta} 후 도착`, `💼 경험 ${c.experience}개월`].map(label => (
-            <span key={label} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)", padding: "6px 12px", borderRadius: 20 }}>
-              {label}
+          {[
+            { icon: "ti-map-pin", text: c.distance },
+            { icon: "ti-clock", text: `${c.eta} 후 도착` },
+            { icon: "ti-briefcase", text: `경험 ${c.experience}개월` },
+          ].map(chip => (
+            <span key={chip.icon} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)", padding: "6px 12px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <i className={`ti ${chip.icon}`} aria-hidden="true" /> {chip.text}
             </span>
           ))}
         </div>
@@ -936,16 +936,17 @@ export default function DaetaPage() {
                 fontWeight: 800,
                 color: "#fff",
                 cursor: "pointer",
-                boxShadow: `0 8px 32px ${c.accent}66`,
-                opacity: callingState[c.id]?.loading ? 0.7 : 1
+                boxShadow: "var(--shadow-elevate)",
+                opacity: callingState[c.id]?.loading ? 0.7 : 1,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}
             >
-              {callingState[c.id]?.loading ? "전송 중..." : "🚀 대타 SOS 요청"}
+              {callingState[c.id]?.loading ? "전송 중..." : (<><i className="ti ti-rocket" aria-hidden="true" /> 대타 SOS 요청</>)}
             </button>
           ) : (
             <div style={{ display: "flex", gap: 8, flex: 1 }}>
               <div style={{ flex: 2, padding: "8px 16px", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 16, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: "#22c55e" }}>✅ 요청 완료</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "#22c55e", display: "flex", alignItems: "center", gap: 4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 요청 완료</div>
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>응답 대기 중</div>
               </div>
               <button
@@ -977,9 +978,9 @@ export default function DaetaPage() {
 
       {/* 우측 액션 */}
       <div style={{ position: "absolute", right: 16, bottom: 190, display: "flex", flexDirection: "column", gap: 16, zIndex: 10 }}>
-        {[{ icon: "❤️", label: "찜" }, { icon: "💬", label: "문의" }, { icon: "🔖", label: "저장" }].map(item => (
+        {[{ icon: "ti-heart", label: "찜" }, { icon: "ti-message-circle", label: "문의" }, { icon: "ti-bookmark", label: "저장" }].map(item => (
           <button key={item.label} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-            <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{item.icon}</div>
+            <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: "#fff" }}><i className={`ti ${item.icon}`} aria-hidden="true" /></div>
             <span style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 500 }}>{item.label}</span>
           </button>
         ))}
@@ -993,7 +994,7 @@ export default function DaetaPage() {
             right: 16,
             bottom: 120,
             borderRadius: "30px",
-            background: "linear-gradient(135deg, #7c3aed, #db2777)",
+            background: "var(--gradient-hero)",
             border: "none",
             color: "#fff",
             padding: "8px 12px",
@@ -1003,7 +1004,7 @@ export default function DaetaPage() {
             display: "flex",
             alignItems: "center",
             gap: "4px",
-            boxShadow: "0 6px 20px rgba(124, 58, 237, 0.45)",
+            boxShadow: "var(--shadow-elevate)",
             zIndex: 100,
             outline: "none",
             transition: "transform 0.15s ease-in-out"
@@ -1078,7 +1079,7 @@ export default function DaetaPage() {
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 onClick={pendingConfirm.onConfirm}
-                style={{ flex: 2, padding: "14px", background: "linear-gradient(135deg, #ef4444, #dc2626)", border: "none", borderRadius: 14, color: "#fff", fontWeight: 700, cursor: "pointer" }}
+                style={{ flex: 2, padding: "14px", background: "var(--danger)", border: "none", borderRadius: 14, color: "#fff", fontWeight: 700, cursor: "pointer" }}
               >
                 확인
               </button>
@@ -1123,7 +1124,7 @@ export default function DaetaPage() {
                 style={{
                   flex: 1,
                   padding: "12px 10px",
-                  background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
+                  background: "var(--primary)",
                   border: "none",
                   borderRadius: 12,
                   color: "#fff",
@@ -1136,7 +1137,7 @@ export default function DaetaPage() {
                   gap: 4
                 }}
               >
-                📍 내 GPS 위치
+                <i className="ti ti-map-pin" aria-hidden="true" /> 내 GPS 위치
               </button>
               
               <button
@@ -1169,7 +1170,7 @@ export default function DaetaPage() {
                   gap: 4
                 }}
               >
-                🏪 등록된 매장 위치
+                <i className="ti ti-building-store" aria-hidden="true" /> 등록된 매장 위치
               </button>
             </div>
 
