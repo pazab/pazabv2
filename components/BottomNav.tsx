@@ -8,6 +8,7 @@ export default function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [daetaUnread, setDaetaUnread] = useState(0);
   const [hidden, setHidden] = useState(false);
   const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
 
@@ -37,6 +38,20 @@ export default function BottomNav() {
         .eq("is_read", false)
         .in("match_id", activeMatchIds);
       setUnreadCount(count || 0);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const checkDaetaUnread = useCallback(async (uid: string) => {
+    try {
+      const { count } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", uid)
+        .eq("type", "daeta")
+        .eq("is_read", false);
+      setDaetaUnread(count || 0);
     } catch (e) {
       console.error(e);
     }
@@ -136,6 +151,13 @@ export default function BottomNav() {
           () => {
             if (active) checkUnread(userId);
           }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+          () => {
+            if (active) checkDaetaUnread(userId);
+          }
         );
 
       newChannel.subscribe();
@@ -150,7 +172,7 @@ export default function BottomNav() {
         supabase.removeChannel(chatChannel);
       }
     };
-  }, [userId, checkUnread]);
+  }, [userId, checkUnread, checkDaetaUnread]);
 
   useEffect(() => {
     let lastY = 0;
@@ -188,11 +210,12 @@ export default function BottomNav() {
         const { data } = await supabase.from("users").select("user_type").eq("id", uid).single();
         setUserType(data?.user_type || null);
         await checkUnread(uid);
+        await checkDaetaUnread(uid);
       } else {
         setUserId(null);
       }
     });
-  }, [pathname, checkUnread]);
+  }, [pathname, checkUnread, checkDaetaUnread]);
 
   const handleTabClick = (path: string) => {
     const protectedPaths = ["/feed", "/chat", "/mypage", "/personality", "/interview", "/myteam", "/daeta"];
@@ -223,7 +246,7 @@ export default function BottomNav() {
   // DESIGN_PLAN.md P4 확정형: [홈][대타⚡중앙][채팅][MY] 4탭 — 탐색·피드는 ⋮ 메뉴로 강등
   const tabs = [
     { icon: "ti-home", label: "홈", path: "/myteam", active: pathname === "/" || pathname.startsWith("/myteam") || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
-    { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta"), center: true },
+    { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta"), center: true, badge: daetaUnread },
     { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat"), badge: unreadCount },
     { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];
@@ -244,16 +267,16 @@ export default function BottomNav() {
             <div style={{ fontSize: 56, marginBottom: 12 }}>🎉</div>
             <h3 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 8px" }}>매칭 성사!</h3>
             <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 24px", lineHeight: 1.6 }}>
-              본격적인 채팅 전에<br />AI 사전미팅으로 먼저 알아가볼까요? 😊
+              대타 확정까지 빠르게 이야기해요
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
-                style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
-                🤖 AI 사전미팅 하기
-              </button>
               <button onClick={() => { setMatchModal(null); router.push(`/chat/${matchModal.matchId}`); }}
-                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>
+                style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
                 💬 바로 채팅하기
+              </button>
+              <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                🤖 AI 사전미팅으로 먼저 알아보기 (선택)
               </button>
               <button onClick={() => setMatchModal(null)}
                 style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 13, cursor: "pointer", padding: 8 }}>
@@ -277,38 +300,24 @@ export default function BottomNav() {
         <div style={{ width: "100%", maxWidth: 480 }}>
           <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", padding: "8px 4px calc(8px + env(safe-area-inset-bottom))" }}>
             {tabs.map(tab => {
-              const isCenter = (tab as any).center;
-              return isCenter ? (
-                <button key={tab.label} onClick={() => handleTabClick(tab.path)}
-                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", position: "relative", padding: "0 10px", marginBottom: 10, marginTop: -20, flexShrink: 0 }}>
-                  <div style={{
-                    width: 54, height: 54, borderRadius: "50%",
-                    background: "linear-gradient(135deg, #f97316, #ef4444)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    boxShadow: tab.active
-                      ? "0 0 0 3px rgba(249,115,22,0.35), 0 6px 20px rgba(249,115,22,0.5)"
-                      : "0 4px 16px rgba(249,115,22,0.4)",
-                    border: "3px solid var(--nav-bg)",
-                    transition: "box-shadow 0.2s",
-                  }}>
-                    <i className={`ti ${tab.icon}`} style={{ fontSize: 24, color: "#fff" }} aria-hidden="true" />
-                  </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: tab.active ? "#fdba74" : "#fb923c" }}>{tab.label}</span>
-                </button>
-              ) : (
+              const isDaeta = (tab as any).center;
+              // 대타만 색으로 구분(전략상 1순위 기능) — 크기·형태는 다른 탭과 동일하게 통일
+              const activeColor = isDaeta ? "#fb923c" : "#a78bfa";
+              const barColor = isDaeta ? "linear-gradient(90deg, #f97316, #ef4444)" : "linear-gradient(90deg, #8b5cf6, #ec4899)";
+              return (
                 <button key={tab.label} onClick={() => handleTabClick(tab.path)}
                   style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "8px 14px 6px", position: "relative", flex: 1, transition: "opacity 0.15s" }}>
                   {/* 상단 액티브 인디케이터 바 */}
-                  <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: tab.active ? 20 : 0, height: 2, borderRadius: 2, background: "linear-gradient(90deg, #8b5cf6, #ec4899)", transition: "width 0.25s ease" }} />
+                  <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: tab.active ? 20 : 0, height: 2, borderRadius: 2, background: barColor, transition: "width 0.25s ease" }} />
                   <div style={{ position: "relative" }}>
-                    <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#a78bfa" : "var(--text-muted)", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
+                    <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? activeColor : isDaeta ? "#fb923c99" : "var(--text-muted)", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
                     {(tab as any).badge > 0 && (
                       <span style={{ position: "absolute", top: -3, right: -8, background: "linear-gradient(135deg, #ec4899, #f43f5e)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 10, minWidth: 16, textAlign: "center", border: "1.5px solid var(--nav-bg)" }}>
                         {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
                       </span>
                     )}
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: tab.active ? 700 : 500, color: tab.active ? "#a78bfa" : "var(--text-muted)", transition: "color 0.2s" }}>{tab.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: tab.active ? 700 : 500, color: tab.active ? activeColor : isDaeta ? "#fb923c99" : "var(--text-muted)", transition: "color 0.2s" }}>{tab.label}</span>
                 </button>
               );
             })}

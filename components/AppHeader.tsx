@@ -102,24 +102,20 @@ export default function AppHeader({
             </button>
             {menuOpen && (
               <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", width: 190, boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 50 }}>
-                <button onClick={() => { setMenuOpen(false); router.push("/daeta"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fb923c", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 16 }}>🔥</span> 대타 SOS
-                </button>
+                {/* 동결군 — 탐색/피드: 톤다운, 대타 SOS는 하단 네비 중앙에 이미 있어 중복 노출 안 함 */}
+                <div style={{ padding: "8px 16px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", letterSpacing: 0.3 }}>
+                  둘러보기
+                </div>
                 <button onClick={() => { setMenuOpen(false); router.push("/explore"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#a5b4fc", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 16 }}>🧭</span> 알바 탐색
+                  style={{ width: "100%", background: "none", border: "none", padding: "11px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 15, opacity: 0.7 }}>🧭</span> 알바 탐색
                 </button>
                 <button onClick={() => { setMenuOpen(false); router.push("/feed"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#ec4899", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 16 }}>📰</span> 피드
-                </button>
-                <button onClick={() => { setMenuOpen(false); router.push("/sudoku"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#a78bfa", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 16 }}>🔢</span> 스도쿠
+                  style={{ width: "100%", background: "none", border: "none", padding: "11px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text-muted)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 15, opacity: 0.7 }}>📰</span> 피드
                 </button>
                 <button onClick={() => { setMenuOpen(false); router.push("/settings"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 16 }}>⚙️</span> 설정
                 </button>
               </div>

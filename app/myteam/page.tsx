@@ -1146,11 +1146,13 @@ function MyTeamPageContent() {
     const hasStores = loadedStores.length > 0;
     const hasWork = loadedWork.length > 0;
 
-    // 디폴트 접힘/펼침 로직 적용
-    if (!hasStores && !hasWork) {
-      setTeamOpen(true);
-      setWorkOpen(true);
-    } else if (hasStores && hasWork) {
+    // 디폴트 접힘/펼침 로직
+    // both 계정: 데이터 있는 섹션은 접어서 "오늘의 요약" 카드만 먼저 보여줌(둘 다 항상 노출, 숨기지 않음).
+    // 데이터 없는 섹션은 펼쳐서 온보딩 CTA(매장 등록/공고 탐색)가 바로 보이게 함.
+    if (ut === "both") {
+      setTeamOpen(!hasStores);
+      setWorkOpen(!hasWork);
+    } else if (!hasStores && !hasWork) {
       setTeamOpen(true);
       setWorkOpen(true);
     } else {
@@ -1632,6 +1634,12 @@ function MyTeamPageContent() {
   const isEmployer = userType === "employer" || userType === "both";
   const isWorker = userType === "worker" || userType === "both";
 
+  // 접힌 헤더 한 줄 요약용 (오늘의 요약 카드를 따로 두지 않고 헤더 서브텍스트에 압축)
+  const teamEmployeeCount = Object.values(membersByStore).flat().length;
+  const teamTodayCount = myStores.reduce((sum, s) => sum + (statsByStore[s.id]?.today || 0), 0);
+  const teamPendingCount = myStores.reduce((sum, s) => sum + (statsByStore[s.id]?.pending || 0), 0);
+  const workPendingCount = current.filter((m: any) => m.contractStatus !== "done").length;
+
   const contractBadge = (status: string) => ({
     none: { label:"⚠️ 계약서미작성", color:"#ef4444", bg:"#ef444415" },
     pending: { label:"⏳ 서명대기", color:"#f59e0b", bg:"#f59e0b15" },
@@ -1799,8 +1807,24 @@ function MyTeamPageContent() {
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{current.length > 0 ? `${current.length}곳 재직 중` : "소속 없음"}</p>
                     </div>
                   </div>
-                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: workOpen ? "rotate(180deg)" : "none", display:"block" }}>⌄</span>
+                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: workOpen ? "rotate(180deg)" : "none", display:"block", flexShrink:0 }}>⌄</span>
                 </button>
+
+                {/* 통계 그리드 — 펼쳤을 때 나오는 매장별 카드 통계와 동일한 스타일 */}
+                {current.length > 0 && (
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:1, background:"var(--border)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
+                    {[
+                      { label:"재직 매장", value: current.length },
+                      { label:"계약 확인", value: workPendingCount, alert: workPendingCount > 0 },
+                    ].map(s => (
+                      <div key={s.label} style={{ background:"var(--surface)", padding:"9px 4px", textAlign:"center" }}>
+                        <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
+                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "#f87171" : "var(--text)", margin:0 }}>{s.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {workOpen && (
                   current.length === 0 ? (
                     <div style={{ ...cardStyle, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -1910,8 +1934,26 @@ function MyTeamPageContent() {
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{myStores.length > 0 ? `${myStores.length}곳 운영 중` : "매장 없음"}</p>
                     </div>
                   </div>
-                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: teamOpen ? "rotate(180deg)" : "none", display:"block" }}>⌄</span>
+                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: teamOpen ? "rotate(180deg)" : "none", display:"block", flexShrink:0 }}>⌄</span>
                 </button>
+
+                {/* 통계 그리드 — 펼쳤을 때 매장 카드 내부와 동일한 스타일(라벨/값 그리드)을 접힌 상태에도 그대로 사용 */}
+                {myStores.length > 0 && (
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:1, background:"var(--border)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
+                    {[
+                      { label:"매장", value: myStores.length },
+                      { label:"직원", value: teamEmployeeCount },
+                      { label:"오늘 출근", value: teamTodayCount },
+                      { label:"계약 확인", value: teamPendingCount, alert: teamPendingCount > 0 },
+                    ].map(s => (
+                      <div key={s.label} style={{ background:"var(--surface)", padding:"9px 4px", textAlign:"center" }}>
+                        <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
+                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "#f87171" : "var(--text)", margin:0 }}>{s.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {teamOpen && (<>
 
                 {/* 사장님 온보딩 가이드 (미완료 시 상단 노출) */}

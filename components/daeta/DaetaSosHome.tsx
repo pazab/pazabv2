@@ -24,7 +24,11 @@ interface SosPosting {
   allow_new: boolean;
   status: string;
   created_at: string;
+  stage_updated_at: string | null;
 }
+
+// 서버 기본 대기시간(lib/daetaEscalation.ts DEFAULT_CONFIG)과 동일 — 관리자 설정 변경 시 다소 어긋날 수 있는 근사치
+const STAGE_WAIT_MIN: Record<number, number> = { 1: 10, 2: 30, 3: 30 };
 
 interface PostingMatchMeta {
   total: number;
@@ -60,7 +64,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
   const load = useCallback(async () => {
     const { data: rows } = await supabase
       .from("daeta_postings")
-      .select("id, business_name, region, work_date, work_hours, wage, duty, escalation_stage, allow_new, status, created_at")
+      .select("id, business_name, region, work_date, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at")
       .eq("user_id", userId)
       .eq("status", "pending")
       .order("created_at", { ascending: false });
@@ -109,6 +113,26 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // 확산 카운트다운 표시용 — 1분마다 재계산
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  function nextExpansionInfo(p: SosPosting): { label: string; minutesLeft: number } | null {
+    const stage = p.escalation_stage || 1;
+    if (stage >= 4) return null;
+    if (stage === 2 && !p.allow_new) return null; // opt-in 안 하면 2→4 직행(대기 안내 스킵)
+    const waitMin = STAGE_WAIT_MIN[stage];
+    if (!waitMin) return null;
+    const stageStart = new Date(p.stage_updated_at || p.created_at).getTime();
+    const elapsedMin = (now - stageStart) / 60000;
+    const minutesLeft = Math.max(0, Math.ceil(waitMin - elapsedMin));
+    const label = stage === 1 ? "동네 ✅검증 인력 공개" : stage === 2 ? "🔵신규 알바생 공개" : "전체 공개 SOS";
+    return { label, minutesLeft };
+  }
 
   const fireSos = async (postingId: string) => {
     try {
@@ -280,6 +304,15 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck }: DaetaSosH
                             응답 {meta.total}건
                           </span>
                         </div>
+                        {(() => {
+                          const info = nextExpansionInfo(p);
+                          if (!info) return null;
+                          return (
+                            <div style={{ marginTop: 8, fontSize: 11, color: "#fbbf24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: 10, padding: "6px 10px" }}>
+                              ⏳ {info.minutesLeft <= 0 ? "곧" : `약 ${info.minutesLeft}분 후`} {info.label}로 확대돼요 — 원치 않으면 지금 취소하세요
+                            </div>
+                          );
+                        })()}
                       </>
                     )}
                   </div>

@@ -142,8 +142,6 @@ export default function Home() {
             <button onClick={() => router.push("/terms")} style={{ background: "none", border: "none", color: "#71717a", fontSize: 12, cursor: "pointer" }}>이용약관</button>
             <span style={{ color: "#27272a", fontSize: 12 }}>|</span>
             <button onClick={() => router.push("/privacy")} style={{ background: "none", border: "none", color: "#71717a", fontSize: 12, cursor: "pointer" }}>개인정보처리방침</button>
-            <span style={{ color: "#27272a", fontSize: 12 }}>|</span>
-            <button onClick={() => router.push("/sudoku")} style={{ background: "none", border: "none", color: "#71717a", fontSize: 12, cursor: "pointer" }}>🎮 스도쿠</button>
           </div>
           <p style={{ fontSize: 11, color: "#52525b", margin: 0, lineHeight: 1.5 }}>
             © {new Date().getFullYear()} PAZAB. All rights reserved.<br />

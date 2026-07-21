@@ -66,6 +66,34 @@ function postingSummary(p: DaetaPostingRow) {
   return `${p.work_date} ${p.work_hours} · 시급 ${p.wage.toLocaleString()}원`;
 }
 
+const WARN_BEFORE_MIN = 5;
+
+/**
+ * 확산 임박 예고 — 다음 단계로 넘어가기 WARN_BEFORE_MIN분 전, 사장님에게 취소 기회 제공.
+ * notifications.data에 daetaPostingId+warnStage를 남겨 중복 발송 방지(별도 스키마 없이 재사용).
+ */
+async function maybeWarnExpansion(sb: SupabaseClient, posting: DaetaPostingRow, stage: number) {
+  const { data: existing } = await sb
+    .from("notifications")
+    .select("id")
+    .eq("user_id", posting.user_id)
+    .eq("type", "daeta")
+    .eq("data->>daetaPostingId", posting.id)
+    .eq("data->>warnStage", String(stage))
+    .maybeSingle();
+  if (existing) return;
+
+  const nextLabel = stage === 1 ? "동네 ✅검증 인력" : stage === 2 ? "🔵신규 알바생" : "전체 공개 SOS";
+  await createNotification({
+    userId: posting.user_id,
+    type: "daeta",
+    title: "⏳ 잠시 후 대타 요청이 넓어져요",
+    body: `${WARN_BEFORE_MIN}분 뒤 ${nextLabel}으로 확대돼요. 원치 않으면 지금 요청을 취소할 수 있어요.`,
+    url: "/daeta",
+    data: { daetaPostingId: posting.id, warnStage: stage },
+  });
+}
+
 /** ① 팀 내 알림 — 사장님 소속 active 팀원 전원에게 발송. 알림 보낸 인원 수 반환 */
 export async function notifyTeam(sb: SupabaseClient, posting: DaetaPostingRow): Promise<number> {
   const { data: members } = await sb
@@ -155,7 +183,12 @@ export async function advancePostingStage(
     2: cfg.stage2_wait_min,
     3: cfg.stage3_wait_min,
   };
-  if (elapsedMin < waitMap[stage]) return null;
+  if (elapsedMin < waitMap[stage]) {
+    if (elapsedMin >= waitMap[stage] - WARN_BEFORE_MIN) {
+      await maybeWarnExpansion(sb, posting, stage);
+    }
+    return null;
+  }
 
   let nextStage: number;
   if (stage === 1) nextStage = 2;
