@@ -1750,7 +1750,9 @@ function ContractContent() {
                     <input style={errStyle(!f.worker.trim())} value={f.worker} onChange={e => updateField("worker", e.target.value)} placeholder="근로자 이름" />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>생년월일 <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· 선택 (비워두면 알바생이 동의할 때 직접 입력)</span></label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                      * 생년월일 <span style={{ color: "#fb923c", fontWeight: 700, background: "rgba(251,146,60,0.12)", padding: "2px 8px", borderRadius: 6, marginLeft: 4 }}>* 선택 (비워두면 알바생 동의 시 직접 입력)</span>
+                    </label>
                     <input type="date" style={inputStyle} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} />
                     {(() => {
                       const age = f.workerBirth ? calcAge(f.workerBirth) : null;
@@ -1775,11 +1777,15 @@ function ContractContent() {
                     })()}
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>연락처 <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· 선택 (비워두면 알바생이 동의할 때 직접 입력)</span></label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                      * 연락처 <span style={{ color: "#fb923c", fontWeight: 700, background: "rgba(251,146,60,0.12)", padding: "2px 8px", borderRadius: 6, marginLeft: 4 }}>* 선택 (비워두면 알바생 동의 시 직접 입력)</span>
+                    </label>
                     <input type="tel" style={inputStyle} value={f.workerPhone} onChange={e => updateField("workerPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" inputMode="tel" />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>주소 (등본지 주소) <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· 선택 (비워두면 알바생이 동의할 때 직접 입력)</span></label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                      * 주소 (등본지 주소) <span style={{ color: "#fb923c", fontWeight: 700, background: "rgba(251,146,60,0.12)", padding: "2px 8px", borderRadius: 6, marginLeft: 4 }}>* 선택 (비워두면 알바생 동의 시 직접 입력)</span>
+                    </label>
                     <button onClick={() => openAddressSearch("workerAddr")}
                       style={{ width: "100%", background: "var(--surface2)", border: "1.5px solid var(--border)", borderRadius: 12, padding: "13px 16px", color: f.workerAddr ? "var(--text)" : "var(--text-muted)", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 16 }}>🔍</span>
@@ -2196,8 +2202,81 @@ function ContractContent() {
                   {/* 계좌번호 (계좌이체 선택 시) */}
                   {f.payMethod === "계좌이체" && (
                     <div>
-                      <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>계좌번호 <span style={{ fontWeight: 400, fontSize: 10 }}>(선택)</span></label>
-                      <input style={inputStyle} value={f.bankAccount} onChange={e => updateField("bankAccount", e.target.value)} placeholder="은행명 + 계좌번호 (예: 국민 123-456-789)" />
+                      <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                        * 급여 수령 계좌 <span style={{ color: "#fb923c", fontWeight: 700, background: "rgba(251,146,60,0.12)", padding: "2px 8px", borderRadius: 6, marginLeft: 4 }}>* 선택 (비워두면 알바생 동의 시 직접 입력)</span>
+                      </label>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 6 }}>
+                          <select
+                            style={{ ...inputStyle, padding: "10px 8px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}
+                            value={(f as any).bankName || ""}
+                            onChange={e => {
+                              const bName = e.target.value;
+                              const bNum = (f as any).bankNumber || "";
+                              const customName = (f as any).bankCustomName || "";
+                              const finalName = bName === "기타" ? customName : bName;
+                              setF(p => ({
+                                ...p,
+                                bankName: bName,
+                                bankAccount: (finalName || bNum) ? `${finalName} ${bNum}`.trim() : ""
+                              }));
+                            }}>
+                            <option value="">은행 선택</option>
+                            <option value="KB국민">KB국민</option>
+                            <option value="신한">신한</option>
+                            <option value="우리">우리</option>
+                            <option value="하나">하나</option>
+                            <option value="카카오뱅크">카카오뱅크</option>
+                            <option value="토스뱅크">토스뱅크</option>
+                            <option value="NH농협">NH농협</option>
+                            <option value="IBK기업">IBK기업</option>
+                            <option value="새마을금고">새마을금고</option>
+                            <option value="우체국">우체국</option>
+                            <option value="SC제일">SC제일</option>
+                            <option value="수협">수협</option>
+                            <option value="신협">신협</option>
+                            <option value="기타">기타 (직접입력)</option>
+                          </select>
+                          <input
+                            style={inputStyle}
+                            value={(f as any).bankNumber || ""}
+                            onChange={e => {
+                              const bNum = e.target.value;
+                              const bName = (f as any).bankName || "";
+                              const customName = (f as any).bankCustomName || "";
+                              const finalName = bName === "기타" ? customName : bName;
+                              setF(p => ({
+                                ...p,
+                                bankNumber: bNum,
+                                bankAccount: (finalName || bNum) ? `${finalName} ${bNum}`.trim() : ""
+                              }));
+                            }}
+                            placeholder="👉 계좌번호 입력 (숫자/하이픈)"
+                            inputMode="numeric"
+                          />
+                        </div>
+                        {(f as any).bankName === "기타" && (
+                          <input
+                            style={inputStyle}
+                            value={(f as any).bankCustomName || ""}
+                            onChange={e => {
+                              const customName = e.target.value;
+                              const bNum = (f as any).bankNumber || "";
+                              setF(p => ({
+                                ...p,
+                                bankCustomName: customName,
+                                bankAccount: (customName || bNum) ? `${customName} ${bNum}`.trim() : ""
+                              }));
+                            }}
+                            placeholder="👉 은행명을 입력하세요 (예: 케이뱅크)"
+                          />
+                        )}
+                        {((f as any).bankName || (f as any).bankNumber) && (
+                          <div style={{ fontSize: 11, color: "#10b981", fontWeight: 700, padding: "2px 4px" }}>
+                            🏦 적용 계좌: {((f as any).bankName === "기타" ? (f as any).bankCustomName : (f as any).bankName)} {(f as any).bankNumber}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 

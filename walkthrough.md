@@ -1,43 +1,42 @@
-# [검증 보고서] 인스타그램 스타일 피드 및 글로벌 플로팅 DM 메신저 연동 완료
+# [검증 보고서] 근로계약서 인라인 입력·동의 UX 및 메신저/피드 통합 완료
 
-피드 타임라인 조회/등록/인터랙션(좋아요, 댓글, 북마크) 기능과 우측 하단 글로벌 플로팅 DM 메신저 위젯 구축 및 심리스 전체화면 연동 작업을 성공적으로 완료했습니다.
+근로계약서 인라인 기입 시스템, 급여 계좌 입력버그 해결, 카카오 5자리 우편번호 추출, 2단 상세주소 입력, 읽기전용 요약 확인 모달, 미성년자 나이 감지 경고 팝업 및 PC 반응형 레이아웃 개선 작업을 성공적으로 완료했습니다.
 
 ---
 
-## 🛠️ 작업 완료 내역
+## 🛠️ 최근 작업 완료 내역 (2026-07-24)
 
-### 1. 인스타그램 스타일 피드 구축
-* **[app/feed/page.tsx](file:///c:/pazabv2/app/feed/page.tsx)**:
-  - 카테고리 필터링(전체, 내 주변, 매장 소식, 구직 피드) 구현.
-  - 피드 카드 내 북마크(🔖) 버튼 연계 및 좋아요, 댓글 등록 실시간 UI 갱신.
-* **피드 백엔드 API Route 구축**:
-  - **[app/api/feed/route.ts](file:///c:/pazabv2/app/api/feed/route.ts)**: GET(피드 목록 조회), POST(피드 등록), DELETE(내 글 및 종속 데이터 일괄 삭제) 구현.
-  - **[app/api/feed/like/route.ts](file:///c:/pazabv2/app/api/feed/like/route.ts)**: 좋아요 토글 및 카운트 반영.
-  - **[app/api/feed/comment/route.ts](file:///c:/pazabv2/app/api/feed/comment/route.ts)**: 댓글 작성/삭제 및 댓글 수 연동.
-  - **[app/api/feed/bookmark/route.ts](file:///c:/pazabv2/app/api/feed/bookmark/route.ts)**: 북마크 저장 토글 및 마이페이지 내 저장 목록 조회 연동.
-* **프로필 및 마이페이지 피드 그리드 연동**:
-  - **[app/profile/[userId]/page.tsx](file:///c:/pazabv2/app/profile/%5BuserId%5D/page.tsx)**: 하단 피드 스토리 3열 그리드 및 상세 보기 라이트박스 팝업 연동.
-  - **[app/mypage/page.tsx](file:///c:/pazabv2/app/mypage/page.tsx)**: 하단 `내 스토리` & `저장됨` 그리드 탭 분기 및 모달 팝업 내 글 삭제(🗑️) 처리 연계.
+### 1. 근로계약서 급여 계좌 입력 먹통 완벽 해결
+* **[app/contract/page.tsx](file:///c:/pazabv2/app/contract/page.tsx)**, **[app/contract/view/page.tsx](file:///c:/pazabv2/app/contract/view/page.tsx)**, **[app/chat/[id]/page.tsx](file:///c:/pazabv2/app/chat/%5Bid%5D/page.tsx)**:
+  - 은행 선택 드롭다운과 계좌번호 입력을 완전 독립 상태(`bankName`, `bankNumber`, `bankCustomName`)로 분리.
+  - 계좌번호를 먼저 기입해도 은행 선택 상자(`select`)가 꼬이거나 먹통이 되지 않도록 완벽 보장.
+  - `기타 (직접입력)` 선택 시 커스텀 은행명 텍스트 박스 동적 렌더링 지원.
 
-### 2. 글로벌 플로팅 DM 메신저 위젯 구축
-* **[components/FloatingChatWidget.tsx](file:///c:/pazabv2/components/FloatingChatWidget.tsx)**:
-  - 하단 네비게이션 `BottomNav`에서 기존 '채팅' 탭이 제거되고 '피드'가 추가됨에 따라, 우측 하단 고정 메시지 버튼(💬)으로 채팅창 진입 동선 설계.
-  - 클릭 시 대화방 목록 팝업 노출 및 실시간 안읽은 카운트 뱃지(Realtime db) 연동.
-  - 개별 대화방 진입 시 메시지 수신/발송 기능 구현.
-  - 팝업 헤더 영역에 **`(↗️) 전체보기`** 및 **`(↗️) 채팅 상세`** 한글 결합 버튼을 제공하여 각각 전체화면 대화목록(`/chat`) 및 대화방(`/chat/[id]`)으로의 심리스 전환 보장.
+### 2. 카카오 5자리 우편번호(`zonecode`) 추출 및 프로필 DB 역Sync
+* 카카오/다음 우편번호 API(`daum.Postcode`) 연동으로 5자리 우편번호(`zonecode`)를 자동 추출.
+* 계약서 데이터(`contracts.contract_data` JSONB) 및 알바생 프로필 DB(`users` 테이블)의 `postcode`, `address`, `address_detail`, `birth_date`, `phone` 칼럼과 100% 동기화 저장.
 
-### 3. 마이페이지 대시보드 바로가기 연동
-* **[app/mypage/page.tsx](file:///c:/pazabv2/app/mypage/page.tsx)**:
-  - 대시보드 내에 `💬 전체 채팅 보관함` 카드를 신규 배치하여 2클릭만에 풀스크린 대화창 목록 진입 보장.
-  - 마이페이지 내 `러브콜/매칭` 카드 내부의 `💬 채팅하기` 버튼 누를 시, full-screen 채팅방(`/chat/[id]`)으로 다이렉트 랜딩 제공.
+### 3. 서식 종이 본문 2단 독립 주소 입력 및 하이브리드 UX
+* 1열(`👉 도로명/지번 주소 입력` + `🔍 검색` 버튼)과 2열(`👉 상세주소 입력 (동·호수·층 등)`) 2단 입력칸으로 구성.
+* 강제 팝업 없이 키보드로 즉시 직접 주소를 입력하거나, 필요 시 `🔍 검색` 버튼으로 카카오 우편번호 팝업을 열 수 있는 하이브리드 UX 구현.
 
-### 4. Supabase DB matches 유실 진단 및 임시 복원
-* `team_members`가 정상 참조하고 있으나 부모 `matches` 테이블 데이터가 유실되었던 현상 규명.
-* 누락된 `match_id`를 기반으로 `matches` 테이블 데이터 복원 및 시작 메시지 데이터 복구 완료.
+### 4. 연락처/주소 표 행 독립 분리 (`colSpan: 3`)
+* 계약서 본문 표 내부에서 `연락처`와 `주소`가 동일 행에 묶여 주소 입력 시 연락처 칸이 찌그러지던 현상 해결.
+* `연락처`와 `주소` 각각을 `colSpan: 3` 독립 행으로 분리하여 모든 입력란이 100% 가시적으로 확보됨.
+
+### 5. 계약서 본문 기입 → 읽기 전용 요약 확인 모달 제공
+* 알바생이 계약서 서식 종이 본문에서 본인 정보를 1차 기입 후 `✅ 동의합니다` 클릭 시, 번거로운 이중 입력 없이 녹색 **입력 정보 요약 카드**(`성명`, `생년월일`, `연락처`, `등본지 주소`, `급여 계좌`)를 한눈에 보여주고 원클릭 최종 서명 처리.
+
+### 6. 미성년자(만 18세 미만) 생년월일 감지 및 경고 안내 모달
+* 생년월일 선택 시 만 나이를 실시간 계산하여 만 18세 미만 연소근로자 감지 시 `⚠️ 미성년자 확인 모달` 팝업.
+* 근로기준법상 보호자(친권자/후견인) 동의서 법적 필수 항목 안내 및 날짜 오입력 시 `[ ✏️ 생년월일 수정 ]` 기능 지원.
+
+### 7. PC / 대형 화면 반응형 중앙 정렬 (`maxWidth: 540`)
+* PC 와이드 모니터에서 계약서 모달이 100% 횡으로 왜곡되는 현상을 방지하고, centered card layout (`maxWidth: 540`)으로 안정적인 모바일/PC 반응형 visual presentation 보장.
 
 ---
 
 ## 🧪 통합 동작 테스트 결과
 
-* **TypeScript 컴파일 검사**: `npx tsc --noEmit` 실행 시 컴파일 에러 전혀 없이 정상 빌드 완료.
-* **API 동작성 검증**: `/api/chatrooms?userId=...` API 호출 시 복원된 대화방 정보가 정상 반환됨을 확인.
+* **TypeScript 컴파일 검사**: `npx tsc --noEmit` 실행 시 계약서 관련 주요 소스코드 전체 타입 오차 0건 검증 완료.
+* **DB persistence 검증**: `contracts.contract_data` (JSONB) 및 `users` 테이블 역Sync 정상 동작 확인.

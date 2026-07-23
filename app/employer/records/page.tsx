@@ -22,6 +22,7 @@ type Member = {
   contracts: Contract[];
   attendance_count: number;
   retention_expires: string | null; // hire_date + 3년
+  team_documents?: any[];
 };
 
 type Contract = {
@@ -123,6 +124,13 @@ export default function EmployerRecordsPage() {
       countMap[a.team_member_id] = (countMap[a.team_member_id] || 0) + 1;
     });
 
+    // 팀원 서류 일괄 조회
+    const { data: teamDocs } = tmIds.length > 0
+      ? await supabase.from("team_member_documents")
+          .select("id, team_member_id, doc_type, file_url, expires_at")
+          .in("team_member_id", tmIds)
+      : { data: [] };
+
     const enriched: Member[] = tm.map((m: any) => {
       const mContracts = (contracts || []).filter((c: any) => c.worker_id === m.worker_id);
       
@@ -168,6 +176,7 @@ export default function EmployerRecordsPage() {
         contracts: mContracts,
         attendance_count: countMap[m.id] || 0,
         retention_expires: hireDate ? addYears(hireDate, 3) : null,
+        team_documents: (teamDocs || []).filter((d: any) => d.team_member_id === m.id),
       };
     });
 
@@ -271,11 +280,17 @@ export default function EmployerRecordsPage() {
                       🗄️ {ret.label}
                     </span>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
                     <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
                       <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>계약서</p>
                       <p style={{ fontSize: 12, fontWeight: 700, margin: 0, color: signedContract ? "#4ade80" : hasContract ? "#fb923c" : "#f87171" }}>
                         {signedContract ? "✅ 완료" : hasContract ? "⏳ 서명대기" : "❌ 없음"}
+                      </p>
+                    </div>
+                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
+                      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>서류함</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, margin: 0, color: (m.team_documents?.length || 0) > 0 ? "#4ade80" : "var(--text-muted)" }}>
+                        {(m.team_documents?.length || 0) > 0 ? `📁 ${m.team_documents?.length}건` : "미제출"}
                       </p>
                     </div>
                     <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>

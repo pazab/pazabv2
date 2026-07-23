@@ -626,8 +626,23 @@ export async function PATCH(req: NextRequest) {
     const { action, contractId, teamMemberId, matchId, workerId, employerId, isHired } = await req.json();
 
     if (action === "sign") {
-      // 계약서 worker_signed = true
+      let empId = employerId;
+      let wrkId = workerId;
+      let targetMatchId = matchId;
+
+      // 계약서 정보 조회
       if (contractId) {
+        const { data: cData } = await supabaseAdmin.from("contracts").select("*").eq("id", contractId).single();
+        if (cData) {
+          if (!empId) empId = cData.employer_id;
+          if (!wrkId) wrkId = cData.worker_id;
+          if (!targetMatchId && cData.team_member_id) {
+            const { data: tm } = await supabaseAdmin.from("team_members").select("match_id").eq("id", cData.team_member_id).single();
+            if (tm?.match_id) targetMatchId = tm.match_id;
+          }
+        }
+
+        // 계약서 worker_signed = true
         await supabaseAdmin.from("contracts")
           .update({ worker_signed: true, status: "active", worker_signed_at: new Date().toISOString() })
           .eq("id", contractId);
@@ -638,37 +653,59 @@ export async function PATCH(req: NextRequest) {
         await supabaseAdmin.from("team_members")
           .update({ contract_status: "active" })
           .eq("id", teamMemberId);
-      } else if (matchId && workerId) {
-        // teamMemberId 없으면 matchId+workerId로 찾기
+      } else if (targetMatchId && wrkId) {
         await supabaseAdmin.from("team_members")
           .update({ contract_status: "active" })
-          .eq("match_id", matchId)
-          .eq("worker_id", workerId);
+          .eq("match_id", targetMatchId)
+          .eq("worker_id", wrkId);
       }
 
       // 아직 hired 아닐 때: matches 업데이트 + team_members 생성
-      if (!isHired && matchId) {
+      if (!isHired && targetMatchId) {
         await supabaseAdmin.from("matches")
           .update({ progress_status: "hired", hire_confirmed_by_employer: true, hire_confirmed_by_worker: true })
-          .eq("id", matchId);
+          .eq("id", targetMatchId);
 
-        if (workerId && employerId) {
+        if (wrkId && empId) {
           const { data: existingTm } = await supabaseAdmin.from("team_members")
-            .select("id").eq("match_id", matchId).maybeSingle();
+            .select("id").eq("match_id", targetMatchId).maybeSingle();
           if (!existingTm) {
             const { data: matchRow } = await supabaseAdmin.from("matches")
-              .select("employer_profile_id").eq("id", matchId).maybeSingle();
+              .select("employer_profile_id").eq("id", targetMatchId).maybeSingle();
             await supabaseAdmin.from("team_members").insert({
-              employer_id: employerId,
-              worker_id: workerId,
+              employer_id: empId,
+              worker_id: wrkId,
               employer_profile_id: matchRow?.employer_profile_id || null,
-              match_id: matchId,
+              match_id: targetMatchId,
               hire_date: new Date().toISOString().split("T")[0],
               status: "active",
               contract_status: "active",
             });
           }
         }
+      }
+
+      // 1. 사장님과의 채팅방에 실시간 동의완료 시스템 메시지 발송
+      if (targetMatchId && wrkId && empId) {
+        await supabaseAdmin.from("chats").insert({
+          match_id: targetMatchId,
+          sender_id: wrkId,
+          receiver_id: empId,
+          message: "✅ 근로자가 근로계약서에 서명을 완료했어요! 전자계약 체결이 완료되었습니다. 🎉",
+          message_type: "system",
+          is_read: false,
+        });
+      }
+
+      // 2. 사장님에게 인앱 알림 발송
+      if (empId) {
+        await supabaseAdmin.from("notifications").insert({
+          user_id: empId,
+          type: "contract",
+          title: "✍️ 근로계약서 서명 완료!",
+          body: "알바생이 근로계약서에 서명을 완료했어요. 최종 체결된 계약서를 확인해보세요.",
+          data: { url: contractId ? `/contract/view?contractId=${contractId}` : "/myteam" },
+        });
       }
 
       return NextResponse.json({ success: true });

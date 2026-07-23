@@ -38,7 +38,7 @@ export default function ChatRoomPage() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [revisionReason, setRevisionReason] = useState("");
-  const [contractStatus, setContractStatus] = useState<"none"|"pending"|"done">("none");
+  const [contractStatus, setContractStatus] = useState<"none"|"pending"|"done"|"cancelled">("none");
   const [leaveStep, setLeaveStep] = useState<"confirm" | "review">("confirm");
   const [quickReview, setQuickReview] = useState<"good" | "bad" | null>(null);
   const [quickReviewReason, setQuickReviewReason] = useState("");
@@ -48,7 +48,27 @@ export default function ChatRoomPage() {
   const [signPhone, setSignPhone] = useState("");
   const [signAddr, setSignAddr] = useState("");
   const [signAddrDetail, setSignAddrDetail] = useState("");
+  const [signPostcode, setSignPostcode] = useState("");
+  const [signBankName, setSignBankName] = useState("");
+  const [signBankCustomName, setSignBankCustomName] = useState("");
+  const [signBankNumber, setSignBankNumber] = useState("");
   const [signTried, setSignTried] = useState(false);
+  const [showMinorWarningModal, setShowMinorWarningModal] = useState(false);
+  const [detectedMinorAge, setDetectedMinorAge] = useState<number | null>(null);
+
+  const calcAge = (birthDateStr: string): number | null => {
+    if (!birthDateStr) return null;
+    const clean = birthDateStr.replace(/\.\s*/g, "-").replace(/\s+/g, "");
+    const birth = new Date(clean);
+    if (isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  };
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewScore, setReviewScore] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
@@ -110,10 +130,11 @@ export default function ChatRoomPage() {
       .select("id").eq("match_id", matchId).maybeSingle();
     if (!tm) { setContractStatus("none"); return; }
     const { data } = await supabase.from("contracts")
-      .select("id, worker_signed, employer_signed")
-      .eq("team_member_id", tm.id).neq("status", "cancelled")
+      .select("id, worker_signed, employer_signed, status")
+      .eq("team_member_id", tm.id)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!data) setContractStatus("none");
+    else if (data.status === "cancelled") setContractStatus("cancelled");
     else if (data.worker_signed) setContractStatus("done");
     else setContractStatus("pending");
   };
@@ -228,7 +249,7 @@ export default function ChatRoomPage() {
         .eq("id", matchId).single();
 
       if (m) {
-        setMatch(prev => prev ? { ...prev, ...m } : prev);
+        setMatch((prev: any) => prev ? { ...prev, ...m } : prev);
         if (m.progress_status === "hired") {
           updateProgressStatus("hired");
           checkContractStatus(); // hired 상태면 계속 계약서 상태 체크
@@ -331,11 +352,14 @@ export default function ChatRoomPage() {
     const { data } = await supabase.from("contracts")
       .select("*")
       .eq(tm ? "team_member_id" : "employer_id", tm ? tm.id : "")
-      .neq("status", "cancelled")
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (data) {
       setContractData(data);
-      setContractStatus(data.worker_signed ? "done" : "pending");
+      if (data.status === "cancelled") {
+        setContractStatus("cancelled");
+      } else {
+        setContractStatus(data.worker_signed ? "done" : "pending");
+      }
     } else {
       setContractStatus("none");
     }
@@ -1145,48 +1169,67 @@ export default function ChatRoomPage() {
             <p style={{ fontSize: 13, color: "var(--text-muted)" }}>먼저 인사를 건네보세요</p>
           </div>
         )}
-        {messages.map((msg) => {
-          const isMine = msg.sender_id === userId;
-          const dateLabel = formatDate(msg.created_at);
-          const showDate = dateLabel !== lastDate;
-          lastDate = dateLabel;
-          return (
-            <div key={msg.id}>
-              {showDate && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 12px" }}>
-                  <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, whiteSpace: "nowrap", background: "var(--bg)", padding: "0 4px" }}>{dateLabel}</span>
-                  <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                </div>
-              )}
-              {msg.message_type === "system" ? (
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-                  <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 18, padding: "10px 18px", fontSize: 13, color: "var(--purple-text)", textAlign: "center", maxWidth: "88%", lineHeight: 1.7, whiteSpace: "pre-line", boxShadow: "var(--shadow-elevate)" }}>
-                    {msg.message}
-                    {/* 채용 확정 → 사장님: 계약서 작성 버튼 */}
-                    {msg.message?.includes("채용이 확정됐어요") && msg.message?.includes("계약서를 작성") && isEmployer && (
-                      <div style={{ marginTop: 10 }}>
-                        <button onClick={() => router.push(`/contract?matchId=${matchId}&mode=update&from=chat`)}
-                          style={{ background: "var(--primary)", border: "none", borderRadius: 12, padding: "8px 18px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "var(--shadow-elevate)" }}>
-                          ✏️ 계약서 작성하기
-                        </button>
-                      </div>
-                    )}
-                    {/* 계약서 발행/수정 → [계약서 확인하기] */}
-                    {(msg.message?.includes("근로계약서가 발행") || msg.message?.includes("근로계약서가 수정")) && (
-                      <div style={{ marginTop: 10, display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" as const }}>
-                        <button onClick={loadContract}
-                          style={{ background: "var(--primary)", border: "none", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                          📄 계약서 확인하기
-                        </button>
-                        {isEmployer && (
-                          <button onClick={goToUpdateContract}
-                            style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
-                            ✏️ 수정하기
+        {/* 가장 최신의 계약서 관련 시스템 메시지 ID 식별 */}
+        {(() => {
+          const latestContractMsgId = [...messages].reverse().find(m =>
+            m.message_type === "system" &&
+            (m.message?.includes("근로계약서가 발행") || m.message?.includes("근로계약서가 수정"))
+          )?.id;
+
+          return messages.map((msg) => {
+            const isMine = msg.sender_id === userId;
+            const dateLabel = formatDate(msg.created_at);
+            const showDate = dateLabel !== lastDate;
+            lastDate = dateLabel;
+            const isLatestContractMsg = msg.id === latestContractMsgId;
+
+            return (
+              <div key={msg.id}>
+                {showDate && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 12px" }}>
+                    <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, whiteSpace: "nowrap", background: "var(--bg)", padding: "0 4px" }}>{dateLabel}</span>
+                    <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                  </div>
+                )}
+                {msg.message_type === "system" ? (
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+                    <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 18, padding: "10px 18px", fontSize: 13, color: "var(--purple-text)", textAlign: "center", maxWidth: "88%", lineHeight: 1.7, whiteSpace: "pre-line", boxShadow: "var(--shadow-elevate)" }}>
+                      {msg.message}
+                      {/* 채용 확정 → 사장님: 계약서 작성 버튼 */}
+                      {msg.message?.includes("채용이 확정됐어요") && msg.message?.includes("계약서를 작성") && isEmployer && (
+                        <div style={{ marginTop: 10 }}>
+                          <button onClick={() => router.push(`/contract?matchId=${matchId}&mode=update&from=chat`)}
+                            style={{ background: "var(--primary)", border: "none", borderRadius: 12, padding: "8px 18px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "var(--shadow-elevate)" }}>
+                            ✏️ 계약서 작성하기
                           </button>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      )}
+                      {/* 계약서 발행/수정 → 최신 메시지만 [계약서 확인하기] 버튼 활성화 */}
+                      {(msg.message?.includes("근로계약서가 발행") || msg.message?.includes("근로계약서가 수정")) && (
+                        <div style={{ marginTop: 10, display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" as const }}>
+                          {!isLatestContractMsg ? (
+                            <span style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "6px 12px", color: "var(--text-muted)", fontSize: 11, fontWeight: 600 }}>
+                              📋 이전 계약서 메시지 (대체됨)
+                            </span>
+                          ) : contractStatus === "cancelled" || contractData?.status === "cancelled" ? (
+                            <span style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "8px 14px", color: "#f87171", fontSize: 12, fontWeight: 700 }}>
+                              🚫 계약서 발행 취소됨
+                            </span>
+                          ) : (
+                            <button onClick={loadContract}
+                              style={{ background: "var(--primary)", border: "none", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              📄 계약서 확인하기
+                            </button>
+                          )}
+                          {isEmployer && isLatestContractMsg && contractStatus !== "cancelled" && (
+                            <button onClick={goToUpdateContract}
+                              style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "8px 14px", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
+                              ✏️ 수정하기
+                            </button>
+                          )}
+                        </div>
+                      )}
                     {/* 수정 요청 → 사장님: 계약서 수정하기 버튼 */}
                     {msg.message?.includes("수정 요청") && isEmployer && (
                       <div style={{ marginTop: 10 }}>
@@ -1262,7 +1305,8 @@ export default function ChatRoomPage() {
               )}
             </div>
           );
-        })}
+        });
+      })()}
         <div ref={bottomRef} />
       </div>
       </div>
@@ -1390,24 +1434,41 @@ export default function ChatRoomPage() {
 
       {/* 계약서 모달 */}
       {showContractModal && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", flexDirection:"column" }}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", backdropFilter:"blur(6px)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:12 }}
+          onClick={() => setShowContractModal(false)}>
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:20, width:"100%", maxWidth:540, height:"92vh", display:"flex", flexDirection:"column", overflow:"hidden", boxShadow:"0 25px 50px -12px rgba(0,0,0,0.5)" }}
+            onClick={e => e.stopPropagation()}>
           {/* 모달 헤더 */}
           <div style={{ background:"var(--nav-bg)", borderBottom:"1px solid var(--border)", padding:"12px 16px", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
-            <button onClick={() => setShowContractModal(false)}
-              style={{ background:"none", border:"none", color:"var(--text-muted)", fontSize:20, cursor:"pointer" }}>←</button>
-            <span style={{ fontSize:15, fontWeight:700, color:"var(--text)" }}>근로계약서</span>
-            <div style={{ flex:1 }} />
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:16 }}>📄</span>
+              <span style={{ fontSize:15, fontWeight:800, color:"var(--text)" }}>근로계약서</span>
+            </div>
             <span style={{ ...chipStyle, fontWeight:600,
-              background: contractData?.worker_signed ? "var(--success-bg)" : "var(--warning-bg)",
-              border: `1px solid ${contractData?.worker_signed ? "var(--success-border)" : "var(--warning-border)"}`,
-              color: contractData?.worker_signed ? "var(--success)" : "var(--warning)" }}>
-              {contractData?.worker_signed ? "✅ 서명 완료" : "⏳ 서명 대기"}
+              background: contractData?.status === "cancelled" ? "rgba(248,113,113,0.15)" : contractData?.worker_signed ? "var(--success-bg)" : "var(--warning-bg)",
+              border: `1px solid ${contractData?.status === "cancelled" ? "rgba(248,113,113,0.3)" : contractData?.worker_signed ? "var(--success-border)" : "var(--warning-border)"}`,
+              color: contractData?.status === "cancelled" ? "#f87171" : contractData?.worker_signed ? "var(--success)" : "var(--warning)" }}>
+              {contractData?.status === "cancelled" ? "🚫 발행 취소됨" : contractData?.worker_signed ? "✅ 서명 완료" : "⏳ 서명 대기"}
             </span>
+            <div style={{ flex:1 }} />
+            <button onClick={() => setShowContractModal(false)} aria-label="닫기" title="닫기"
+              style={{ background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", width:32, height:32, borderRadius:"50%", fontSize:16, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              ✕
+            </button>
           </div>
 
           {/* 계약서 내용 스크롤 */}
           <div style={{ flex:1, overflowY:"auto", padding:12 }}>
-            {contractData ? (
+            {contractData?.status === "cancelled" ? (
+              <div style={{ textAlign:"center", padding:"40px 24px" }}>
+                <div style={{ fontSize:48, marginBottom:12 }}>🚫</div>
+                <p style={{ fontSize:15, fontWeight:700, color:"#f87171", marginBottom:8 }}>계약서 발행이 취소되었어요</p>
+                <p style={{ fontSize:13, color:"var(--text-muted)", lineHeight:1.7 }}>
+                  사장님이 이 근로계약서의 발행을 취소했습니다.<br/>
+                  필요시 새로 계약서를 작성해야 합니다.
+                </p>
+              </div>
+            ) : contractData ? (
               <div style={{ background:"#fff", borderRadius:10, padding:"14px 12px" }}>
                 {(() => {
                   const f = contractData.contract_data || {};
@@ -1438,8 +1499,51 @@ export default function ChatRoomPage() {
                           [{h:"업종",v:f.bizType||"-"},{h:"담당 업무",v:f.jobDesc||"-"}],
                         ]},
                         { sec:`${ct==="minor"?"3":"2"}. 근로자 정보`, rows:[
-                          [{h:"성명",v:f.worker||"-"},{h:"생년월일",v:f.workerBirth||"-"}],
-                          [{h:"연락처",v:f.workerPhone||"-"},{h:"주소",v:f.workerAddr||"-"}],
+                          [{h:"성명",v:f.worker||"-"},{h:"생년월일",v:f.workerBirth || (
+                            <input type="date" value={signBirth} onChange={e => {
+                              const val = e.target.value;
+                              setSignBirth(val);
+                              const age = calcAge(val);
+                              if (age !== null && age < 18) {
+                                setDetectedMinorAge(age);
+                                setShowMinorWarningModal(true);
+                              }
+                            }}
+                              style={{ background:"rgba(251,146,60,0.15)", border:"1.5px dashed #f97316", borderRadius:6, padding:"2px 6px", fontSize:"8.5pt", color:"#ea580c", fontWeight:800, outline:"none", width:"100%", boxSizing:"border-box" }} />
+                          )}],
+                          [{h:"연락처",v:f.workerPhone || (
+                            <input type="tel" value={signPhone} onChange={e => setSignPhone(formatPhone(e.target.value))} placeholder="👉 연락처 직접 입력 (010-0000-0000)"
+                              style={{ background:"rgba(251,146,60,0.15)", border:"1.5px dashed #f97316", borderRadius:6, padding:"2px 6px", fontSize:"8.5pt", color:"#ea580c", fontWeight:800, outline:"none", width:"100%", boxSizing:"border-box" }} />
+                          ),colSpan:3}],
+                          [{h:"주소",v:[f.workerAddr, f.workerAddrDetail].filter(Boolean).join(" ") || (
+                            <div style={{ display:"flex", flexDirection:"column", gap:4, width:"100%" }}>
+                              <div style={{ display:"flex", gap:4, alignItems:"center", width:"100%" }}>
+                                <input type="text" value={signAddr} onChange={e => setSignAddr(e.target.value)} placeholder="👉 도로명/지번 주소 입력"
+                                  style={{ background:"rgba(251,146,60,0.15)", border:"1.5px dashed #f97316", borderRadius:6, padding:"2px 6px", fontSize:"8.5pt", color:"#ea580c", fontWeight:800, outline:"none", flex:1 }} />
+                                <button type="button" onClick={() => {
+                                  const triggerDaum = () => {
+                                    new (window as any).daum.Postcode({
+                                      oncomplete: (data: any) => {
+                                        setSignAddr(data.roadAddress || data.jibunAddress);
+                                        setSignPostcode(data.zonecode || "");
+                                      },
+                                    }).open();
+                                  };
+                                  if (typeof window !== "undefined" && (window as any).daum?.Postcode) triggerDaum();
+                                  else {
+                                    const script = document.createElement("script");
+                                    script.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+                                    script.onload = triggerDaum;
+                                    document.head.appendChild(script);
+                                  }
+                                }} style={{ background:"linear-gradient(135deg,#7c3aed,#6366f1)", border:"none", borderRadius:6, padding:"2px 6px", fontSize:"7.5pt", fontWeight:700, color:"#fff", cursor:"pointer", whiteSpace:"nowrap" }}>
+                                  🔍 검색
+                                </button>
+                              </div>
+                              <input type="text" value={signAddrDetail} onChange={e => setSignAddrDetail(e.target.value)} placeholder="👉 상세주소 입력 (동·호수·층 등)"
+                                style={{ background:"rgba(251,146,60,0.15)", border:"1.5px dashed #f97316", borderRadius:6, padding:"2px 6px", fontSize:"8.5pt", color:"#ea580c", fontWeight:800, outline:"none", width:"100%", boxSizing:"border-box" }} />
+                            </div>
+                          ),colSpan:3}],
                         ]},
                       ].map(sec => (
                         <div key={sec.sec}>
@@ -1475,7 +1579,33 @@ export default function ChatRoomPage() {
                       <div style={{ fontSize:"9.5pt", fontWeight:700, borderLeft:"3px solid #000", paddingLeft:5, margin:"10px 0 4px" }}>{ct==="minor"?"6":"5"}. 임금</div>
                       <div style={{ paddingLeft:12, fontSize:"9pt", lineHeight:2 }}>
                         <div>시급: <strong>{f.wage||"-"}원</strong></div>
-                        <div>지급일: 매월 {f.payDay||"-"} · 지급 방법: {f.payMethod||"-"}</div>
+                        <div>지급일: 매월 {f.payDay||"-"} · 지급 방법: {f.payMethod === "계좌이체" ? (
+                          <span>근로자 명의 계좌 입금 (수령 계좌: {f.bankAccount || (
+                            <span style={{ display:"inline-flex", gap:4, alignItems:"center", verticalAlign:"middle" }}>
+                              <select value={signBankName} onChange={e => setSignBankName(e.target.value)}
+                                style={{ background:"rgba(251,146,60,0.15)", border:"1.5px dashed #f97316", borderRadius:6, padding:"2px 4px", fontSize:"8.5pt", color:"#ea580c", fontWeight:800 }}>
+                                <option value="">은행 선택</option>
+                                <option value="KB국민">KB국민</option>
+                                <option value="신한">신한</option>
+                                <option value="우리">우리</option>
+                                <option value="하나">하나</option>
+                                <option value="카카오뱅크">카카오뱅크</option>
+                                <option value="토스뱅크">토스뱅크</option>
+                                <option value="NH농협">NH농협</option>
+                                <option value="IBK기업">IBK기업</option>
+                                <option value="새마을금고">새마을금고</option>
+                                <option value="우체국">우체국</option>
+                                <option value="기타">기타</option>
+                              </select>
+                              {signBankName === "기타" && (
+                                <input type="text" value={signBankCustomName} onChange={e => setSignBankCustomName(e.target.value)} placeholder="은행명"
+                                  style={{ background:"rgba(251,146,60,0.15)", border:"1.5px dashed #f97316", borderRadius:6, padding:"2px 4px", fontSize:"8.5pt", color:"#ea580c", fontWeight:800, width:65 }} />
+                              )}
+                              <input type="text" value={signBankNumber} onChange={e => setSignBankNumber(e.target.value)} placeholder="👉 계좌번호 직접 입력" inputMode="numeric"
+                                style={{ background:"rgba(251,146,60,0.15)", border:"1.5px dashed #f97316", borderRadius:6, padding:"2px 6px", fontSize:"8.5pt", color:"#ea580c", fontWeight:800, outline:"none", width:130 }} />
+                            </span>
+                          )})</span>
+                        ) : f.payMethod||"-"}</div>
                       </div>
                       {/* 사회보험 */}
                       <div style={{ fontSize:"9.5pt", fontWeight:700, borderLeft:"3px solid #000", paddingLeft:5, margin:"10px 0 4px" }}>{ct==="minor"?"7":"6"}. 사회보험</div>
@@ -1547,7 +1677,23 @@ export default function ChatRoomPage() {
                   style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--warning-border)", color:"var(--warning)", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
                   ⚠️ 수정 요청
                 </button>
-                <button onClick={() => setShowSignConfirm(true)}
+                <button onClick={async () => {
+                  const cd = contractData?.contract_data || {};
+                  let userProf: any = null;
+                  if (userId) {
+                    const { data } = await supabase.from("users").select("birth_date, phone, address, address_detail").eq("id", userId).maybeSingle();
+                    userProf = data;
+                    setSignSelfInfo(data);
+                  }
+                  setSignBirth(cd.workerBirth || userProf?.birth_date || "");
+                  setSignPhone(cd.workerPhone || userProf?.phone || "");
+                  setSignAddr(cd.workerAddr || userProf?.address || "");
+                  setSignAddrDetail(cd.workerAddrDetail || userProf?.address_detail || "");
+                  setSignPostcode(cd.workerPostcode || cd.postcode || "");
+                  setSignBankName(cd.bankName || (cd.bankAccount ? cd.bankAccount.split(" ")[0] : ""));
+                  setSignBankNumber(cd.bankNumber || (cd.bankAccount ? cd.bankAccount.replace(/^[^\s]+\s*/, "") : ""));
+                  setShowSignConfirm(true);
+                }}
                   style={{ flex:2, background:"var(--success)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
                   ✅ 계약서에 동의합니다
                 </button>
@@ -1579,7 +1725,8 @@ export default function ChatRoomPage() {
             )}
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ── 계약서 발행 취소 확인 모달 ── */}
       {showCancelConfirm && contractData && (
@@ -1613,8 +1760,8 @@ export default function ChatRoomPage() {
                 await supabase.from("contracts").update({ status:"cancelled" }).eq("id", contractData.id);
                 await supabase.from("team_members").update({ contract_status:"none" }).eq("id", contractData.team_member_id);
                 await sendMessage("❌ 계약서 발행이 취소됐어요.", "system");
-                setContractData(null);
-                setContractStatus("none");
+                setContractData((prev: any) => prev ? { ...prev, status: "cancelled" } : null);
+                setContractStatus("cancelled");
                 setShowCancelConfirm(false);
                 setShowContractModal(false);
               }}
@@ -1698,8 +1845,12 @@ export default function ChatRoomPage() {
       {showSignConfirm && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:300, display:"flex", alignItems:"flex-end" }}
           onClick={() => setShowSignConfirm(false)}>
-          <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"28px 20px 36px", width:"100%", maxWidth:480, margin:"0 auto" }}
+          <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:480, margin:"0 auto", position:"relative" }}
             onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowSignConfirm(false)} aria-label="닫기" title="닫기"
+              style={{ position:"absolute", top:16, right:16, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text-muted)", width:30, height:30, borderRadius:"50%", fontSize:14, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              ✕
+            </button>
             <div style={{ textAlign:"center", marginBottom:20 }}>
               <div style={{ fontSize:44, marginBottom:10 }}>✍️</div>
               <h3 style={{ fontSize:17, fontWeight:900, margin:"0 0 8px" }}>계약서에 동의하시겠어요?</h3>
@@ -1710,35 +1861,51 @@ export default function ChatRoomPage() {
                 확인한 후 진행해주세요.
               </p>
             </div>
-            <div style={{ background:"var(--warning-bg)", border:"1px solid var(--warning-border)", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:12, color:"var(--warning)", lineHeight:1.7 }}>
+            <div style={{ background:"var(--warning-bg)", border:"1px solid var(--warning-border)", borderRadius:12, padding:"10px 14px", marginBottom:14, fontSize:12, color:"var(--warning)", lineHeight:1.7 }}>
               📌 계약서를 출력해 양측이 서명 후 각 1부씩 보관하시길 권장해요.
             </div>
+            {/* 입력 정보 요약 카카오 카드 */}
             {(() => {
-              const needBirth = !signSelfInfo?.birth_date;
-              const needPhone = !signSelfInfo?.phone;
-              const needAddr = !signSelfInfo?.address;
-              if (!needBirth && !needPhone && !needAddr) return null;
-              const errBorder = { border: "1.5px solid var(--danger)" };
+              const cd = contractData?.contract_data || {};
+              const workerName = cd.worker || "-";
+              const workerBirth = signBirth || cd.workerBirth || "";
+              const workerPhone = signPhone || cd.workerPhone || "";
+              const workerAddr = [signAddr || cd.workerAddr, signAddrDetail || cd.workerAddrDetail].filter(Boolean).join(" ");
+              const bankNameStr = signBankName === "기타" ? signBankCustomName : signBankName;
+              const bankAccountStr = cd.bankAccount || ((bankNameStr || signBankNumber) ? `${bankNameStr} ${signBankNumber}`.trim() : "");
               return (
-                <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
-                  <p style={{ fontSize:12, color:"var(--text-muted)", margin:0 }}>계약서에 아직 없는 본인 정보를 채워주세요 (계약 처리에 필요해요)</p>
-                  {needBirth && (
-                    <input type="date" value={signBirth} onChange={e => setSignBirth(e.target.value)}
-                      style={{ width:"100%", background:"var(--surface2)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box", ...(signTried && !signBirth ? errBorder : { border: "1px solid var(--border)" }) }} />
-                  )}
-                  {needPhone && (
-                    <input type="tel" inputMode="tel" placeholder="연락처 (010-0000-0000)" value={signPhone}
-                      onChange={e => setSignPhone(formatPhone(e.target.value))}
-                      style={{ width:"100%", background:"var(--surface2)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box", ...(signTried && !signPhone ? errBorder : { border: "1px solid var(--border)" }) }} />
-                  )}
-                  {needAddr && (
-                    <>
-                      <input type="text" placeholder="주소 (등본지 주소)" value={signAddr} onChange={e => setSignAddr(e.target.value)}
-                        style={{ width:"100%", background:"var(--surface2)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box", ...(signTried && !signAddr ? errBorder : { border: "1px solid var(--border)" }) }} />
-                      <input type="text" placeholder="상세주소 (동·호수·층 등, 선택)" value={signAddrDetail} onChange={e => setSignAddrDetail(e.target.value)}
-                        style={{ width:"100%", background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box" }} />
-                    </>
-                  )}
+                <div style={{ background:"rgba(16,185,129,0.06)", border:"1.5px solid #10b981", borderRadius:16, padding:14, display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
+                  <div style={{ fontSize:12, display:"flex", justifyContent:"space-between", borderBottom:"1px dashed var(--border)", paddingBottom:6 }}>
+                    <span style={{ color:"var(--text-muted)", fontWeight:600 }}>👤 성명</span>
+                    <span style={{ color:"var(--text)", fontWeight:800 }}>{workerName}</span>
+                  </div>
+                  <div style={{ fontSize:12, display:"flex", justifyContent:"space-between", borderBottom:"1px dashed var(--border)", paddingBottom:6 }}>
+                    <span style={{ color:"var(--text-muted)", fontWeight:600 }}>🎂 생년월일</span>
+                    <span style={{ color: workerBirth ? "#10b981" : "#ea580c", fontWeight:800 }}>
+                      {workerBirth || "미입력 (*본문 기입 필요)"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize:12, display:"flex", justifyContent:"space-between", borderBottom:"1px dashed var(--border)", paddingBottom:6 }}>
+                    <span style={{ color:"var(--text-muted)", fontWeight:600 }}>📱 연락처</span>
+                    <span style={{ color: workerPhone ? "#10b981" : "#ea580c", fontWeight:800 }}>
+                      {workerPhone || "미입력 (*본문 기입 필요)"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize:12, display:"flex", flexDirection:"column", gap:2, borderBottom:"1px dashed var(--border)", paddingBottom:6 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between" }}>
+                      <span style={{ color:"var(--text-muted)", fontWeight:600 }}>🏠 등본지 주소</span>
+                      {signPostcode && <span style={{ fontSize:10, color:"#7c3aed", fontWeight:700 }}>📮 [{signPostcode}]</span>}
+                    </div>
+                    <span style={{ color: workerAddr ? "#10b981" : "#ea580c", fontWeight:800, textAlign:"right", marginTop:2 }}>
+                      {workerAddr || "미입력 (*본문 기입 필요)"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize:12, display:"flex", justifyContent:"space-between" }}>
+                    <span style={{ color:"var(--text-muted)", fontWeight:600 }}>🏦 급여 계좌</span>
+                    <span style={{ color: bankAccountStr ? "#10b981" : "#ea580c", fontWeight:800 }}>
+                      {bankAccountStr || "미입력 (*본문 기입 필요)"}
+                    </span>
+                  </div>
                 </div>
               );
             })()}
@@ -1766,8 +1933,35 @@ export default function ChatRoomPage() {
                 if (Object.keys(selfUpdate).length > 0 && userId) {
                   await supabase.from("users").update(selfUpdate).eq("id", userId);
                 }
+
+                // 2. contracts 테이블 contract_data SOT 및 서명 상태 수동 업데이트
+                const cd = contractData?.contract_data || {};
+                const finalBankName = signBankName === "기타" ? signBankCustomName.trim() : signBankName;
+                const updatedBankAcc = (finalBankName || signBankNumber.trim())
+                  ? `${finalBankName} ${signBankNumber.trim()}`.trim()
+                  : cd.bankAccount || null;
+
+                const updatedContractData = {
+                  ...cd,
+                  workerBirth: signBirth || cd.workerBirth || selfUpdate.birth_date || null,
+                  workerPhone: signPhone || cd.workerPhone || selfUpdate.phone || null,
+                  workerAddr: signAddr || cd.workerAddr || selfUpdate.address || null,
+                  workerAddrDetail: signAddrDetail || cd.workerAddrDetail || selfUpdate.address_detail || null,
+                  workerPostcode: signPostcode || cd.workerPostcode || null,
+                  bankName: finalBankName || cd.bankName || null,
+                  bankNumber: signBankNumber.trim() || cd.bankNumber || null,
+                  bankAccount: updatedBankAcc || cd.bankAccount || null,
+                };
+
+                await supabase.from("contracts").update({
+                  contract_data: updatedContractData,
+                  worker_signed: true,
+                  worker_signed_at: new Date().toISOString(),
+                  status: "active",
+                }).eq("id", contractData.id);
+
                 setShowSignConfirm(false);
-                // 서버 API로 서명 처리 (team_members 업데이트는 service role 필요)
+                // 3. 서버 API로 서명 처리 (team_members 업데이트는 service role 필요)
                 await fetch("/api/contract", {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
@@ -1783,7 +1977,7 @@ export default function ChatRoomPage() {
                 });
                 if (progressStatus !== "hired") updateProgressStatus("hired");
                 await sendMessage("🎉 근로계약서 동의가 완료됐어요!\n계약서는 MY → 팀·소속 관리에서 확인하실 수 있어요. ✅", "system");
-                setContractData((p: Record<string,unknown>) => ({...p, worker_signed:true, status:"active"}));
+                setContractData((p: Record<string,unknown>) => ({ ...p, contract_data: updatedContractData, worker_signed: true, status: "active" }));
                 setContractStatus("done");
                 setShowContractModal(false);
               }}
@@ -1956,6 +2150,35 @@ export default function ChatRoomPage() {
               <button onClick={() => setShowRejectConfirmModal(false)}
                 style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
                 취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 미성년자 나이 감지 경고 모달 */}
+      {showMinorWarningModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--surface)", border: "1.5px solid #f59e0b", borderRadius: 20, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)", textAlign: "center" }}>
+            <div style={{ fontSize: 44, marginBottom: 8 }}>⚠️</div>
+            <h3 style={{ fontSize: 17, fontWeight: 900, color: "var(--text)", margin: "0 0 8px" }}>미성년자 (만 18세 미만) 확인</h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 16px" }}>
+              입력하신 생년월일 기준 <strong style={{ color: "#ea580c" }}>만 {detectedMinorAge}세 (연소근로자)</strong>입니다.<br /><br />
+              📌 근로기준법상 만 18세 미만 근로자는 <strong style={{ color: "#ea580c" }}>보호자(친권자/후견인) 동의서 작성이 법적 필수</strong>입니다.
+            </p>
+            <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 12, padding: 10, fontSize: 11, color: "#d97706", marginBottom: 20 }}>
+              💡 날짜 오입력(오타)인 경우 [생년월일 수정]을 눌러 다시 선택해 주세요.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => {
+                setSignBirth("");
+                setShowMinorWarningModal(false);
+              }} style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 600, color: "var(--text-muted)", cursor: "pointer" }}>
+                ✏️ 생년월일 수정
+              </button>
+              <button onClick={() => {
+                setShowMinorWarningModal(false);
+              }} style={{ flex: 1, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 12, padding: 12, fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+                네, 맞습니다
               </button>
             </div>
           </div>

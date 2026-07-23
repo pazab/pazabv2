@@ -277,6 +277,8 @@ export default function TeamMemberPage() {
   const [docsSaving, setDocsSaving] = useState(false);
   const [needsHealthCert, setNeedsHealthCert] = useState(false);
   const [isMinor, setIsMinor] = useState(false);
+  const [teamDocs, setTeamDocs] = useState<Record<string, any>>({});
+  const [docUploading, setDocUploading] = useState<string | null>(null);
 
   // 근태 입력 모달
   const [showAttModal, setShowAttModal] = useState(false);
@@ -423,6 +425,7 @@ export default function TeamMemberPage() {
       loadAttendance(data.id);
       loadContracts(data.employer_id, data.worker_id, data.id);
       loadPayslips(data.id);
+      loadTeamDocuments(data.id);
     }
   }
 
@@ -480,6 +483,134 @@ export default function TeamMemberPage() {
     setShowWorkModal(false);
     setWorkSaving(false);
     showToast("근무조건이 수정됐어요");
+  }
+
+  async function loadTeamDocuments(tmId: string) {
+    const { data } = await supabase.from("team_member_documents")
+      .select("*")
+      .eq("team_member_id", tmId);
+    if (data) {
+      const map: Record<string, any> = {};
+      data.forEach((d: any) => {
+        map[d.doc_type] = d;
+      });
+      setTeamDocs(map);
+    }
+  }
+
+  async function handleDocFileChange(e: React.ChangeEvent<HTMLInputElement>, docType: string) {
+    const file = e.target.files?.[0];
+    if (!file || !member) return;
+
+    setDocUploading(docType);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const ext = file.name.split(".").pop() || "png";
+      const path = `team_documents/${member.id}/${docType}_${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage.from("media").upload(path, file, { upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data: pubData } = supabase.storage.from("media").getPublicUrl(path);
+      const fileUrl = pubData.publicUrl;
+
+      const existingDoc = teamDocs[docType];
+      const payload = {
+        team_member_id: member.id,
+        doc_type: docType,
+        file_url: fileUrl,
+        uploaded_by: user?.id || null,
+        expires_at: existingDoc?.expires_at || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: upserted, error: dbError } = await supabase
+        .from("team_member_documents")
+        .upsert(payload, { onConflict: "team_member_id,doc_type" })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      setTeamDocs(prev => ({ ...prev, [docType]: upserted }));
+
+      const newDocs = { ...docsSubmitted, [docType]: true };
+      await supabase.from("team_members").update({ docs_submitted: newDocs }).eq("id", member.id);
+      setDocsSubmitted(newDocs);
+
+      showToast("서류가 업로드되었습니다.");
+    } catch (err: any) {
+      console.error("Doc upload error:", err);
+      showToast("서류 업로드 실패: " + (err.message || err), "error");
+    } finally {
+      setDocUploading(null);
+      if (e.target) e.target.value = "";
+    }
+  }
+
+  async function handleDeleteTeamDoc(docType: string) {
+    if (!member) return;
+    if (!confirm("이 서류를 삭제하시겠습니까?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("team_member_documents")
+        .delete()
+        .eq("team_member_id", member.id)
+        .eq("doc_type", docType);
+
+      if (error) throw error;
+
+      setTeamDocs(prev => {
+        const next = { ...prev };
+        delete next[docType];
+        return next;
+      });
+
+      const newDocs = { ...docsSubmitted, [docType]: false };
+      await supabase.from("team_members").update({ docs_submitted: newDocs }).eq("id", member.id);
+      setDocsSubmitted(newDocs);
+
+      showToast("서류가 삭제되었습니다.");
+    } catch (err: any) {
+      showToast("서류 삭제 실패: " + (err.message || err), "error");
+    }
+  }
+
+  async function handleExpiresAtChange(docType: string, newDate: string) {
+    if (!member) return;
+    const doc = teamDocs[docType];
+    if (!doc) return;
+
+    try {
+      const { error } = await supabase
+        .from("team_member_documents")
+        .update({ expires_at: newDate || null })
+        .eq("id", doc.id);
+
+      if (error) throw error;
+
+      setTeamDocs(prev => ({
+        ...prev,
+        [docType]: { ...prev[docType], expires_at: newDate || null }
+      }));
+
+      showToast("만료일이 변경되었습니다.");
+    } catch (err: any) {
+      showToast("만료일 저장 실패: " + (err.message || err), "error");
+    }
+  }
+
+  function getDocExpiryStatus(expiresAt: string | null) {
+    if (!expiresAt) return null;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const exp = new Date(expiresAt);
+    exp.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return { status: "expired", label: `🚨 만료됨 (${Math.abs(diffDays)}일 지남)`, color: "#f87171", bg: "rgba(248,113,113,0.15)" };
+    if (diffDays <= 30) return { status: "warning", label: `⚠️ 만료 임박 (D-${diffDays})`, color: "#fb923c", bg: "rgba(251,146,60,0.15)" };
+    return { status: "normal", label: `✅ 만료 D-${diffDays}`, color: "#4ade80", bg: "rgba(74,222,128,0.15)" };
   }
 
   async function toggleDoc(key: string) {
@@ -1252,47 +1383,154 @@ export default function TeamMemberPage() {
         {/* ── 서류 현황 아코디언 ── */}
         {(() => {
           const DOCS = [
-            ...(needsHealthCert ? [{ key: "healthCert", label: "🏥 보건증", desc: "식품위생법 대상 업종 필수 · 유효기간 1년", required: true }] : []),
-            { key: "idCard", label: "🪪 신분증 사본", desc: "주민등록증 또는 운전면허증", required: true },
-            { key: "bankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의", required: false },
-            ...(isMinor ? [{ key: "parentConsent", label: "📝 친권자 동의서", desc: "만 18세 미만 근로자 필수", required: true }] : []),
+            ...(needsHealthCert ? [{ key: "health_certificate", legacyKey: "healthCert", label: "🏥 보건증", desc: "식품위생법 대상 업종 필수 · 유효기간 1년", required: true }] : []),
+            { key: "resident_registration", legacyKey: "idCard", label: "🪪 주민등록등본 (신분증)", desc: "주민등록등본 또는 신분증 사본", required: true },
+            { key: "bank_copy", legacyKey: "bankbook", label: "🏦 통장 사본", desc: "급여 이체용 · 본인 명의", required: false },
+            ...(isMinor ? [{ key: "parent_consent", legacyKey: "parentConsent", label: "📝 친권자 동의서", desc: "만 18세 미만 근로자 필수", required: true }] : []),
           ];
-          const submittedCount = DOCS.filter(d => docsSubmitted[d.key]).length;
+          const submittedCount = DOCS.filter(d => !!teamDocs[d.key] || !!docsSubmitted[d.key] || !!docsSubmitted[d.legacyKey]).length;
           return (
             <div style={{ borderBottom: "1px solid var(--border)" }}>
               <SectionHeader
-                title="📂 서류 현황"
+                title="📂 서류 현황 (서류함)"
                 open={docsOpen}
                 onToggle={() => setDocsOpen(v => !v)}
                 badge={submittedCount > 0 ? `${submittedCount}/${DOCS.length}` : undefined}
               />
               {docsOpen && (
-                <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
                   {DOCS.map(doc => {
-                    const on = !!docsSubmitted[doc.key];
+                    const uploadedDoc = teamDocs[doc.key];
+                    const isSubmitted = !!uploadedDoc || !!docsSubmitted[doc.key] || !!docsSubmitted[doc.legacyKey];
+                    const isUploading = docUploading === doc.key;
+                    const expiryInfo = doc.key === "health_certificate" && uploadedDoc?.expires_at
+                      ? getDocExpiryStatus(uploadedDoc.expires_at)
+                      : null;
+
                     return (
-                      <button key={doc.key} onClick={() => { if (!isResigned) toggleDoc(doc.key); }} disabled={docsSaving || isResigned}
+                      <div key={doc.key}
                         style={{
-                          background: on ? "rgba(74,222,128,0.08)" : "var(--surface2)",
-                          border: `1px solid ${on ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
-                          borderRadius: 12, padding: "12px 14px", cursor: isResigned ? "not-allowed" : "pointer",
-                          display: "flex", alignItems: "center", gap: 12, textAlign: "left", width: "100%",
+                          background: isSubmitted ? "rgba(74,222,128,0.06)" : "var(--surface2)",
+                          border: `1px solid ${isSubmitted ? "rgba(74,222,128,0.3)" : "var(--border)"}`,
+                          borderRadius: 14, padding: "14px",
+                          display: "flex", flexDirection: "column", gap: 10
                         }}>
-                        <span style={{ fontSize: 22, flexShrink: 0 }}>{on ? "✅" : "⬜"}</span>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: 14, fontWeight: 700, margin: 0, color: on ? "#4ade80" : "var(--text)" }}>
-                            {doc.label}
-                            <span style={{ fontSize: 11, marginLeft: 8, fontWeight: 400, color: on ? "#4ade80" : (doc as any).required ? "#fb923c" : "var(--text-muted)", background: on ? "rgba(74,222,128,0.1)" : (doc as any).required ? "rgba(251,146,60,0.1)" : "var(--surface)", borderRadius: 4, padding: "1px 6px" }}>
-                              {on ? "수령 완료" : (doc as any).required ? "미제출 (필수)" : "미제출"}
-                            </span>
-                          </p>
-                          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "3px 0 0" }}>{doc.desc}</p>
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 14, fontWeight: 800 }}>{doc.label}</span>
+                              <span style={{
+                                fontSize: 11, fontWeight: 600,
+                                color: isSubmitted ? "#4ade80" : doc.required ? "#fb923c" : "var(--text-muted)",
+                                background: isSubmitted ? "rgba(74,222,128,0.1)" : doc.required ? "rgba(251,146,60,0.1)" : "var(--surface)",
+                                borderRadius: 6, padding: "2px 8px"
+                              }}>
+                                {isSubmitted ? (uploadedDoc ? "✅ 수령 (파일 저장됨)" : "✅ 수령 완료") : doc.required ? "미제출 (필수)" : "미제출"}
+                              </span>
+                              {expiryInfo && (
+                                <span style={{ fontSize: 11, fontWeight: 700, color: expiryInfo.color, background: expiryInfo.bg, borderRadius: 6, padding: "2px 8px" }}>
+                                  {expiryInfo.label}
+                                </span>
+                              )}
+                            </div>
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>{doc.desc}</p>
+                          </div>
                         </div>
-                      </button>
+
+                        {/* 파일 액션 바 */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 6, borderTop: "1px dashed var(--border)" }}>
+                          {uploadedDoc ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
+                              <a href={uploadedDoc.file_url} target="_blank" rel="noreferrer"
+                                style={{
+                                  display: "inline-flex", alignItems: "center", gap: 4,
+                                  background: "var(--surface)", border: "1px solid var(--border)",
+                                  borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700,
+                                  color: "var(--text)", textDecoration: "none"
+                                }}>
+                                👁️ 서류 보기
+                              </a>
+                              {!isResigned && (
+                                <>
+                                  <label style={{
+                                    display: "inline-flex", alignItems: "center", gap: 4,
+                                    background: "var(--surface)", border: "1px solid var(--border)",
+                                    borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700,
+                                    color: "var(--text)", cursor: isUploading ? "wait" : "pointer"
+                                  }}>
+                                    {isUploading ? "⏳ 업로드 중..." : "✏️ 서류 교체"}
+                                    <input type="file" accept="image/*,application/pdf" disabled={isUploading}
+                                      style={{ display: "none" }}
+                                      onChange={e => handleDocFileChange(e, doc.key)} />
+                                  </label>
+                                  <button onClick={() => handleDeleteTeamDoc(doc.key)}
+                                    style={{
+                                      background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)",
+                                      borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700,
+                                      color: "#f87171", cursor: "pointer"
+                                    }}>
+                                    🗑️ 삭제
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", justifyContent: "space-between" }}>
+                              {!isResigned ? (
+                                <label style={{
+                                  display: "inline-flex", alignItems: "center", gap: 6,
+                                  background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+                                  borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                                  color: "#fff", cursor: isUploading ? "wait" : "pointer", border: "none"
+                                }}>
+                                  {isUploading ? "⏳ 업로드 중..." : "📤 서류 파일 업로드"}
+                                  <input type="file" accept="image/*,application/pdf" disabled={isUploading}
+                                    style={{ display: "none" }}
+                                    onChange={e => handleDocFileChange(e, doc.key)} />
+                                </label>
+                              ) : (
+                                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>🔒 퇴직 팀원</span>
+                              )}
+                              <button onClick={() => toggleDoc(doc.key)} disabled={docsSaving || isResigned}
+                                style={{
+                                  background: "var(--surface)", border: "1px solid var(--border)",
+                                  borderRadius: 8, padding: "6px 12px", fontSize: 11, color: "var(--text-muted)",
+                                  cursor: isResigned ? "not-allowed" : "pointer"
+                                }}>
+                                {docsSubmitted[doc.key] || docsSubmitted[doc.legacyKey] ? "수령 취소" : "파일 없이 수령만 체크"}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* 보건증 유효기간(만료일) 설정 */}
+                          {doc.key === "health_certificate" && (
+                            <div style={{
+                              display: "flex", alignItems: "center", gap: 8, width: "100%",
+                              background: "var(--surface)", borderRadius: 10, padding: "8px 10px", border: "1px solid var(--border)"
+                            }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>📅 보건증 만료일:</span>
+                              {uploadedDoc ? (
+                                <input type="date" value={uploadedDoc.expires_at || ""}
+                                  disabled={isResigned}
+                                  onChange={e => handleExpiresAtChange(doc.key, e.target.value)}
+                                  style={{
+                                    background: "var(--surface2)", border: "1px solid var(--border)",
+                                    borderRadius: 6, padding: "4px 8px", fontSize: 12, color: "var(--text)",
+                                    outline: "none"
+                                  }} />
+                              ) : (
+                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                                  (서류 파일 업로드 후 만료일을 설정할 수 있습니다)
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
                   <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.5 }}>
-                    {isResigned ? "* 🔒 퇴직 처리된 팀원으로 서류 수령 상태 변경이 불가능합니다." : "* 탭 하면 수령/미제출 상태가 즉시 저장됩니다"}
+                    {isResigned ? "* 🔒 퇴직 처리된 팀원으로 서류 수령 상태 변경이 불가능합니다." : "* 서류 파일을 직접 업로드하거나 미리보기/삭제 및 보건증 만료일을 관리할 수 있습니다."}
                   </p>
                 </div>
               )}
