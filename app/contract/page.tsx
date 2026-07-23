@@ -453,12 +453,13 @@ function ContractContent() {
       .eq("progress_status", "hired").order("created_at", { ascending: false });
 
     const enriched = await Promise.all((all || []).map(async (m: any, i: number) => {
-      let ep = null;
-      if (m.employer_profile_id) {
-        const { data } = await supabase.from("employer_profiles")
-          .select("business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
-          .eq("id", m.employer_profile_id).maybeSingle();
-        ep = data;
+      // 매장 정보는 항상 availableEps(=상단 매장칩 목록)에서 동일한 항목을 찾아 쓴다.
+      // (매장칩/폼이 서로 다른 매장을 가리키는 불일치 방지 — loadByMember와 동일한 이유)
+      const resolvedEp = (m.employer_profile_id && availableEps.find((e: any) => e.id === m.employer_profile_id))
+        || availableEps[0]
+        || null;
+      let ep: any = resolvedEp ? { ...resolvedEp } : null;
+      if (ep?.id) {
         // job_id 있으면 해당 공고 조건 우선 사용, 없으면 최신 공고로 폴백
         if (m.job_id) {
           const { data: specificJob } = await supabase.from("jobs").select("wage, work_days, work_hours")
@@ -466,23 +467,12 @@ function ContractContent() {
           if (specificJob) ep = { ...ep, ...specificJob };
         } else {
           const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
-            .eq("employer_profile_id", m.employer_profile_id)
+            .eq("employer_profile_id", ep.id)
             .order("created_at", { ascending: false }).limit(1).maybeSingle();
           if (job) ep = { ...ep, ...job };
         }
       }
-      if (!ep) {
-        const { data: epData } = await supabase.from("employer_profiles")
-          .select("id, business_name, business_type, region, biz_reg_number, ceo_name, biz_address, biz_tel")
-          .eq("user_id", m.employer_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-        ep = epData;
-        if (epData?.id) {
-          const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
-            .eq("employer_profile_id", epData.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-          if (job) ep = { ...ep, ...job };
-        }
-      }
-      return { ...m, ep, idx: (all?.length || 0) - i };
+      return { ...m, ep, employer_profile_id: ep?.id || m.employer_profile_id, idx: (all?.length || 0) - i };
     }));
     setMatches(enriched);
 
@@ -495,11 +485,8 @@ function ContractContent() {
     if (cur2) {
       initF(cur2, eu.data, wu.data);
       await fetchPrevContract(cur.employer_id, cur2.employer_profile_id);
-      // 해당 매치의 employer_profile_id에 맞는 ep 칩 자동 선택
-      if (cur2.employer_profile_id && availableEps.length > 0) {
-        const matchingEp = availableEps.find((e: any) => e.id === cur2.employer_profile_id);
-        if (matchingEp) setSelEp(matchingEp);
-      }
+      // 폼에 쓴 것과 동일한 ep로 매장칩도 맞춘다
+      if (cur2.ep?.id) setSelEp(cur2.ep);
     }
 
     if (mode === "update" && matchId) {
@@ -549,32 +536,20 @@ function ContractContent() {
       supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", tm.worker_id).single(),
     ]);
 
-    let ep = null;
-    if (tm.employer_profile_id) {
-      const { data } = await supabase
-        .from("employer_profiles")
-        .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
-        .eq("id", tm.employer_profile_id).maybeSingle();
-      ep = data;
+    // 매장 정보는 항상 availableEps(=상단 매장칩 목록)에서 동일한 항목을 찾아 쓴다.
+    // 예전에는 이 값을 employer_profiles에 별도 쿼리로 다시 조회했는데, "가장 최근 매장"
+    // 폴백 정렬이 매장칩 목록의 순서와 미묘하게 어긋나는 경우 폼(주소·사업자번호 등)과
+    // 매장칩이 서로 다른 매장을 가리키는 불일치가 생겼다. 같은 배열에서 찾으면 항상 일치한다.
+    const resolvedEp = (tm.employer_profile_id && availableEps.find((e: any) => e.id === tm.employer_profile_id))
+      || availableEps[0]
+      || null;
+
+    let ep: any = resolvedEp ? { ...resolvedEp } : null;
+    if (ep?.id) {
       const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
-        .eq("employer_profile_id", tm.employer_profile_id)
+        .eq("employer_profile_id", ep.id)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (job) ep = { ...ep, ...job };
-    }
-    if (!ep) {
-      const { data: epData } = await supabase
-        .from("employer_profiles")
-        .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
-        .eq("user_id", tm.employer_id)
-        .or("is_deleted.is.null,is_deleted.eq.false")
-        .not("business_name", "is", null)
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      ep = epData;
-      if (epData?.id) {
-        const { data: job } = await supabase.from("jobs").select("wage, work_days, work_hours")
-          .eq("employer_profile_id", epData.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-        if (job) ep = { ...ep, ...job };
-      }
     }
 
     // team_members 근무조건이 있으면 공고 데이터보다 우선 적용
@@ -583,11 +558,12 @@ function ContractContent() {
     // work_hours가 "HH:mm ~ HH:mm" 형식일 때만 반영 (숫자 dailyHours는 initF에서 파싱 안 됨)
     if (tm.work_hours && tm.work_hours.includes("~")) ep = { ...ep, work_hours: tm.work_hours };
 
+    const resolvedEmployerProfileId = ep?.id || tm.employer_profile_id;
     const memberAsMatch = {
       id: tm.id,
       employer_id: tm.employer_id,
       worker_id: tm.worker_id,
-      employer_profile_id: tm.employer_profile_id,
+      employer_profile_id: resolvedEmployerProfileId,
       ep,
       matched_at: tm.hire_date || null,   // 입사일을 계약 시작일 기본값으로
       created_at: new Date().toISOString(),
@@ -596,13 +572,10 @@ function ContractContent() {
 
     setMatches([memberAsMatch]);
     initF(memberAsMatch, eu.data, wu.data);
-    await fetchPrevContract(tm.employer_id, tm.employer_profile_id);
+    await fetchPrevContract(tm.employer_id, resolvedEmployerProfileId);
 
-    // 해당 팀원의 employer_profile_id에 맞는 ep 칩 자동 선택
-    if (tm.employer_profile_id && availableEps.length > 0) {
-      const matchingEp = availableEps.find((e: any) => e.id === tm.employer_profile_id);
-      if (matchingEp) setSelEp(matchingEp);
-    }
+    // 폼에 쓴 것과 동일한 ep로 매장칩도 맞춘다 (폼/칩이 서로 다른 매장을 가리키지 않도록)
+    if (ep?.id) setSelEp(ep);
 
     if (mode === "update") {
       const { data: existing } = await supabase.from("contracts")
@@ -646,17 +619,19 @@ function ContractContent() {
       supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", m.employer_id).single(),
       supabase.from("users").select("nickname, real_name, birth_date, phone, address, address_detail").eq("id", m.worker_id).single(),
     ]);
-    let epData = null;
-    if (m.employer_profile_id) {
+    // 매장 정보는 항상 myEps(=상단 매장칩 목록)에서 동일한 항목을 찾아 쓴다 (칩/폼 불일치 방지)
+    let epData = m.employer_profile_id ? myEps.find((e: any) => e.id === m.employer_profile_id) : null;
+    if (!epData && m.employer_profile_id) {
       const { data } = await supabase.from("employer_profiles")
         .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
         .eq("id", m.employer_profile_id).maybeSingle();
       epData = data;
     }
-    const updatedMatch = { ...m, ep: epData };
+    const updatedMatch = { ...m, ep: epData, employer_profile_id: epData?.id || m.employer_profile_id };
     setSelMatch(updatedMatch);
     initF(updatedMatch, euRes.data, wuRes.data);
-    await fetchPrevContract(m.employer_id, m.employer_profile_id);
+    await fetchPrevContract(m.employer_id, updatedMatch.employer_profile_id);
+    if (epData?.id) setSelEp(epData);
 
     const { data: existing } = await supabase.from("contracts")
       .select("*").eq("match_id", m.id)
@@ -806,12 +781,14 @@ function ContractContent() {
         if (!f.ceoPhone.trim()) return "대표자 연락처를 입력해주세요.";
         return null;
       case 1: // 근로자
+        // 생년월일·연락처·주소는 사장님이 모를 수 있어 여기선 선택 입력 — 비워두면
+        // 알바생이 계약서 동의(서명) 시 본인이 직접 입력한다 (app/chat/[id]/page.tsx 참고)
         if (!f.worker.trim()) return "근로자 성명을 입력해주세요.";
-        if (!f.workerBirth.trim()) return "근로자 생년월일을 입력해주세요.";
-        if (!f.workerPhone.trim()) return "근로자 연락처를 입력해주세요.";
-        const workerPhoneRegex = /^01[016789]-\d{3,4}-\d{4}$/;
-        if (!workerPhoneRegex.test(f.workerPhone.trim())) {
-          return "근로자 연락처를 올바른 휴대폰 번호 형식(010-XXXX-XXXX)으로 입력해주세요.";
+        if (f.workerPhone.trim()) {
+          const workerPhoneRegex = /^01[016789]-\d{3,4}-\d{4}$/;
+          if (!workerPhoneRegex.test(f.workerPhone.trim())) {
+            return "근로자 연락처를 올바른 휴대폰 번호 형식(010-XXXX-XXXX)으로 입력해주세요.";
+          }
         }
         return null;
       case 2: // 근무
@@ -1031,6 +1008,10 @@ function ContractContent() {
           router.replace(`/employer/team/${memberId}`);
         } else if (fromParam === "team") {
           router.back();
+        } else {
+          // from/memberId 없는 무컨텍스트 진입(예: Paz 버튼) — 저장 후 편집 폼에 그대로 남아
+          // 뒤로가기 시 재진입하는 것을 막기 위해 항상 어딘가로 이동시킨다
+          router.replace("/mypage");
         }
       }, 800);
     } else {
@@ -1769,8 +1750,8 @@ function ContractContent() {
                     <input style={errStyle(!f.worker.trim())} value={f.worker} onChange={e => updateField("worker", e.target.value)} placeholder="근로자 이름" />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>생년월일</label>
-                    <input type="date" style={errStyle(!f.workerBirth.trim())} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} />
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>생년월일 <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· 선택 (비워두면 알바생이 동의할 때 직접 입력)</span></label>
+                    <input type="date" style={inputStyle} value={toDateInput(f.workerBirth)} onChange={e => updateField("workerBirth", fromDateInput(e.target.value))} />
                     {(() => {
                       const age = f.workerBirth ? calcAge(f.workerBirth) : null;
                       if (age === null) return null;
@@ -1794,11 +1775,11 @@ function ContractContent() {
                     })()}
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>연락처</label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>연락처 <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· 선택 (비워두면 알바생이 동의할 때 직접 입력)</span></label>
                     <input type="tel" style={inputStyle} value={f.workerPhone} onChange={e => updateField("workerPhone", formatPhone(e.target.value))} placeholder="010-0000-0000" inputMode="tel" />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>주소 (등본지 주소)</label>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>주소 (등본지 주소) <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· 선택 (비워두면 알바생이 동의할 때 직접 입력)</span></label>
                     <button onClick={() => openAddressSearch("workerAddr")}
                       style={{ width: "100%", background: "var(--surface2)", border: "1.5px solid var(--border)", borderRadius: 12, padding: "13px 16px", color: f.workerAddr ? "var(--text)" : "var(--text-muted)", fontSize: 13, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 16 }}>🔍</span>

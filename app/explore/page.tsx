@@ -561,7 +561,7 @@ function ExploreContent() {
             <div style={{ display: "flex", gap: 0, padding: "10px 16px 0" }}>
               {[{ key: "worker", label: "공고", icon: "🏪" }, { key: "employer", label: "구직자", icon: "🙋" }].map(tab => (
                 <button key={tab.key} onClick={() => handleViewMode(tab.key as "worker" | "employer")}
-                  style={{ flex: 1, padding: "8px 0", background: "none", border: "none", fontSize: 13, fontWeight: viewMode === tab.key ? 800 : 500, color: viewMode === tab.key ? "var(--text)" : "var(--text-muted)", cursor: "pointer", borderBottom: viewMode === tab.key ? `2px solid ${tab.key === "worker" ? "#8b5cf6" : "#ec4899"}` : "2px solid transparent", transition: "all 0.15s" }}>
+                  style={{ flex: 1, padding: "8px 0", background: "none", border: "none", fontSize: 13, fontWeight: viewMode === tab.key ? 800 : 500, color: viewMode === tab.key ? "var(--text)" : "var(--text-muted)", cursor: "pointer", borderBottom: viewMode === tab.key ? `2px solid ${tab.key === "worker" ? "var(--primary)" : "var(--accent)"}` : "2px solid transparent", transition: "all 0.15s" }}>
                   {tab.icon} {tab.label}
                 </button>
               ))}
@@ -577,10 +577,10 @@ function ExploreContent() {
               <button onClick={() => setFilterModalOpen(true)}
                 style={{
                   padding: "9px 12px",
-                  background: isFilterActive ? "rgba(139,92,246,0.2)" : "rgba(255,255,255,0.06)",
-                  border: `1px solid ${isFilterActive ? "rgba(139,92,246,0.4)" : "rgba(255,255,255,0.08)"}`,
+                  background: isFilterActive ? "var(--chip-purple-bg)" : "var(--surface2)",
+                  border: `1px solid ${isFilterActive ? "var(--chip-purple-border)" : "var(--border)"}`,
                   borderRadius: 12,
-                  color: isFilterActive ? "#c4b5fd" : "var(--text-muted)",
+                  color: isFilterActive ? "var(--purple-text)" : "var(--text-muted)",
                   fontSize: 13,
                   cursor: "pointer",
                   display: "flex",
@@ -589,22 +589,22 @@ function ExploreContent() {
                   fontWeight: 600,
                   transition: "all 0.15s"
                 }}>
-                🎛️ 필터 {isFilterActive && <span style={{ background: "#8b5cf6", color: "#fff", borderRadius: "50%", width: 16, height: 16, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9 }}>!</span>}
+                🎛️ 필터 {isFilterActive && <span style={{ background: "var(--primary)", color: "#fff", borderRadius: "50%", width: 16, height: 16, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9 }}>!</span>}
               </button>
             </div>
             
             {isFilterActive && (
               <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "2px 0 6px", scrollbarWidth: "none" }}>
-                {filterIndustry && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>업종: {filterIndustry}</span>}
-                {filterJobType && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>유형: {filterJobType === "regular" ? "정기" : filterJobType === "short" ? "단기" : "긴급"}</span>}
-                {filterWage > 0 && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>시급: {filterWage.toLocaleString()}원+</span>}
-                {filterWageNegotiable === true && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>시급협의 가능</span>}
-                {filterDays && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>요일: {filterDays}</span>}
-                {filterMealProvided === true && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>식사제공</span>}
-                {filterParking === true && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>주차가능</span>}
-                {filterAvailableNow === true && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>즉시출근 가능</span>}
-                {filterLongTerm && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>기간: {filterLongTerm === "long" ? "장기선호" : "단기대타"}</span>}
-                {filterExperience === true && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>경력 있음</span>}
+                {filterIndustry && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>업종: {filterIndustry}</span>}
+                {filterJobType && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>유형: {filterJobType === "regular" ? "정기" : filterJobType === "short" ? "단기" : "긴급"}</span>}
+                {filterWage > 0 && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>시급: {filterWage.toLocaleString()}원+</span>}
+                {filterWageNegotiable === true && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>시급협의 가능</span>}
+                {filterDays && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>요일: {filterDays}</span>}
+                {filterMealProvided === true && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>식사제공</span>}
+                {filterParking === true && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>주차가능</span>}
+                {filterAvailableNow === true && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>즉시출근 가능</span>}
+                {filterLongTerm && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>기간: {filterLongTerm === "long" ? "장기선호" : "단기대타"}</span>}
+                {filterExperience === true && <span style={{ fontSize: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "2px 8px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>경력 있음</span>}
               </div>
             )}
             
@@ -618,16 +618,16 @@ function ExploreContent() {
                       setSortBy(opt.key);
                       setShowAllSection(null);
                     }}
-                      style={{ padding: "6px 10px", background: isActive ? (isGunghap ? "rgba(236,72,153,0.2)" : viewMode === "worker" ? "rgba(139,92,246,0.2)" : "rgba(236,72,153,0.2)") : "rgba(255,255,255,0.06)", border: `1px solid ${isActive ? (isGunghap ? "rgba(236,72,153,0.5)" : viewMode === "worker" ? "rgba(139,92,246,0.5)" : "rgba(236,72,153,0.5)") : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: isActive ? (isGunghap ? "#fbcfe8" : viewMode === "worker" ? "#c4b5fd" : "#fbcfe8") : isGunghap && !hasHexaco ? "#f9a8d4" : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s", position: "relative" as const }}>
-                      {opt.key === "긴급순" && !isActive ? <span style={{ color: "#f87171" }}>{opt.icon} {opt.key}</span> : `${opt.icon} ${opt.key}`}
-                      {isGunghap && !hasHexaco && <span style={{ position: "absolute", top: -4, right: -4, background: "#ec4899", borderRadius: "50%", width: 8, height: 8, display: "block" }} />}
+                      style={{ padding: "6px 10px", background: isActive ? (isGunghap ? "var(--chip-pink-bg)" : viewMode === "worker" ? "var(--chip-purple-bg)" : "var(--chip-pink-bg)") : "var(--surface2)", border: `1px solid ${isActive ? (isGunghap ? "var(--chip-pink-border)" : viewMode === "worker" ? "var(--chip-purple-border)" : "var(--chip-pink-border)") : "var(--border)"}`, borderRadius: 10, color: isActive ? (isGunghap ? "var(--pink-text)" : viewMode === "worker" ? "var(--purple-text)" : "var(--pink-text)") : isGunghap && !hasHexaco ? "var(--pink-text)" : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s", position: "relative" as const }}>
+                      {opt.key === "긴급순" && !isActive ? <span style={{ color: "var(--danger)" }}>{opt.icon} {opt.key}</span> : `${opt.icon} ${opt.key}`}
+                      {isGunghap && !hasHexaco && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--accent)", borderRadius: "50%", width: 8, height: 8, display: "block" }} />}
                     </button>
                   );
                 })}
               </div>
               
               {isFilterActive && (
-                <button onClick={resetFilters} style={{ background: "none", border: "none", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>
+                <button onClick={resetFilters} style={{ background: "none", border: "none", color: "var(--danger)", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>
                   🔄 필터 초기화
                 </button>
               )}
@@ -679,7 +679,7 @@ function ExploreContent() {
               {sorted.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "40px 0" }}>
                   <p style={{ color: "var(--text-muted)", fontSize: 14 }}>{searchQuery ? `"${searchQuery}" 검색 결과가 없어요` : "등록된 공고가 없어요"}</p>
-                  {searchQuery && <button onClick={() => setSearchQuery("")} style={{ marginTop: 10, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "#c4b5fd", padding: "7px 16px", borderRadius: 20, cursor: "pointer", fontSize: 13 }}>검색 초기화</button>}
+                  {searchQuery && <button onClick={() => setSearchQuery("")} style={{ marginTop: 10, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", padding: "7px 16px", borderRadius: 20, cursor: "pointer", fontSize: 13 }}>검색 초기화</button>}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -696,7 +696,7 @@ function ExploreContent() {
         <div onClick={() => setBottomSheet(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "var(--surface)", borderRadius: "24px 24px 0 0", maxHeight: "88vh", overflowY: "auto", paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
             <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.15)" }} />
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border)" }} />
             </div>
             {/* 바텀시트 히어로 */}
             {(() => {
@@ -722,7 +722,7 @@ function ExploreContent() {
                       <div style={{ width: "100%", height: "100%", background: `url(${bsActiveMedia.url}) center/cover no-repeat` }} />
                     )
                   ) : (
-                    <div style={{ width: "100%", height: "100%", background: viewMode === "worker" ? "linear-gradient(160deg, #1a1035 0%, #2d1b6e 50%, #1e1040 100%)" : "linear-gradient(160deg, #0a2020 0%, #0f4a3a 50%, #0a2820 100%)" }} />
+                    <div style={{ width: "100%", height: "100%", background: viewMode === "worker" ? "var(--primary-light)" : "var(--chip-pink-bg)" }} />
                   )}
                   
                   <div style={{ position: "absolute", inset: 0, background: bsHasMedia ? "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)" : "none", pointerEvents: "none" }} />
@@ -781,8 +781,10 @@ function ExploreContent() {
                 }}
                  className="transition-all hover:opacity-80 active:scale-98 duration-150"
                  style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: viewMode === "worker" ? "8px" : "50%", flexShrink: 0, background: (viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) ? `url(${viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar}) center/cover` : "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
-                    {!(viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) && (viewMode === "worker" ? "🏪" : "👤")}
+                  <div style={{ width: 44, height: 44, borderRadius: viewMode === "worker" ? "8px" : "50%", flexShrink: 0, background: (viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) ? `url(${viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar}) center/cover` : "var(--surface2)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {!(viewMode === "worker" ? (bottomSheet.logo_url || bottomSheet.image_url || bottomSheet.image_urls?.[0]) : bottomSheet.worker_avatar) && (
+                      <i className={viewMode === "worker" ? "ti ti-building-store" : "ti ti-user"} style={{ fontSize: 20, color: "var(--text-muted)" }} aria-hidden="true" />
+                    )}
                   </div>
                   <div style={{ flex: 1 }}>
                     <h3 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 2px", letterSpacing: "-0.3px" }}>
@@ -793,7 +795,7 @@ function ExploreContent() {
                     </p>
                   </div>
                 </div>
-                {(() => { const grade = getGrade(Number(bottomSheet.trust_score ?? 50)); return <span style={{ fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: "4px 10px", color: "var(--text-muted)", flexShrink: 0 }}>{grade.emoji} {grade.name}</span>; })()}
+                {(() => { const grade = getGrade(Number(bottomSheet.trust_score ?? 50)); return <span style={{ fontSize: 11, fontWeight: 700, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "4px 10px", color: "var(--text-muted)", flexShrink: 0 }}>{grade.emoji} {grade.name}</span>; })()}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
                 {viewMode === "worker" ? [
@@ -802,7 +804,7 @@ function ExploreContent() {
                   { icon: "🕐", label: "근무시간", value: String(bottomSheet.work_hours || "협의") },
                   { icon: "📍", label: "위치", value: String(bottomSheet.region || "") },
                 ].map(c => (
-                  <div key={c.label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "10px 12px" }}>
+                  <div key={c.label} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 12px" }}>
                     <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 3px" }}>{c.icon} {c.label}</p>
                     <p style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>{c.value}</p>
                   </div>
@@ -810,7 +812,7 @@ function ExploreContent() {
                   { icon: "📍", label: "희망 지역", value: String(bottomSheet.desired_region || bottomSheet.region || "협의") },
                   { icon: "₩", label: "희망 시급", value: Number(bottomSheet.desired_wage) > 0 ? `${Number(bottomSheet.desired_wage).toLocaleString()}원↑` : "협의" },
                 ].map(c => (
-                  <div key={c.label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "10px 12px" }}>
+                  <div key={c.label} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 12px" }}>
                     <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 3px" }}>{c.icon} {c.label}</p>
                     <p style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>{c.value}</p>
                   </div>
@@ -825,7 +827,7 @@ function ExploreContent() {
               {viewMode === "worker" && bottomSheet.tags && (() => {
                 const tags = Array.isArray(bottomSheet.tags) ? bottomSheet.tags as string[] : JSON.parse(String(bottomSheet.tags || "[]")) as string[];
                 if (!tags.length && !bottomSheet.meal_provided) return null;
-                return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>{tags.map((t: string) => <span key={t} style={{ fontSize: 11, background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#c4b5fd", padding: "4px 10px", borderRadius: 20 }}>#{t}</span>)}{!!bottomSheet.meal_provided && <span style={{ fontSize: 11, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", padding: "4px 10px", borderRadius: 20 }}>🍱 식사 제공</span>}</div>;
+                return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>{tags.map((t: string) => <span key={t} style={{ fontSize: 11, background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", color: "var(--purple-text)", padding: "4px 10px", borderRadius: 20 }}>#{t}</span>)}{!!bottomSheet.meal_provided && <span style={{ fontSize: 11, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", padding: "4px 10px", borderRadius: 20 }}>🍱 식사 제공</span>}</div>;
               })()}
               {(() => {
                 const matchInfo = getMatchInfo(bottomSheet);
@@ -837,20 +839,20 @@ function ExploreContent() {
                     ) : matchInfo ? (
                       matchInfo.status === "pending" ? (
                         matchInfo.isSent ? (
-                          <button disabled style={{ flex: 1, height: 48, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "default" }}>
+                          <button disabled style={{ flex: 1, height: 48, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "default" }}>
                             {viewMode === "worker" ? "📤 지원 완료 (수락 대기중)" : "📤 제안 완료 (수락 대기중)"}
                           </button>
                         ) : (
-                          <button onClick={() => { router.push(`/chat/${matchInfo.id}`); setBottomSheet(null); }} style={{ flex: 1, height: 48, background: viewMode === "worker" ? "rgba(236,72,153,0.15)" : "rgba(139,92,246,0.15)", border: viewMode === "worker" ? "1px solid rgba(236,72,153,0.3)" : "1px solid rgba(139,92,246,0.3)", color: viewMode === "worker" ? "#fbcfe8" : "#c4b5fd", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
+                          <button onClick={() => { router.push(`/chat/${matchInfo.id}`); setBottomSheet(null); }} style={{ flex: 1, height: 48, background: viewMode === "worker" ? "var(--chip-pink-bg)" : "var(--primary-light)", border: viewMode === "worker" ? "1px solid var(--chip-pink-border)" : "1px solid var(--primary-border)", color: viewMode === "worker" ? "var(--pink-text)" : "var(--purple-text)", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
                             {viewMode === "worker" ? "📥 제안 받음 · 채팅방 가기" : "📥 지원 받음 · 채팅방 가기"}
                           </button>
                         )
                       ) : matchInfo.status === "accepted" || matchInfo.status === "interviewing" ? (
-                        <button onClick={() => { router.push(`/chat/${matchInfo.id}`); setBottomSheet(null); }} style={{ flex: 1, height: 48, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
+                        <button onClick={() => { router.push(`/chat/${matchInfo.id}`); setBottomSheet(null); }} style={{ flex: 1, height: 48, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "pointer" }}>
                           💬 대화 중 · 채팅방 가기
                         </button>
                       ) : matchInfo.status === "hired" ? (
-                        <button disabled style={{ flex: 1, height: 48, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fde68a", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "default" }}>
+                        <button disabled style={{ flex: 1, height: 48, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontWeight: 700, borderRadius: 12, fontSize: 13, cursor: "default" }}>
                           ✅ 채용 완료
                         </button>
                       ) : (
@@ -897,7 +899,7 @@ function ExploreContent() {
                   : (viewMode === "worker" ? "지원 확인" : "채용 제안 확인")}
               </h3>
               {hasHistory && (
-                <p style={{ fontSize: 13, color: "#fbbf24", margin: "0 0 12px", lineHeight: 1.6, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 10, padding: "8px 12px" }}>
+                <p style={{ fontSize: 13, color: "var(--warning)", margin: "0 0 12px", lineHeight: 1.6, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 10, padding: "8px 12px" }}>
                   ⚠️ {viewMode === "worker"
                     ? `이전에 [${confirmItem.business_name || "매장"}]과 매칭이 결렬된 이력이 있습니다.`
                     : `이전에 [${confirmItem.worker_name || confirmItem.name || "알바생"}]님과 매칭이 결렬된 이력이 있습니다.`}
@@ -909,7 +911,7 @@ function ExploreContent() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {myEmployerProfiles.map(ep => (
                       <button key={ep.id} onClick={() => setSelectedEmployerProfileId(ep.id)}
-                        style={{ background: selectedEmployerProfileId === ep.id ? "rgba(139,92,246,0.15)" : "var(--surface2)", border: `1px solid ${selectedEmployerProfileId === ep.id ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", textAlign: "left", fontSize: 14, fontWeight: selectedEmployerProfileId === ep.id ? 700 : 400, color: selectedEmployerProfileId === ep.id ? "#c4b5fd" : "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
+                        style={{ background: selectedEmployerProfileId === ep.id ? "var(--primary-light)" : "var(--surface2)", border: `1px solid ${selectedEmployerProfileId === ep.id ? "var(--primary-border)" : "var(--border)"}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", textAlign: "left", fontSize: 14, fontWeight: selectedEmployerProfileId === ep.id ? 700 : 400, color: selectedEmployerProfileId === ep.id ? "var(--purple-text)" : "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
                         <span>{selectedEmployerProfileId === ep.id ? "✅" : "🏪"}</span>
                         {ep.business_name}
                       </button>
@@ -957,24 +959,24 @@ function ExploreContent() {
 
       {isLoggedIn && !hasHexaco && sortBy === "궁합순" && !loading && (
         <div style={{ position: "fixed", bottom: 70, left: 0, right: 0, padding: "0 16px", zIndex: 40 }}>
-          <div style={{ maxWidth: 480, margin: "0 auto", background: "linear-gradient(135deg, #ec4899, #8b5cf6)", borderRadius: 16, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 24px rgba(139,92,246,0.35)" }}>
+          <div style={{ maxWidth: 480, margin: "0 auto", background: "var(--accent)", borderRadius: 16, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "var(--shadow-elevate)" }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "#fff" }}>💕 성향 분석하면 궁합 점수가 생겨요!</p>
               <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0 }}>5분 분석으로 딱 맞는 공고 찾기</p>
             </div>
-            <button onClick={() => router.push("/interview?type=worker&from=explore_sort")} style={{ background: "#fff", border: "none", color: "#7c3aed", fontWeight: 800, padding: "8px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12 }}>시작 →</button>
+            <button onClick={() => router.push("/interview?type=worker&from=explore_sort")} style={{ background: "#fff", border: "none", color: "var(--primary)", fontWeight: 800, padding: "8px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12 }}>시작 →</button>
           </div>
         </div>
       )}
 
       {!isLoggedIn && !loading && (
         <div style={{ position: "fixed", bottom: 70, left: 0, right: 0, padding: "0 16px", zIndex: 40 }}>
-          <div style={{ maxWidth: 480, margin: "0 auto", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", borderRadius: 16, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 24px rgba(139,92,246,0.35)" }}>
+          <div style={{ maxWidth: 480, margin: "0 auto", background: "var(--primary)", borderRadius: 16, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "var(--shadow-elevate)" }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "#fff" }}>궁합 점수 보고 싶어요?</p>
               <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0 }}>성향 분석하고 딱 맞는 공고 찾기</p>
             </div>
-            <button onClick={() => router.push("/interview?type=worker")} style={{ background: "#fff", border: "none", color: "#7c3aed", fontWeight: 800, padding: "8px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12 }}>시작 →</button>
+            <button onClick={() => router.push("/interview?type=worker")} style={{ background: "#fff", border: "none", color: "var(--primary)", fontWeight: 800, padding: "8px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12 }}>시작 →</button>
           </div>
         </div>
       )}
@@ -996,7 +998,7 @@ function ExploreContent() {
                     const isSelected = filterIndustry === ind;
                     return (
                       <button key={ind} onClick={() => setFilterIndustry(filterIndustry === ind ? "" : ind)}
-                        style={{ padding: "8px 12px", borderRadius: 10, border: "none", background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
+                        style={{ padding: "8px 12px", borderRadius: 10, border: "none", background: isSelected ? "var(--primary)" : "var(--surface2)", color: isSelected ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
                         {ind}
                       </button>
                     );
@@ -1012,7 +1014,7 @@ function ExploreContent() {
                     const isSelected = filterDays === d;
                     return (
                       <button key={d} onClick={() => setFilterDays(isSelected ? "" : d)}
-                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
+                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "var(--primary)" : "var(--surface2)", color: isSelected ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
                         {d}
                       </button>
                     );
@@ -1034,7 +1036,7 @@ function ExploreContent() {
                         const isSelected = filterJobType === t.key;
                         return (
                           <button key={t.key} onClick={() => setFilterJobType(isSelected ? "" : t.key)}
-                            style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
+                            style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "var(--primary)" : "var(--surface2)", color: isSelected ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
                             {t.label}
                           </button>
                         );
@@ -1055,7 +1057,7 @@ function ExploreContent() {
                         const isSelected = filterWage === w.val;
                         return (
                           <button key={w.label} onClick={() => setFilterWage(w.val)}
-                            style={{ padding: "8px 12px", borderRadius: 10, border: "none", background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
+                            style={{ padding: "8px 12px", borderRadius: 10, border: "none", background: isSelected ? "var(--primary)" : "var(--surface2)", color: isSelected ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
                             {w.label}
                           </button>
                         );
@@ -1068,15 +1070,15 @@ function ExploreContent() {
                     <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 8, color: "var(--text-muted)" }}>⚡ 기타 세부 조건</label>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
-                        <input type="checkbox" checked={filterWageNegotiable === true} onChange={e => setFilterWageNegotiable(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "#8b5cf6" }} />
+                        <input type="checkbox" checked={filterWageNegotiable === true} onChange={e => setFilterWageNegotiable(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "var(--primary)" }} />
                         시급 협의 가능 공고만 보기
                       </label>
                       <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
-                        <input type="checkbox" checked={filterMealProvided === true} onChange={e => setFilterMealProvided(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "#8b5cf6" }} />
+                        <input type="checkbox" checked={filterMealProvided === true} onChange={e => setFilterMealProvided(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "var(--primary)" }} />
                         🍱 식사 제공 공고만 보기
                       </label>
                       <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
-                        <input type="checkbox" checked={filterParking === true} onChange={e => setFilterParking(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "#8b5cf6" }} />
+                        <input type="checkbox" checked={filterParking === true} onChange={e => setFilterParking(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "var(--primary)" }} />
                         🚗 주차 가능 공고만 보기
                       </label>
                     </div>
@@ -1095,7 +1097,7 @@ function ExploreContent() {
                         const isSelected = filterLongTerm === t.key;
                         return (
                           <button key={t.key} onClick={() => setFilterLongTerm(isSelected ? "" : t.key)}
-                            style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
+                            style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "var(--primary)" : "var(--surface2)", color: isSelected ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
                             {t.label}
                           </button>
                         );
@@ -1114,7 +1116,7 @@ function ExploreContent() {
                         const isSelected = filterExperience === e.key;
                         return (
                           <button key={e.label} onClick={() => setFilterExperience(isSelected ? null : e.key)}
-                            style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
+                            style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: "none", background: isSelected ? "var(--primary)" : "var(--surface2)", color: isSelected ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: isSelected ? 700 : 400 }}>
                             {e.label}
                           </button>
                         );
@@ -1126,7 +1128,7 @@ function ExploreContent() {
                   <div>
                     <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 8, color: "var(--text-muted)" }}>⚡ 근무 가능 상태</label>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
-                      <input type="checkbox" checked={filterAvailableNow === true} onChange={e => setFilterAvailableNow(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "#8b5cf6" }} />
+                      <input type="checkbox" checked={filterAvailableNow === true} onChange={e => setFilterAvailableNow(e.target.checked ? true : null)} style={{ width: 16, height: 16, accentColor: "var(--primary)" }} />
                       즉시 출근 가능 알바생만 보기
                     </label>
                   </div>
@@ -1135,8 +1137,8 @@ function ExploreContent() {
             </div>
             
             <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
-              <button onClick={resetFilters} style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px", color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>초기화</button>
-              <button onClick={() => setFilterModalOpen(false)} style={{ flex: 2, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>적용하기</button>
+              <button onClick={resetFilters} style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>초기화</button>
+              <button onClick={() => setFilterModalOpen(false)} style={{ flex: 2, background: "var(--primary)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>적용하기</button>
             </div>
           </div>
         </div>
@@ -1165,14 +1167,12 @@ function ExploreContent() {
             minWidth: 48,
             padding: fabScrolled ? "0 14px" : "0 20px 0 14px",
             background: viewMode === "worker"
-              ? "linear-gradient(135deg,#7c3aed,#a855f7)"
-              : "linear-gradient(135deg,#ec4899,#f43f5e)",
+              ? "var(--primary)"
+              : "var(--accent)",
             border: "none",
             borderRadius: 28,
             cursor: "pointer",
-            boxShadow: viewMode === "worker"
-              ? "0 4px 20px rgba(124,58,237,0.5)"
-              : "0 4px 20px rgba(236,72,153,0.5)",
+            boxShadow: "var(--shadow-elevate)",
             color: "#fff",
             overflow: "hidden",
             transition: "padding 0.3s cubic-bezier(.34,1.56,.64,1), box-shadow 0.2s",

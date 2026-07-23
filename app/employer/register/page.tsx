@@ -651,7 +651,7 @@ function EmployerRegisterContent() {
       else if (returnTo === "result") targetUrl = "/result?type=employer&level=1";
       else if (decodedReturn.startsWith("/")) targetUrl = decodedReturn;
 
-      router.push(targetUrl);
+      router.replace(targetUrl);
     }
   };
 

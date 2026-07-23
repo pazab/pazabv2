@@ -24,12 +24,12 @@ function HeroScoreBadge({ score }: { score: number }) {
 function MatchScoreSection({ score }: { score: number }) {
   const level = getMatchLevel(score);
   return (
-    <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
       <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>💕 이 직원과의 궁합</p>
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ fontSize: 56, fontWeight: 900, color: level.color, lineHeight: 1, letterSpacing: "-2px" }}>{score}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 6, height: 8, marginBottom: 8, overflow: "hidden" }}>
+          <div style={{ background: "var(--progress-track)", borderRadius: 6, height: 8, marginBottom: 8, overflow: "hidden" }}>
             <div style={{ background: `linear-gradient(90deg, ${level.color}80, ${level.color})`, height: "100%", borderRadius: 6, width: `${score}%`, transition: "width 0.8s ease" }} />
           </div>
           <p style={{ fontSize: 14, color: level.color, margin: 0, fontWeight: 700 }}>{level.emoji} {level.label}</p>
@@ -62,7 +62,7 @@ function HexacoSection({ hexacoData }: { hexacoData: Record<string, number> }) {
               </span>
               <span style={{ color, fontWeight: 700 }}>{val.toFixed(1)}</span>
             </div>
-            <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 4, height: 6, overflow: "hidden" }}>
+            <div style={{ background: "var(--progress-track)", borderRadius: 4, height: 6, overflow: "hidden" }}>
               <div style={{ background: `linear-gradient(90deg, ${color}60, ${color})`, height: "100%", borderRadius: 4, width: `${(val / 5) * 100}%`, transition: "width 0.8s ease" }} />
             </div>
           </div>
@@ -369,11 +369,10 @@ export default function WorkerDetailPage() {
             <div style={{ position: "absolute", inset: 0, background: `url(${activeMedia.url}) center/cover no-repeat` }} />
           )
         ) : (
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(160deg, #1a1035 0%, #2d1b6e 50%, #1e1040 100%)" }} />
+          <div style={{ position: "absolute", inset: 0, background: "var(--surface2)" }} />
         )}
 
         <div style={{ position: "absolute", inset: 0, background: hasMedia ? "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.05) 40%, rgba(0,0,0,0.85) 100%)" : "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)", pointerEvents: "none" }} />
-        {!hasMedia && <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 30% 20%, rgba(255,255,255,0.04) 0%, transparent 60%)", pointerEvents: "none" }} />}
 
         {mediaItems.length > 1 && (
           <>
@@ -403,12 +402,12 @@ export default function WorkerDetailPage() {
                   {isOwner ? (
                     <>
                       <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>✏️ 수정하기</button>
-                      <button onClick={() => { setShowMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171" }}>🗑️ 삭제하기</button>
+                      <button onClick={() => { setShowMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🗑️ 삭제하기</button>
                     </>
                   ) : (
                     <>
-                      <button onClick={() => { setShowMenu(false); showToast("신고가 접수됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)" }}>🚨 신고하기</button>
-                      <button onClick={() => { setShowMenu(false); showToast("차단됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171" }}>🚫 차단하기</button>
+                      <button onClick={() => { setShowMenu(false); showToast("신고가 접수됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--warning)", borderBottom: "1px solid var(--border)" }}>🚨 신고하기</button>
+                      <button onClick={() => { setShowMenu(false); showToast("차단됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🚫 차단하기</button>
                     </>
                   )}
                 </div>
@@ -421,7 +420,7 @@ export default function WorkerDetailPage() {
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
             {workerTier && <TierBadge tier={workerTier} />}
-            {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "rgba(34,197,94,0.9)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
+            {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "var(--success)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
             {desiredTypes.length > 0 && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>{desiredTypes[0]}</span>}
             <span style={{ fontSize: 10, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", padding: "3px 8px", borderRadius: 8 }}>{grade.emoji} {grade.name}</span>
           </div>
@@ -443,18 +442,18 @@ export default function WorkerDetailPage() {
       <div style={{ padding: "0 20px" }}>
 
         {/* 핵심 조건 */}
-        <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {[
-              { icon: "₩", label: "희망 시급", value: Number(w.desired_wage) > 0 ? `${Number(w.desired_wage).toLocaleString()}원` : "협의", sub: w.wage_negotiable ? "협의 가능" : null, color: "#fca5a5" },
+              { icon: "₩", label: "희망 시급", value: Number(w.desired_wage) > 0 ? `${Number(w.desired_wage).toLocaleString()}원` : "협의", sub: w.wage_negotiable ? "협의 가능" : null, color: "var(--danger)" },
               { icon: "📅", label: "근무요일", value: String(w.work_days || "협의"), sub: null, color: null },
               { icon: "⏰", label: "근무시간", value: String(w.work_hours || "협의"), sub: null, color: null },
               { icon: "💼", label: "경력", value: w.experience === "있음" ? `${w.experience_months || 0}개월` : "신입", sub: null, color: null },
             ].map(item => (
-              <div key={item.label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "12px 14px" }}>
+              <div key={item.label} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px" }}>
                 <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>{item.icon} {item.label}</p>
                 <p style={{ fontSize: 16, fontWeight: 800, margin: 0, color: item.color || "var(--text)" }}>{item.value}</p>
-                {item.sub && <p style={{ fontSize: 10, color: "#c4b5fd", margin: "3px 0 0" }}>💬 {item.sub}</p>}
+                {item.sub && <p style={{ fontSize: 10, color: "var(--purple-text)", margin: "3px 0 0" }}>💬 {item.sub}</p>}
               </div>
             ))}
           </div>
@@ -462,11 +461,11 @@ export default function WorkerDetailPage() {
 
         {/* 보유 자격증 & 실무기술 */}
         {credentials.length > 0 && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 10px", letterSpacing: "0.5px" }}>🏅 보유 자격증 & 실무기술</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {credentials.map((c) => (
-                <span key={c.name} style={{ fontSize: 12, background: c.is_mandatory_by_law ? "rgba(236,72,153,0.1)" : "rgba(139,92,246,0.1)", border: `1px solid ${c.is_mandatory_by_law ? "rgba(236,72,153,0.25)" : "rgba(139,92,246,0.25)"}`, color: c.is_mandatory_by_law ? "#f9a8d4" : "#c4b5fd", padding: "6px 12px", borderRadius: 20 }}>
+                <span key={c.name} style={{ fontSize: 12, background: c.is_mandatory_by_law ? "var(--chip-pink-bg)" : "var(--primary-light)", border: `1px solid ${c.is_mandatory_by_law ? "var(--chip-pink-border)" : "var(--primary-border)"}`, color: c.is_mandatory_by_law ? "var(--pink-text)" : "var(--purple-text)", padding: "6px 12px", borderRadius: 20 }}>
                   {c.is_mandatory_by_law && "⚠️ "}{c.name}
                 </span>
               ))}
@@ -476,9 +475,9 @@ export default function WorkerDetailPage() {
 
         {/* 자기소개 (Description) */}
         {!!w.bio && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 10px", letterSpacing: "0.5px" }}>🙋 자기소개</p>
-            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: "14px 16px", color: "var(--text)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+            <div style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 16, padding: "14px 16px", color: "var(--text)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
               {String(w.bio)}
             </div>
           </div>
@@ -486,14 +485,14 @@ export default function WorkerDetailPage() {
 
         {/* 최근 활동 (Mini Feed) */}
         {feeds.length > 0 && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>📸 최근 활동</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {feeds.map((feed: Record<string, unknown>) => {
                 const mediaUrls = feed.media_urls as string[] | null;
                 const imgUrl = Array.isArray(mediaUrls) && mediaUrls.length > 0 ? mediaUrls[0] : null;
                 return (
-                  <div key={String(feed.id)} onClick={() => router.push("/feed")} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 12, display: "flex", gap: 12, cursor: "pointer" }}>
+                  <div key={String(feed.id)} onClick={() => router.push("/feed")} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 16, padding: 12, display: "flex", gap: 12, cursor: "pointer" }}>
                     {imgUrl && (
                       <div style={{ width: 64, height: 64, borderRadius: 10, background: `url(${imgUrl}) center/cover`, flexShrink: 0 }} />
                     )}
@@ -517,7 +516,7 @@ export default function WorkerDetailPage() {
 
         {/* 알바생 성향 */}
         {!!w.worker_type && typeInfo && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>⚡ 알바생 성향</p>
             <div style={{ background: `${typeInfo.color}12`, border: `1px solid ${typeInfo.color}30`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -528,21 +527,21 @@ export default function WorkerDetailPage() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                {typeInfo.traits.map((t: string) => <span key={t} style={{ fontSize: 11, background: "rgba(0,0,0,0.2)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 20 }}>{t}</span>)}
+                {typeInfo.traits.map((t: string) => <span key={t} style={{ fontSize: 11, background: "var(--progress-track)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 20 }}>{t}</span>)}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <p style={{ fontSize: 12, color: "#86efac", margin: 0 }}>✓ 잘 맞아요: {typeInfo.good}</p>
-                <p style={{ fontSize: 12, color: "#fca5a5", margin: 0 }}>· 이런 환경: {typeInfo.bad}</p>
+                <p style={{ fontSize: 12, color: "var(--success)", margin: 0 }}>✓ 잘 맞아요: {typeInfo.good}</p>
+                <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>· 이런 환경: {typeInfo.bad}</p>
               </div>
             </div>
             {hexacoData && <HexacoSection hexacoData={hexacoData} />}
             {!existingMatch && (
-              <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
                 <span>📌</span>
                 <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>채용 제안하면 찰떡 사장님 유형이 공개돼요</p>
               </div>
             )}
-            <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", color: "#c4b5fd", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               🤖 AI 봇에게 물어보기
             </button>
           </div>
@@ -555,33 +554,33 @@ export default function WorkerDetailPage() {
       </div>
 
       {/* 하단 버튼 */}
-      <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "rgba(18,18,22,0.97)", backdropFilter: "blur(16px)", borderTop: "1px solid rgba(255,255,255,0.06)", zIndex: 40, transition: "bottom 0.3s ease" }}>
+      <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "var(--nav-bg)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--nav-border)", zIndex: 40, transition: "bottom 0.3s ease" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex", gap: 10 }}>
-          <button onClick={handleLike} style={{ display: "flex", alignItems: "center", gap: 5, background: isLiked ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.06)", border: `1px solid ${isLiked ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.1)"}`, borderRadius: 14, padding: "0 16px", height: 52, color: isLiked ? "#fca5a5" : "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}>
+          <button onClick={handleLike} style={{ display: "flex", alignItems: "center", gap: 5, background: isLiked ? "var(--danger-bg)" : "var(--card-inner)", border: `1px solid ${isLiked ? "var(--danger-border)" : "var(--card-inner-border)"}`, borderRadius: 14, padding: "0 16px", height: 52, color: isLiked ? "var(--danger)" : "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}>
             {isLiked ? "❤" : "♡"}
             <span style={{ fontSize: 12 }}>{likeCount}</span>
           </button>
           {isOwner ? null : isReceived && status === "pending" ? (
             <div style={{ display: "flex", gap: 8, flex: 1 }}>
               <button onClick={() => handleRespondDirect("reject")} disabled={sending}
-                style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                style={{ flex: 1, height: 52, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
                 거절하기
               </button>
               <button onClick={() => handleRespondDirect("accept")} disabled={sending}
-                style={{ flex: 2, height: 52, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                style={{ flex: 2, height: 52, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
                 수락하기
               </button>
             </div>
           ) : status === "sent" || status === "pending" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>📤 제안 완료 (수락 대기중)</button>
+            <button disabled style={{ flex: 1, height: 52, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>📤 제안 완료 (수락 대기중)</button>
           ) : status === "accepted" ? (
-            <button onClick={() => router.push(`/chat/${existingMatch?.id}`)} style={{ flex: 1, height: 52, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💬 대화 중 · 채팅방 가기</button>
+            <button onClick={() => router.push(`/chat/${existingMatch?.id}`)} style={{ flex: 1, height: 52, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💬 대화 중 · 채팅방 가기</button>
           ) : status === "hired" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fde68a", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>✅ 채용 완료</button>
+            <button disabled style={{ flex: 1, height: 52, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>✅ 채용 완료</button>
           ) : ["rejected", "failed", "cancelled"].includes(status) ? (
-            <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 결렬됨 · 다시 보내기</button>
+            <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 결렬됨 · 다시 보내기</button>
           ) : (
-            <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: isLoggedIn ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.08)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 15, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
+            <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: isLoggedIn ? "var(--primary)" : "var(--surface2)", border: "none", color: isLoggedIn ? "#fff" : "var(--text-muted)", fontWeight: 800, borderRadius: 14, fontSize: 15, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
               {sending ? "처리 중..." : isLoggedIn ? "채용 제안하기" : "로그인하고 채용 제안하기 →"}
             </button>
           )}
@@ -596,7 +595,7 @@ export default function WorkerDetailPage() {
               {existingMatch && ["cancelled", "rejected", "failed"].includes(String(existingMatch.progress_status)) ? "재제안 확인" : "채용 제안 확인"}
             </h3>
             {existingMatch && ["cancelled", "rejected", "failed"].includes(String(existingMatch.progress_status)) && (
-              <p style={{ fontSize: 13, color: "#fbbf24", margin: "0 0 12px", lineHeight: 1.6, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 10, padding: "8px 12px" }}>
+              <p style={{ fontSize: 13, color: "var(--warning)", margin: "0 0 12px", lineHeight: 1.6, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 10, padding: "8px 12px" }}>
                 ⚠️ 이전에 매칭이 결렬된 이력이 있습니다. 다시 제안하시겠어요?
               </p>
             )}
@@ -606,7 +605,7 @@ export default function WorkerDetailPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {employerProfiles.map(ep => (
                     <button key={ep.id} onClick={() => setEmployerProfileId(ep.id)}
-                      style={{ background: employerProfileId === ep.id ? "rgba(139,92,246,0.15)" : "var(--surface2)", border: `1px solid ${employerProfileId === ep.id ? "rgba(139,92,246,0.5)" : "var(--border)"}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", textAlign: "left", fontSize: 14, fontWeight: employerProfileId === ep.id ? 700 : 400, color: employerProfileId === ep.id ? "#c4b5fd" : "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
+                      style={{ background: employerProfileId === ep.id ? "var(--primary-light)" : "var(--surface2)", border: `1px solid ${employerProfileId === ep.id ? "var(--primary-border)" : "var(--border)"}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", textAlign: "left", fontSize: 14, fontWeight: employerProfileId === ep.id ? 700 : 400, color: employerProfileId === ep.id ? "var(--purple-text)" : "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
                       <span>{employerProfileId === ep.id ? "✅" : "🏪"}</span>
                       {ep.business_name}
                     </button>
@@ -653,7 +652,7 @@ export default function WorkerDetailPage() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
           <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", height: "70vh", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🤖</div>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🤖</div>
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{name} 봇</p>
                 <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>AI 사전 문의 ({MAX_BOT_TURNS - botUserTurns}회 남음)</p>
@@ -663,16 +662,16 @@ export default function WorkerDetailPage() {
             <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 10 }}>
               {botMessages.map((msg, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-                  <div style={{ maxWidth: "78%", background: msg.role === "user" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "4px 18px 18px 18px", padding: "10px 14px", fontSize: 13, color: msg.role === "user" ? "#fff" : "var(--text)", lineHeight: 1.6, whiteSpace: "pre-line" }}>{msg.content}</div>
+                  <div style={{ maxWidth: "78%", background: msg.role === "user" ? "var(--primary)" : "var(--surface2)", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "4px 18px 18px 18px", padding: "10px 14px", fontSize: 13, color: msg.role === "user" ? "#fff" : "var(--text)", lineHeight: 1.6, whiteSpace: "pre-line" }}>{msg.content}</div>
                 </div>
               ))}
-              {botSending && <div style={{ display: "flex" }}><div style={{ background: "var(--surface2)", borderRadius: "4px 18px 18px 18px", padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#8b5cf6" }} />)}</div></div></div>}
+              {botSending && <div style={{ display: "flex" }}><div style={{ background: "var(--surface2)", borderRadius: "4px 18px 18px 18px", padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--primary)" }} />)}</div></div></div>}
               {botUserTurns < 3 && botMessages.length > 0 && botMessages[botMessages.length - 1]?.role === "assistant" && (
                 <div style={{ marginTop: 4 }}>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>💬 이런 것도 물어볼 수 있어요</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {["어떤 업무를 주로 하셨나요?", "장기 근무 가능한가요?", "빠르게 배우는 편인가요?", "팀 분위기를 좋아하시나요?"].map(q => (
-                      <button key={q} onClick={() => sendBotMessage(q)} style={{ background: "var(--surface)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: 20, padding: "7px 14px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer", textAlign: "left" }}>{q}</button>
+                      <button key={q} onClick={() => sendBotMessage(q)} style={{ background: "var(--surface)", border: "1px solid var(--primary-border)", borderRadius: 20, padding: "7px 14px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer", textAlign: "left" }}>{q}</button>
                     ))}
                   </div>
                 </div>
@@ -689,7 +688,7 @@ export default function WorkerDetailPage() {
               <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", paddingBottom: "calc(10px + env(safe-area-inset-bottom))" }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={botInput} onChange={e => setBotInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); sendBotMessage(); } }} placeholder="궁금한 것을 물어보세요..." style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "10px 16px", color: "var(--text)", fontSize: 13, outline: "none" }} />
-                  <button onClick={() => sendBotMessage()} disabled={!botInput.trim() || botSending} style={{ width: 40, height: 40, borderRadius: "50%", background: botInput.trim() ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)", border: "none", color: "#fff", cursor: botInput.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>→</button>
+                  <button onClick={() => sendBotMessage()} disabled={!botInput.trim() || botSending} style={{ width: 40, height: 40, borderRadius: "50%", background: botInput.trim() ? "var(--primary)" : "var(--surface2)", border: "none", color: "#fff", cursor: botInput.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>→</button>
                 </div>
               </div>
             )}
@@ -706,7 +705,7 @@ export default function WorkerDetailPage() {
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
-                style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
+                style={{ width: "100%", background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
                 🤖 AI 사전미팅 하기
               </button>
               <button onClick={() => { setMatchModal(null); router.push(`/chat/${matchModal.matchId}`); }}
@@ -733,18 +732,18 @@ function TeamCompatSection({ teamCompat }: { teamCompat: Record<string, unknown>
   const isLocked = totalScore == null;
 
   return (
-    <div style={{ padding: "20px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: 0, letterSpacing: "0.5px" }}>👥 팀과의 궁합</p>
         {isLocked ? (
-          <span style={{ fontSize: 11, fontWeight: 700, color: "#c4b5fd", background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", padding: "4px 10px", borderRadius: 12 }}>🔒 분석 후 공개</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--purple-text)", background: "var(--primary-light)", border: "1px solid var(--primary-border)", padding: "4px 10px", borderRadius: 12 }}>🔒 분석 후 공개</span>
         ) : (
-          <span style={{ fontSize: 20, fontWeight: 900, color: Number(totalScore) >= 70 ? "#86efac" : Number(totalScore) >= 55 ? "#fbbf24" : "#f87171" }}>{Number(totalScore)}점</span>
+          <span style={{ fontSize: 20, fontWeight: 900, color: Number(totalScore) >= 70 ? "var(--success)" : Number(totalScore) >= 55 ? "var(--warning)" : "var(--danger)" }}>{Number(totalScore)}점</span>
         )}
       </div>
 
       {[{ label: "사장님", data: employer }, ...members.map((m, i) => ({ label: `팀원 ${i + 1}`, data: m }))].map(({ label, data }) => (
-        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", opacity: isLocked ? 0.6 : 1 }}>
+        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--card-inner-border)", opacity: isLocked ? 0.6 : 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 18 }}>{isLocked ? "👤" : String(data?.emoji || "👤")}</span>
             <div>
@@ -755,9 +754,9 @@ function TeamCompatSection({ teamCompat }: { teamCompat: Record<string, unknown>
             </div>
           </div>
           {!isLocked && data?.score != null ? (
-            <span style={{ fontSize: 15, fontWeight: 800, color: Number(data.score) >= 70 ? "#86efac" : Number(data.score) >= 55 ? "#fbbf24" : "#f87171" }}>{Number(data.score)}점</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: Number(data.score) >= 70 ? "var(--success)" : Number(data.score) >= 55 ? "var(--warning)" : "var(--danger)" }}>{Number(data.score)}점</span>
           ) : (
-            <span style={{ fontSize: 11, color: "var(--text-muted)", background: "rgba(255,255,255,0.04)", padding: "3px 8px", borderRadius: 20 }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--card-inner)", padding: "3px 8px", borderRadius: 20 }}>
               {isLocked ? "🔒 잠김" : "미분석"}
             </span>
           )}
@@ -765,12 +764,12 @@ function TeamCompatSection({ teamCompat }: { teamCompat: Record<string, unknown>
       ))}
 
       {isLocked ? (
-        <div style={{ marginTop: 12, padding: "14px 16px", background: "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.04))", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 16, textAlign: "center" }}>
+        <div style={{ marginTop: 12, padding: "14px 16px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 16, textAlign: "center" }}>
           <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.5 }}>
             성향 분석을 완료하시면 사장님 및 팀원들과의<br />
             <strong>상세 궁합 및 궁합 점수</strong>가 열려요! 😊
           </p>
-          <button onClick={() => router.push("/interview")} style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
+          <button onClick={() => router.push("/interview")} style={{ background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
             🎯 5분 성향 분석 시작하기
           </button>
         </div>

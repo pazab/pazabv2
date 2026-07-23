@@ -1,7 +1,20 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-18 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-24 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
+
+**디자인 토큰 확산 완료, 뒤로가기 전면 점검, 매장 데이터 정합성 버그 다수 수정 (2026-07-24)**
+- **디자인 토큰 확산 마무리**: `/chat`, `/chat/[id]`, `/mypage`, `/explore`, `/job/[id]`, `/worker/[id]` 남은 화면 전부 방향 A(플랫 미니멀) 토큰·아이콘 규칙 적용 (자세한 건 `DESIGN_PLAN.md` §9 4차 참조). `DaetaRegisterModal.tsx`는 라이트모드에서 텍스트가 아예 안 보이던 버그(모달 전체 `color:"#fff"` 하드코딩)를 발견해 전체 토큰화, 매장 선택도 드롭다운 → 버튼 칩으로 변경.
+- **뒤로가기 전면 감사 (`app/contract/page.tsx`, `app/worker/profile/page.tsx`, `app/employer/register/page.tsx`, `app/payslip/page.tsx`)**:
+  - 저장 성공 후 `router.push`를 쓰던 곳들(계약서/구직정보/공고 등록/급여명세서 발행)이 전부 `router.replace`로 교체돼, 저장 직후 뒤로가기 시 방금 제출한 폼으로 되돌아가던 문제 해결.
+  - `app/contract/page.tsx`: 저장 후 이동 분기(from=chat/memberId/from=team) 중 아무 것도 안 걸리는 무컨텍스트 진입 시 아예 이동을 안 해서 폼에 그대로 남던 케이스에 기본 이동(`/mypage`) 추가.
+  - `app/payslip/page.tsx`: 뒤로가기가 실제 진입 경로와 무관하게 항상 `/myteam`으로 하드코딩돼 있던 것 제거, 기본 브라우저 히스토리 back으로 정상화.
+- **매장 데이터 정합성 버그 2건 — `employer_profiles.is_active`를 "매장이 살아있는지"로 오용**: `is_active`는 실제로는 "일반 공고를 올렸는지" 플래그(`StoreRegisterModal.tsx`에서 신규 매장은 `is_active:false`로 생성)인데, `DaetaRegisterModal.tsx`의 매장 목록 조회와 `app/daeta/page.tsx`의 SOS 발송(`handleCall`)이 이 값으로 필터링해서 공고를 한 번도 안 올린 매장이 조용히 빠지던 버그. 두 곳 다 `is_deleted` 기준으로 교체. **이 버그가 실제로 대타 등록 시 "매장 없음" 오판 → 매번 재등록 → 매장 중복 생성의 근본 원인이었음** (사장님 1명 계정에 같은 매장 이름으로 5개 중복 발견, SQL로 정리).
+  - 대타 게시글 저장 시 `daeta_postings.required_credentials` 컬럼이 아예 없어 저장 실패하던 것도 확인 — `patch_missing_columns.sql`이 이 컬럼을 `employer_profiles`에만 추가하고 `daeta_postings`엔 빠뜨렸던 이관 실수. `supabase/patch_daeta_required_credentials.sql`로 보완 (실행 완료).
+- **team_members.employer_profile_id 누락 — 매장 여러 개인 사장님 계약서에서 엉뚱한 매장 뜨는 버그**: 채팅에서 직접 채용확정(`hire_accept`)할 때와 계약서 서명 API 양쪽 다 `matches.employer_profile_id`를 넘기지 않고 team_members를 생성해서, `/contract`가 "가장 최근 등록한 매장"으로 잘못 폴백. `app/api/chat/route.ts`가 애초에 그 컬럼을 select 안 하던 게 원인 — select에 추가하고 두 생성 경로 다 실제 값을 넘기도록 수정.
+- **`/contract` 페이지 자체의 불일치 버그**: "매장 선택 칩"과 "주소/사업자정보 폼"을 서로 다른 독립 쿼리로 채우고 있어서, 매장이 여러 개면 두 쿼리의 "최근 매장" 폴백이 서로 다른 걸 골라 화면 안에서 매장이 안 맞는 프랑켄슈타인 현상 발생. `loadByMember`/`load`/`handleSelectMatch` 세 곳 다 매장 정보를 항상 매장칩 목록(`availableEps`/`myEps`)에서 찾아 쓰도록 통일. `load()`의 폴백 쿼리에 존재하지 않는 컬럼명(`biz_address`)이 섞여 있던 것도 같이 제거.
+- **근로자 개인정보(생년월일/연락처/주소) 수집 시점 변경**: 원래 계약서 "근로자" 스텝에서 필수였는데, 사장님이 정확히 모를 수 있는 정보라 여기선 선택으로 풀고(`app/contract/page.tsx`), 대신 알바생이 "계약서 동의" 하는 순간(`app/chat/[id]/page.tsx`의 `showSignConfirm`)에 비어있는 항목만 인라인으로 채우게 하고 `users`에 저장하도록 이동. 이 화면에 토스트(`useToast`)도 새로 연결.
+- **남은 작업**: 등본/보건증/통장사본을 팀원 상세에 업로드해두는 "서류함" 기능 — 논의만 하고 아직 미구현. 주민등록번호는 구조화된 필드로 저장하지 않고(개인정보보호법 이슈), 4대보험 신고 등 실제 필요 시점에만 다루는 방향으로 합의, 별도 구현 없음.
 
 **매칭 프로세스 고도화, 양방향 알림 및 탐색 페이지 매칭 상태 연동 (2026-07-18)**
 - **양방향 알림 발송 연동 (`app/api/lovecall/route.ts`)**:

@@ -424,7 +424,7 @@ function WorkerProfileContent() {
     setSuccess(true);
     const mypageUrl = `/mypage${sectionParam ? `?section=${sectionParam}` : ""}`;
     const decodedReturn = returnTo ? decodeURIComponent(returnTo) : "";
-    setTimeout(() => router.push(
+    setTimeout(() => router.replace(
       returnTo === "mypage" ? mypageUrl :
       returnTo === "interview" ? "/interview" :
       returnTo === "result" ? "/result?type=worker&level=1" :

@@ -10,7 +10,6 @@ function PayslipContent() {
   const sp = useSearchParams();
   const teamMemberId = sp.get("tmId") || "";
   const payslipId = sp.get("id") || "";
-  const fromTab = sp.get("tab") || "payslip";
 
   const [user, setUser] = useState<any>(null);
   const [userType, setUserType] = useState<string>("");
@@ -435,7 +434,7 @@ function PayslipContent() {
     }
 
     showToast(`✅ ${year}년 ${month}월 급여 명세서가 발행됐어요!`);
-    router.push(`/employer/team/${member.id}`);
+    router.replace(`/employer/team/${member.id}`);
     setSaving(false);
   }
 
@@ -450,7 +449,7 @@ function PayslipContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
-      <AppHeader title="급여 명세서" showBack onBack={() => router.replace(`/myteam?tab=${fromTab}`)} />
+      <AppHeader title="급여 명세서" showBack />
       <div style={{ maxWidth:480, margin:"0 auto", padding:16 }}>
 
         {/* 직원 정보 */}

@@ -151,8 +151,8 @@ export default function DaetaPage() {
         .from("employer_profiles")
         .select("id")
         .eq("user_id", currentUserId)
-        .eq("is_active", true)
-        .eq("is_deleted", false)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .not("business_name", "is", null)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();

@@ -13,19 +13,19 @@ import { cardStyle, cardGradientStyle, cardInnerStyle, btnPrimary, btnSecondary,
 import { JobCard } from "@/components/JobCard";
 
 const glassStyle: React.CSSProperties = {
-  background: "rgba(255, 255, 255, 0.03)",
+  background: "var(--surface2)",
   backdropFilter: "blur(16px)",
-  border: "1px solid rgba(255, 255, 255, 0.08)",
+  border: "1px solid var(--border)",
   borderRadius: 20,
-  boxShadow: "0 4px 30px rgba(0, 0, 0, 0.2)",
+  boxShadow: "var(--shadow-elevate)",
 };
 
 const glassProfileCard: React.CSSProperties = {
-  background: "linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(236, 72, 153, 0.12) 100%)",
+  background: "var(--primary-light)",
   backdropFilter: "blur(20px)",
-  border: "1px solid rgba(255, 255, 255, 0.1)",
+  border: "1px solid var(--primary-border)",
   borderRadius: 24,
-  boxShadow: "0 8px 32px rgba(139, 92, 246, 0.15)",
+  boxShadow: "var(--shadow-elevate)",
   padding: "20px 18px",
 };
 
@@ -78,7 +78,7 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
   const employerBadges = getBadgesByRole(allBadges, "employer");
 
   const scorePercent = Math.max(0, Math.min(100, trustScore || 50));
-  const scoreColor = scorePercent >= 80 ? "#34d399" : scorePercent >= 50 ? "#a78bfa" : "#f87171";
+  const scoreColor = scorePercent >= 80 ? "var(--success)" : scorePercent >= 50 ? "var(--purple-text)" : "var(--danger)";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -91,12 +91,12 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
           <span style={{ fontSize: 15, fontWeight: 900, color: scoreColor }}>{scorePercent}점</span>
         </div>
         <div style={{ width: "100%", height: 10, background: "var(--progress-track)", borderRadius: 6, overflow: "hidden", border: "1px solid var(--card-inner-border)" }}>
-          <div style={{ width: `${scorePercent}%`, height: "100%", background: `linear-gradient(90deg, #ec4899, #8b5cf6)`, borderRadius: 6 }} />
+          <div style={{ width: `${scorePercent}%`, height: "100%", background: "var(--primary)", borderRadius: 6 }} />
         </div>
       </div>
 
       {showWorker && (
-        <div style={{ borderBottom: showEmployer ? "1px dashed rgba(255,255,255,0.1)" : "none", paddingBottom: showEmployer ? 14 : 0 }}>
+        <div style={{ borderBottom: showEmployer ? "1px dashed var(--border)" : "none", paddingBottom: showEmployer ? 14 : 0 }}>
           {/* 알바생 타이틀 */}
           {userType === "both" && (
             <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
@@ -163,12 +163,12 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
 
       {/* 뱃지 상세 툴팁 */}
       {selectedBadge && BADGE_DEFS[selectedBadge] && (
-        <div style={{ marginTop: 10, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 12, padding: "10px 12px" }}>
-          <p style={{ fontSize: 13, fontWeight: 800, color: "#86efac", margin: "0 0 4px" }}>
+        <div style={{ marginTop: 10, background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 12, padding: "10px 12px" }}>
+          <p style={{ fontSize: 13, fontWeight: 800, color: "var(--success)", margin: "0 0 4px" }}>
             {BADGE_DEFS[selectedBadge].emoji} {BADGE_DEFS[selectedBadge].name}
           </p>
           <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px", lineHeight: 1.5 }}>{BADGE_DEFS[selectedBadge].desc}</p>
-          <p style={{ fontSize: 11, color: "rgba(134,239,172,0.6)", margin: 0 }}>🎯 {BADGE_DEFS[selectedBadge].cond}</p>
+          <p style={{ fontSize: 11, color: "var(--success)", margin: 0 }}>🎯 {BADGE_DEFS[selectedBadge].cond}</p>
         </div>
       )}
     </div>
@@ -213,7 +213,7 @@ function WorkerProfileStatus({ userId, router, onUpdate }: { userId: string; rou
       title: "구직 공고를 삭제할까요?",
       desc: "삭제된 구직 정보는 복구할 수 없어요.",
       confirmLabel: "삭제하기",
-      confirmColor: "rgba(239,68,68,0.8)",
+      confirmColor: "var(--danger)",
       onConfirm: async () => {
         await supabase.from("worker_profiles").delete().eq("id", profileId);
         setProfiles(prev => prev.filter(p => p.id !== profileId));
@@ -228,7 +228,7 @@ function WorkerProfileStatus({ userId, router, onUpdate }: { userId: string; rou
     <div style={{ textAlign: "center", padding: "10px 0" }}>
       <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 12 }}>아직 구직 공고를 등록하지 않았어요</p>
       <button onClick={() => router.push("/worker/profile?edit=true&return=mypage&section=jobs")}
-        style={{ background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.35)", color: "var(--pink-text)", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+        style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", fontWeight: 700, padding: "10px 20px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
         구직 공고 등록하기 →
       </button>
     </div>
@@ -251,7 +251,7 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
         if (ao !== bo) return ao - bo;
         return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
       }).map((profile: any) => (
-        <div key={profile.id} style={{ background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 14, padding: 14, marginBottom: 10 }}>
+        <div key={profile.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: 14, marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <div>
               <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px" }}>
@@ -263,16 +263,16 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {profile.job_status === "completed" ? (
-                <span style={{ fontSize: 11, color: "#86efac", fontWeight: 600 }}>✅ 구직 완료</span>
+                <span style={{ fontSize: 11, color: "var(--success)", fontWeight: 600 }}>✅ 구직 완료</span>
               ) : profile.job_status === "matched" ? (
-                <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 600 }}>🤝 매칭중</span>
+                <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>🤝 매칭중</span>
               ) : (
                 <>
-                  <span style={{ fontSize: 11, color: profile.is_public !== false ? "#86efac" : "var(--text-muted)", fontWeight: 600 }}>
+                  <span style={{ fontSize: 11, color: profile.is_public !== false ? "var(--success)" : "var(--text-muted)", fontWeight: 600 }}>
                     {profile.is_public !== false ? "구직중" : "비공개"}
                   </span>
                   <div onClick={() => togglePublic(profile.id, profile.is_public !== false)}
-                    style={{ width: 44, height: 24, borderRadius: 12, background: profile.is_public !== false ? "#8b5cf6" : "var(--surface)", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0, border: "1px solid var(--border)" }}>
+                    style={{ width: 44, height: 24, borderRadius: 12, background: profile.is_public !== false ? "var(--primary)" : "var(--surface)", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0, border: "1px solid var(--border)" }}>
                     <div style={{ position: "absolute", top: 2, left: profile.is_public !== false ? 22 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }} />
                   </div>
                 </>
@@ -283,12 +283,12 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
             <div style={{ display: "flex", gap: 8 }}>
               {profile.job_status !== "completed" && (
                 <button onClick={() => router.push(`/worker/profile?edit=true&profileId=${profile.id}&return=mypage&section=jobs`)}
-                  style={{ flex: 1, background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
+                  style={{ flex: 1, background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", fontSize: 12, fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer" }}>
                   ✏️ 수정
                 </button>
               )}
               <button onClick={() => deleteProfile(profile.id, setConfirmModal)}
-                style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 10, cursor: "pointer" }}>
+                style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 10, cursor: "pointer" }}>
                 🗑️
               </button>
             </div>
@@ -326,7 +326,7 @@ function ConfirmModal({ title, desc, confirmLabel, confirmColor, onConfirm, onCa
         <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{desc}</p>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onConfirm}
-            style={{ flex: 1, background: confirmColor || "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
+            style={{ flex: 1, background: confirmColor || "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
             {confirmLabel}
           </button>
           <button onClick={onCancel}
@@ -364,13 +364,13 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
   const getStatusInfo = (lc: any) => {
     const ps = lc.progress_status || lc.status;
     switch (ps) {
-      case "interviewing": return { label: "📅 면접 진행중", color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.3)" };
-      case "hired": return { label: "✅ 채용 확정", color: "#86efac", bg: "rgba(34,197,94,0.1)", border: "rgba(34,197,94,0.3)" };
-      case "accepted": return { label: "🎉 매칭 성사", color: "var(--purple-text)", bg: "rgba(139,92,246,0.1)", border: "rgba(139,92,246,0.3)" };
-      case "pending": return { label: "⏳ 대기중", color: "#fbbf24", bg: "rgba(251,191,36,0.05)", border: "var(--border)" };
-      case "rejected": return { label: "거절됨", color: "#f87171", bg: "transparent", border: "var(--border)" };
-      case "cancelled": return { label: "취소됨", color: "#6b7280", bg: "transparent", border: "var(--border)" };
-      case "failed": return { label: "매칭 실패", color: "#6b7280", bg: "transparent", border: "var(--border)" };
+      case "interviewing": return { label: "📅 면접 진행중", color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)" };
+      case "hired": return { label: "✅ 채용 확정", color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)" };
+      case "accepted": return { label: "🎉 매칭 성사", color: "var(--purple-text)", bg: "var(--chip-purple-bg)", border: "var(--chip-purple-border)" };
+      case "pending": return { label: "⏳ 대기중", color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--border)" };
+      case "rejected": return { label: "거절됨", color: "var(--danger)", bg: "transparent", border: "var(--border)" };
+      case "cancelled": return { label: "취소됨", color: "var(--text-muted)", bg: "transparent", border: "var(--border)" };
+      case "failed": return { label: "매칭 실패", color: "var(--text-muted)", bg: "transparent", border: "var(--border)" };
       default: return { label: ps, color: "var(--text-muted)", bg: "transparent", border: "var(--border)" };
     }
   };
@@ -379,7 +379,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
     <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, marginBottom: 12 }}>
       <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>{title}
         {calls.filter(lc => (lc.progress_status || lc.status) === "pending").length > 0 && (
-          <span style={{ marginLeft: 8, background: "#8b5cf6", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 20 }}>
+          <span style={{ marginLeft: 8, background: "var(--primary)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 20 }}>
             {calls.filter(lc => (lc.progress_status || lc.status) === "pending").length}
           </span>
         )}
@@ -392,11 +392,11 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
           const name = isWorkerRole ? cp?.business_name || "매장" : cp?.name || "알바생";
           const isActive = ["interviewing", "hired", "accepted"].includes(lc.progress_status || lc.status);
           return (
-            <div key={lc.id} style={{ background: isActive ? statusInfo.bg : "rgba(0,0,0,0.12)", borderRadius: 14, padding: 12, border: `1px solid ${statusInfo.border}`, transition: "all 0.2s", position: "relative" }}>
+            <div key={lc.id} style={{ background: isActive ? statusInfo.bg : "var(--surface2)", borderRadius: 14, padding: 12, border: `1px solid ${statusInfo.border}`, transition: "all 0.2s", position: "relative" }}>
               {/* cancelled/failed/rejected 상태 쓰레기통 */}
               {["cancelled", "failed", "rejected"].includes(lc.progress_status || lc.status) && (
                 <button onClick={() => onDelete(lc.id)}
-                  style={{ width: "100%", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.15)", color: "#f87171", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer", marginTop: 4 }}>
+                  style={{ width: "100%", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer", marginTop: 4 }}>
                   🗑️ 기록 삭제
                 </button>
               )}
@@ -419,7 +419,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
 
               {/* 공고 정보 */}
               {isWorkerRole && cp && (
-                <div style={{ background: "rgba(0,0,0,0.12)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ background: "var(--surface2)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
                   {cp.business_type && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🏷️ {cp.business_type}</span>}
                   {cp.region && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {cp.region}</span>}
                   {cp.wage && <span style={{ fontSize: 11, color: "var(--purple-text)" }}>💰 {cp.wage.toLocaleString()}원</span>}
@@ -427,7 +427,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                 </div>
               )}
               {!isWorkerRole && cp && (
-                <div style={{ background: "rgba(0,0,0,0.12)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ background: "var(--surface2)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
                   {cp.desired_type && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🏷️ {cp.desired_type}</span>}
                   {cp.desired_region && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {cp.desired_region}</span>}
                   {cp.desired_wage && <span style={{ fontSize: 11, color: "var(--pink-text)" }}>💰 {cp.desired_wage.toLocaleString()}원↑</span>}
@@ -436,14 +436,14 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
 
               {/* 면접 일정 표시 */}
               {lc.interview_at && (
-                <div style={{ background: "rgba(251,191,36,0.1)", borderRadius: 8, padding: "6px 10px", marginBottom: 8, fontSize: 12, color: "#fbbf24" }}>
+                <div style={{ background: "var(--warning-bg)", borderRadius: 8, padding: "6px 10px", marginBottom: 8, fontSize: 12, color: "var(--warning)" }}>
                   📅 면접: {new Date(lc.interview_at).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   {lc.interview_memo && ` · ${lc.interview_memo}`}
                 </div>
               )}
 
               {lc.message && (
-                <p style={{ fontSize: 12, color: "var(--text-sub)", background: "rgba(0,0,0,0.1)", borderRadius: 8, padding: "6px 10px", margin: "0 0 8px" }}>
+                <p style={{ fontSize: 12, color: "var(--text-sub)", background: "var(--surface2)", borderRadius: 8, padding: "6px 10px", margin: "0 0 8px" }}>
                   💬 {lc.message}
                 </p>
               )}
@@ -452,11 +452,11 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
               {showRespond && (lc.progress_status || lc.status) === "pending" && (
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => onRespond(lc.id, "reject")} disabled={respondingId === lc.id}
-                    style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontWeight: 700, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+                    style={{ flex: 1, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
                     거절하기
                   </button>
                   <button onClick={() => onRespond(lc.id, "accept")} disabled={respondingId === lc.id}
-                    style={{ flex: 2, background: "linear-gradient(135deg,#8b5cf6,#7c3aed)", border: "none", color: "#fff", fontWeight: 800, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
+                    style={{ flex: 2, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 800, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
                     {respondingId === lc.id ? "처리 중..." : "수락하기"}
                   </button>
                 </div>
@@ -468,12 +468,12 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                 if (ps === "accepted") return (
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => router.push(`/chat/${lc.id}`)}
-                      style={{ flex: 1, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
+                      style={{ flex: 1, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
                       💬 채팅하기
                     </button>
                     {onProgress && lc.myRole === "employer" && (
                       <button onClick={() => onProgress(lc.id, "interview")}
-                        style={{ flex: 1, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fbbf24", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
+                        style={{ flex: 1, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
                         📅 면접 예약
                       </button>
                     )}
@@ -488,11 +488,11 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                     {onProgress && lc.myRole === "employer" && (
                       <>
                         <button onClick={() => onProgress(lc.id, "hire")}
-                          style={{ flex: 1, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
+                          style={{ flex: 1, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
                           ✅ 채용 확정
                         </button>
                         <button onClick={() => onProgress(lc.id, "fail")}
-                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontWeight: 600, padding: "8px 10px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
+                          style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 600, padding: "8px 10px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
                           ✗
                         </button>
                       </>
@@ -502,11 +502,11 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                 if (ps === "hired") return (
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => router.push(`/chat/${lc.id}`)}
-                      style={{ flex: 1, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", color: "#86efac", fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
+                      style={{ flex: 1, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
                       💬 채팅하기
                     </button>
                     <button onClick={() => onDelete(lc.id)}
-                      style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 10, cursor: "pointer" }}>
+                      style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 10, cursor: "pointer" }}>
                       🗑️
                     </button>
                   </div>
@@ -517,7 +517,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
               {/* 보낸것 취소 버튼 - 취소/실패/거절 상태 제외 */}
               {!showRespond && !["cancelled", "failed", "rejected", "hired"].includes(lc.progress_status || lc.status) && (
                 <button onClick={() => onCancel(lc.id)}
-                  style={{ width: "100%", background: "none", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
+                  style={{ width: "100%", background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
                   {lc.myRole === "worker" ? "지원 취소하기" : "채용제안 취소하기"}
                 </button>
               )}
@@ -781,7 +781,7 @@ function MyPageContent() {
       title: "게시물을 삭제할까요?",
       desc: "삭제된 게시물은 복구할 수 없습니다.",
       confirmLabel: "삭제",
-      confirmColor: "#f87171",
+      confirmColor: "var(--danger)",
       onConfirm: async () => {
         try {
           const res = await fetch(`/api/feed?postId=${postId}`, { method: "DELETE" });
@@ -846,7 +846,7 @@ function MyPageContent() {
         ? "진행 중인 매칭이 취소되고 공고가 내려가요. 매장 정보는 유지돼요."
         : "공고가 탐색에서 내려가요. 매장 정보는 유지되고 나중에 다시 올릴 수 있어요.",
       confirmLabel: "마감하기",
-      confirmColor: "rgba(239,68,68,0.8)",
+      confirmColor: "var(--danger)",
       onConfirm: async () => {
         if (isMatched) {
           await supabase.from("matches")
@@ -865,7 +865,7 @@ function MyPageContent() {
       title: "지원을 취소할까요?",
       desc: "취소 기록은 남아있고, 나중에 삭제할 수 있어요.",
       confirmLabel: "네, 취소할게요",
-      confirmColor: "rgba(239,68,68,0.8)",
+      confirmColor: "var(--danger)",
       onConfirm: async () => {
         try {
           const res = await fetch("/api/lovecall", {
@@ -890,7 +890,7 @@ function MyPageContent() {
       title: "기록을 삭제할까요?",
       desc: "삭제하면 복구할 수 없어요.",
       confirmLabel: "삭제하기",
-      confirmColor: "rgba(239,68,68,0.8)",
+      confirmColor: "var(--danger)",
       onConfirm: async () => {
         try {
           const res = await fetch(`/api/lovecall?matchId=${matchId}`, {
@@ -1072,15 +1072,16 @@ function MyPageContent() {
               ) : (
                 <div style={{
                   width: 52, height: 52, borderRadius: "50%",
-                  background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                  background: "var(--surface2)",
                   display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24,
                   border: "2px dashed var(--primary-border)"
                 }}>
-                  {user.user_type === "employer" ? "🏪" : "👤"}
+                  <i className={user.user_type === "employer" ? "ti ti-building-store" : "ti ti-user"}
+                    style={{ fontSize: 22, color: "var(--text-muted)" }} aria-hidden="true" />
                 </div>
               )}
-              <div style={{ position: "absolute", bottom: 0, right: 0, background: "#8b5cf6", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>
-                ✏️
+              <div style={{ position: "absolute", bottom: 0, right: 0, background: "var(--primary)", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>
+                <i className="ti ti-pencil" style={{ fontSize: 10, color: "#fff" }} aria-hidden="true" />
               </div>
             </label>
             <div>
@@ -1091,11 +1092,11 @@ function MyPageContent() {
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
                 <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>{user.nickname || user.name}</h2>
                 <button onClick={() => { setNicknameInput(user.nickname || user.name || ""); setShowNicknameModal(true); }}
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-muted)", fontSize: 10, padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 10, padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
                   닉네임 변경
                 </button>
                 <button onClick={() => setShowWithdrawModal(true)}
-                  style={{ background: "none", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", fontSize: 10, padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
+                  style={{ background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 10, padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
                   탈퇴
                 </button>
               </div>
@@ -1112,13 +1113,13 @@ function MyPageContent() {
         {/* 팀·소속 바로가기 */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
           <button onClick={() => router.push("/myteam")}
-            style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            style={{ background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 22 }}>👥</span>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>내 팀 · 소속</p>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>소속 매장 및 팀원 관리</p>
           </button>
           <button onClick={() => setInviteOpen(true)}
-            style={{ background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 22 }}>🎫</span>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--pink-text)" }}>팀원 초대</p>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
@@ -1127,7 +1128,7 @@ function MyPageContent() {
 
         {/* 전체 채팅 보관함 바로가기 */}
         <button onClick={() => router.push("/chat")}
-          style={{ width: "100%", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 10 }}>
+          style={{ width: "100%", background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 10 }}>
           <span style={{ fontSize: 22 }}>💬</span>
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>전체 채팅 보관함</p>
@@ -1137,10 +1138,10 @@ function MyPageContent() {
 
         {/* 급여 명세서 바로가기 */}
         <button onClick={() => router.push("/payslip/list")}
-          style={{ width: "100%", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 20 }}>
+          style={{ width: "100%", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 20 }}>
           <span style={{ fontSize: 22 }}>📋</span>
           <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "#10b981" }}>급여 명세서 보관함</p>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--success)" }}>급여 명세서 보관함</p>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>발행했거나 수령한 급여 명세서 전체 목록</p>
           </div>
         </button>
@@ -1153,7 +1154,7 @@ function MyPageContent() {
           const wPending = wReceived.filter(lc => lc.status === "pending").length;
           return (
             <section style={{ marginBottom: 20 }}>
-              <div style={{ background: "linear-gradient(135deg,#ec4899 60%,#7c3aed)", borderRadius: 16, padding: "14px 18px", marginBottom: 10 }}>
+              <div style={{ background: "var(--accent)", borderRadius: 16, padding: "14px 18px", marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: wTotal > 0 ? 10 : 0 }}>
                   <div>
                     <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: "0 0 2px" }}>내 구직 활동</p>
@@ -1170,7 +1171,7 @@ function MyPageContent() {
                     style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
                       📋 지원 현황
-                      {wPending > 0 && <span style={{ background: "#fff", color: "#ec4899", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{wPending}개 대기</span>}
+                      {wPending > 0 && <span style={{ background: "#fff", color: "var(--accent)", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{wPending}개 대기</span>}
                       {wPending === 0 && wTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{wTotal}건</span>}
                       {wTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
                     </span>
@@ -1179,17 +1180,17 @@ function MyPageContent() {
                 )}
               </div>
 
-              <div style={{ background: "var(--surface)", border: "1px solid rgba(236,72,153,0.18)", borderRadius: 16, padding: "16px", marginBottom: 10 }}>
+              <div style={{ background: "var(--surface)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "16px", marginBottom: 10 }}>
                 <WorkerProfileStatus userId={user.id} router={router} onUpdate={(p) => setMyWorkerProfile(p)} />
               </div>
 
               {showWorkerCalls && (
                 <div>
                   {wReceived.length === 0 && wSent.length === 0 ? (
-                    <div style={{ background: "var(--surface)", border: "1px solid rgba(236,72,153,0.12)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
+                    <div style={{ background: "var(--surface)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
                       <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 10px" }}>아직 지원 내역이 없어요</p>
                       <button onClick={() => router.push("/explore?type=worker")}
-                        style={{ background: "rgba(236,72,153,0.12)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", padding: "7px 18px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                        style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", padding: "7px 18px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
                         매장 둘러보기 →
                       </button>
                     </div>
@@ -1237,7 +1238,7 @@ function MyPageContent() {
           const ePending = eReceived.filter(lc => lc.status === "pending").length;
           return (
           <section style={{ marginBottom: 20 }}>
-            <div style={{ background: "linear-gradient(135deg,#7c3aed 60%,#ec4899)", borderRadius: 16, padding: "14px 18px", marginBottom: 10 }}>
+            <div style={{ background: "var(--primary)", borderRadius: 16, padding: "14px 18px", marginBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: !loveCallLoading ? 10 : 0 }}>
                 <div>
                   <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: "0 0 2px" }}>내 채용 활동</p>
@@ -1253,7 +1254,7 @@ function MyPageContent() {
                   style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
                     📋 채용 제안
-                    {ePending > 0 && <span style={{ background: "#fff", color: "#7c3aed", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{ePending}개 대기</span>}
+                    {ePending > 0 && <span style={{ background: "#fff", color: "var(--primary)", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{ePending}개 대기</span>}
                     {ePending === 0 && eTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{eTotal}건</span>}
                     {eTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
                   </span>
@@ -1263,7 +1264,7 @@ function MyPageContent() {
             </div>
 
             {/* 매장 공고 카드 */}
-            <div style={{ background: "var(--surface)", border: "1px solid rgba(124,58,237,0.18)", borderRadius: 16, padding: "16px", marginBottom: 10 }}>
+            <div style={{ background: "var(--surface)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "16px", marginBottom: 10 }}>
               {jobLoading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", margin: 0 }}>불러오는 중...</p>
               ) : jobs.length === 0 ? (
@@ -1290,14 +1291,14 @@ function MyPageContent() {
                           {job.job_status === "completed" ? (
                             <span style={{ fontSize: 11, color: "var(--success-text)", fontWeight: 600 }}>✅ 채용완료</span>
                           ) : job.job_status === "matched" ? (
-                            <span style={{ fontSize: 11, color: "#d97706", fontWeight: 600 }}>🤝 매칭중</span>
+                            <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>🤝 매칭중</span>
                           ) : job.job_status === "closed" ? (
                             <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>🚫 마감됨</span>
                           ) : (
                             <>
                               <span style={{ fontSize: 11, color: job.is_active ? "var(--success-text)" : "var(--text-muted)", fontWeight: 700 }}>{job.is_active ? "모집중" : "비공개"}</span>
                               <div onClick={() => toggleJobActive(job.id, job.is_active)}
-                                style={{ width: 40, height: 22, borderRadius: 11, background: job.is_active ? "#ec4899" : "var(--surface)", cursor: "pointer", position: "relative", transition: "background 0.2s", border: "1px solid var(--border)" }}>
+                                style={{ width: 40, height: 22, borderRadius: 11, background: job.is_active ? "var(--accent)" : "var(--surface)", cursor: "pointer", position: "relative", transition: "background 0.2s", border: "1px solid var(--border)" }}>
                                 <div style={{ position: "absolute", top: 2, left: job.is_active ? 19 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
                               </div>
                             </>
@@ -1307,7 +1308,7 @@ function MyPageContent() {
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
                         {!["completed", "matched", "closed"].includes(job.job_status) && (
                           <button onClick={() => router.push(`/employer/register?edit=true&jobId=${job.id}&return=mypage`)}
-                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                            style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                             ✏️ 수정
                           </button>
                         )}
@@ -1317,12 +1318,12 @@ function MyPageContent() {
                         </button>
                         {job.newQuestionCount > 0 && (
                           <button onClick={() => router.push(`/employer/questions?profileId=${job.employer_profile_id}`)}
-                            style={{ background: "rgba(236,72,153,0.1)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--pink-text)", fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                            style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                             📬 {job.newQuestionCount}개
                           </button>
                         )}
                         <button onClick={() => deleteJob(job.id)}
-                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+                          style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
                           🗑️
                         </button>
                       </div>
@@ -1335,7 +1336,7 @@ function MyPageContent() {
             {showEmployerCalls && (
               <div>
                 {eReceived.length === 0 && eSent.length === 0 ? (
-                  <div style={{ background: "var(--surface)", border: "1px solid rgba(124,58,237,0.12)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
+                  <div style={{ background: "var(--surface)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
                     <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>아직 지원/제안 내역이 없어요</p>
                   </div>
                 ) : (
@@ -1373,12 +1374,12 @@ function MyPageContent() {
               <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px", lineHeight: 1.7 }}>
                 탈퇴 시 아래 데이터가 삭제됩니다.
               </p>
-              <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+              <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
                 {["프로필 및 성향분석 결과", "등록한 공고/구직 정보", "채팅 내용", "AI 봇 대화 기록"].map(item => (
-                  <div key={item} style={{ fontSize: 12, color: "#f87171", marginBottom: 4 }}>✗ {item}</div>
+                  <div key={item} style={{ fontSize: 12, color: "var(--danger)", marginBottom: 4 }}>✗ {item}</div>
                 ))}
-                <div style={{ borderTop: "1px solid rgba(239,68,68,0.2)", marginTop: 6, paddingTop: 6 }}>
-                  <div style={{ fontSize: 11, color: "#71717a" }}>* 법령에 따라 매칭/거래 기록은 익명화 후 보관됩니다</div>
+                <div style={{ borderTop: "1px solid var(--danger-border)", marginTop: 6, paddingTop: 6 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>* 법령에 따라 매칭/거래 기록은 익명화 후 보관됩니다</div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10 }}>
@@ -1479,7 +1480,7 @@ function MyPageContent() {
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
-                  style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
+                  style={{ width: "100%", background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
                   🤖 AI 사전미팅 하기
                 </button>
                 <button onClick={() => { setMatchModal(null); router.push(`/chat/${matchModal.matchId}`); }}
@@ -1527,7 +1528,7 @@ function MyPageContent() {
           />
         )}
         {/* 📸 피드 및 북마크 탭 섹션 */}
-        <div style={{ marginTop: 24, background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 20, padding: 20 }}>
+        <div style={{ marginTop: 24, background: "var(--surface2)", backdropFilter: "blur(12px)", border: "1px solid var(--border)", borderRadius: 20, padding: 20 }}>
           <div style={{ display: "flex", gap: 12, borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 14 }}>
             <button onClick={() => setFeedTab("posts")}
               style={{ paddingBottom: 6, borderBottom: feedTab === "posts" ? "2px solid var(--primary)" : "none", color: feedTab === "posts" ? "var(--text)" : "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer", background: "none", borderLeft: "none", borderRight: "none", borderTop: "none" }}>
@@ -1694,7 +1695,7 @@ function MyPageContent() {
                           {comment.authorAvatar ? (
                             <img src={comment.authorAvatar} alt="avatar" className="w-full h-full object-cover" />
                           ) : (
-                            <span className="text-xs">👤</span>
+                            <i className="ti ti-user text-xs text-text-muted" aria-hidden="true" />
                           )}
                         </div>
                         <div className="flex-1 bg-surface rounded-xl px-2.5 py-1.5 shadow-sm border border-border relative">

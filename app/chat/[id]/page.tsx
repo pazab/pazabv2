@@ -1,14 +1,25 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getTrustGrade } from "@/lib/utils";
+import { chipStyle, chipSuccess, chipWarning, chipDanger, chipPrimary } from "@/lib/styles";
+import { useToast } from "@/lib/useToast";
+
+const mutedChip: CSSProperties = {
+  ...chipStyle,
+  background: "var(--surface2)",
+  border: "1px solid var(--border)",
+  color: "var(--text-muted)",
+};
 
 export default function ChatRoomPage() {
   const router = useRouter();
   const params = useParams();
   const matchId = params.id as string;
+  const { showToast, ToastUI } = useToast();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -32,6 +43,12 @@ export default function ChatRoomPage() {
   const [quickReview, setQuickReview] = useState<"good" | "bad" | null>(null);
   const [quickReviewReason, setQuickReviewReason] = useState("");
   const [showSignConfirm, setShowSignConfirm] = useState(false);
+  const [signSelfInfo, setSignSelfInfo] = useState<{ birth_date: string | null; phone: string | null; address: string | null; address_detail: string | null } | null>(null);
+  const [signBirth, setSignBirth] = useState("");
+  const [signPhone, setSignPhone] = useState("");
+  const [signAddr, setSignAddr] = useState("");
+  const [signAddrDetail, setSignAddrDetail] = useState("");
+  const [signTried, setSignTried] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewScore, setReviewScore] = useState(0);
   const [reviewComment, setReviewComment] = useState("");
@@ -41,6 +58,7 @@ export default function ChatRoomPage() {
   const [progressStatus, setProgressStatus] = useState("accepted");
   const progressStatusRef = useRef("accepted");
   const isEmployerRef = useRef(false);
+  const [showRejectConfirmModal, setShowRejectConfirmModal] = useState(false);
 
   const updateProgressStatus = (status: string) => {
     setProgressStatus(status);
@@ -56,6 +74,15 @@ export default function ChatRoomPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
   const [recording, setRecording] = useState(false);
+
+  // 계약서 동의 시 본인 정보(생년월일/연락처/주소) 중 비어있는 항목만 받기 위해 조회
+  useEffect(() => {
+    if (!showSignConfirm || !userId) return;
+    setSignTried(false);
+    setSignBirth(""); setSignPhone(""); setSignAddr(""); setSignAddrDetail("");
+    supabase.from("users").select("birth_date, phone, address, address_detail").eq("id", userId).maybeSingle()
+      .then(({ data }) => setSignSelfInfo(data || { birth_date: null, phone: null, address: null, address_detail: null }));
+  }, [showSignConfirm, userId]);
 
   useEffect(() => {
     let readPollIntervalId: any;
@@ -197,14 +224,17 @@ export default function ChatRoomPage() {
     const pollInterval = setInterval(async () => {
       const { data: m } = await supabase
         .from("matches")
-        .select("progress_status, hire_confirmed_by_employer, hire_confirmed_by_worker")
+        .select("progress_status, hire_confirmed_by_employer, hire_confirmed_by_worker, worker_left, employer_left")
         .eq("id", matchId).single();
 
-      if (m?.progress_status === "hired") {
-        updateProgressStatus("hired");
-        checkContractStatus(); // hired 상태면 계속 계약서 상태 체크
-      } else if (m?.progress_status === "interviewing") {
-        updateProgressStatus("interviewing");
+      if (m) {
+        setMatch(prev => prev ? { ...prev, ...m } : prev);
+        if (m.progress_status === "hired") {
+          updateProgressStatus("hired");
+          checkContractStatus(); // hired 상태면 계속 계약서 상태 체크
+        } else if (m.progress_status === "interviewing") {
+          updateProgressStatus("interviewing");
+        }
       }
 
       // 알바생: 채용 제안 감지 (이미 모달 표시 중이 아닐 때만)
@@ -360,7 +390,7 @@ export default function ChatRoomPage() {
     setShowMenu(false);
     try {
       // hire는 양방향 동의 방식이라 직접 처리 (lovecall API 먼저 호출 안 함)
-      if (action !== "hire" && action !== "hire_accept" && action !== "hire_reject") {
+      if (action !== "hire" && action !== "hire_accept") {
         await fetch("/api/lovecall", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -380,9 +410,7 @@ export default function ChatRoomPage() {
           .update({ hire_confirmed_by_worker: true })
           .eq("id", matchId);
 
-        // team_members 자동 생성 (matches에 employer_profile_id 없음 → team_members 기본값 사용)
-        const empProfile = null;
-
+        // team_members 자동 생성 (매칭이 특정 매장에서 발생했으면 그 매장으로 소속 연결)
         const { data: existingTm } = await supabase.from("team_members")
           .select("id")
           .eq("match_id", matchId)
@@ -392,6 +420,7 @@ export default function ChatRoomPage() {
           await supabase.from("team_members").insert({
             employer_id: match?.employer_id,
             worker_id: match?.worker_id,
+            employer_profile_id: match?.employer_profile_id || null,
             match_id: matchId,
             hire_date: new Date().toISOString().split("T")[0],
             status: "active",
@@ -424,18 +453,9 @@ export default function ChatRoomPage() {
         );
         setShowReviewModal(true);
       } else if (action === "hire_reject") {
-        // 알바생이 거절 → 공고 active 복귀 + 채팅 유지
-        await supabase.from("matches")
-          .update({ hire_confirmed_by_employer: false })
-          .eq("id", matchId);
-        // 공고 active 복귀
-        if (match?.employer_profile_id) {
-          await supabase.from("employer_profiles")
-            .update({ job_status: "active", is_active: true })
-            .eq("id", match.employer_profile_id);
-        }
-        updateProgressStatus("accepted");
-        await sendMessage("채용 제안이 거절됐어요. 다시 논의해봐요 😊", "system");
+        // 알바생이 거절 → 매칭 failed 처리
+        updateProgressStatus("failed");
+        await sendMessage("💔 알바생이 채용 제안을 거절하여 매칭이 종료되었습니다.", "system");
         setTimeout(() => init(), 500);
       } else if (action === "fail") {
         updateProgressStatus("failed");
@@ -578,6 +598,14 @@ export default function ChatRoomPage() {
     return new Date(dateStr).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
   };
 
+  const formatPhone = (v: string) => {
+    const n = v.replace(/\D/g, "");
+    if (n.length <= 3) return n;
+    if (n.length <= 7) return `${n.slice(0, 3)}-${n.slice(3)}`;
+    if (n.length <= 11) return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7)}`;
+    return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7, 11)}`;
+  };
+
   const counterpartName = counterpartProfile?.business_name
     ? `${counterpartProfile.business_name} 사장님`
     : counterpart?.nickname || "상대방";
@@ -589,13 +617,15 @@ export default function ChatRoomPage() {
   const isEmployer = match?.employer_id === userId;
   isEmployerRef.current = isEmployer;
 
-  const getProgressBadge = () => {
+  const getProgressBadge = (): { label: string; chip: CSSProperties } => {
     switch (progressStatus) {
-      case "interviewing": return { label: "📅 면접예약중", color: "#fbbf24" };
-      case "hired": return { label: "✅ 채용확정", color: "#86efac" };
-      case "failed": return { label: "❌ 매칭실패", color: "#f87171" };
-      case "cancelled": return { label: "취소됨", color: "#6b7280" };
-      default: return { label: "💬 채팅중", color: "#c4b5fd" };
+      case "pending": return { label: "⏳ 수락대기", chip: mutedChip };
+      case "rejected": return { label: "💔 거절됨", chip: chipDanger };
+      case "interviewing": return { label: "📅 면접예약중", chip: chipWarning };
+      case "hired": return { label: "✅ 채용확정", chip: chipSuccess };
+      case "failed": return { label: "❌ 매칭실패", chip: chipDanger };
+      case "cancelled": return { label: "취소됨", chip: mutedChip };
+      default: return { label: "💬 채팅중", chip: chipPrimary };
     }
   };
 
@@ -611,7 +641,7 @@ export default function ChatRoomPage() {
   return (
     <main style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", display: "flex", flexDirection: "column", position: "relative" }}>
       {/* 헤더 */}
-      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(var(--bg-rgb, 24,24,27),0.92)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)", padding: "10px 14px" }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: "var(--nav-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)", padding: "10px 14px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, maxWidth: 480, margin: "0 auto" }}>
           <button onClick={() => router.push("/chat")}
             style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, padding: 0, width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -622,14 +652,15 @@ export default function ChatRoomPage() {
             <div onClick={() => {
               if (counterpart?.id) router.push(`/profile/${counterpart.id}`);
             }} style={{ position: "relative", flexShrink: 0, cursor: "pointer" }}>
-              <div style={{ width: 40, height: 40, borderRadius: counterpart?.user_type === "employer" ? "8px" : "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 18, boxShadow: "0 0 0 2px var(--border)" }}>
+              <div style={{ width: 40, height: 40, borderRadius: counterpart?.user_type === "employer" ? "8px" : "50%", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", boxShadow: "0 0 0 2px var(--border)" }}>
                 {counterpartAvatar ? (
                   <img src={counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 ) : (
-                  <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
+                  <i className={counterpart?.user_type === "employer" ? "ti ti-building-store" : "ti ti-user"}
+                    style={{ fontSize: 18, color: "var(--text-muted)" }} aria-hidden="true" />
                 )}
               </div>
-              <div style={{ position: "absolute", bottom: 0, right: 0, width: 11, height: 11, borderRadius: "50%", background: "#22c55e", border: "2px solid var(--bg)" }} />
+              <div style={{ position: "absolute", bottom: 0, right: 0, width: 11, height: 11, borderRadius: "50%", background: "var(--success)", border: "2px solid var(--bg)" }} />
             </div>
             {/* 이름 텍스트 영역: 상세 프로필 이동 */}
             <div onClick={() => {
@@ -639,8 +670,8 @@ export default function ChatRoomPage() {
               router.push(profilePath);
             }} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <p style={{ fontSize: 15, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#ffffff" }}>{counterpartName}</p>
-                <span style={{ fontSize: 10, fontWeight: 700, color: badge.color, background: `${badge.color}18`, padding: "2px 8px", borderRadius: 20, border: `1px solid ${badge.color}30`, flexShrink: 0 }}>
+                <p style={{ fontSize: 15, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{counterpartName}</p>
+                <span style={{ ...badge.chip, borderRadius: 20, flexShrink: 0 }}>
                   {badge.label}
                 </span>
                 {counterpart?.trust_score != null && (() => {
@@ -648,7 +679,7 @@ export default function ChatRoomPage() {
                   return <span style={{ fontSize: 10, color: g.color, flexShrink: 0 }}>{g.emoji}</span>;
                 })()}
               </div>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", margin: 0 }}>궁합 {match?.match_score}점 · 탭하면 프로필 보기</p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>궁합 {match?.match_score}점 · 탭하면 프로필 보기</p>
             </div>
           </div>
           {/* 계약서 아이콘 버튼 (hired 상태) */}
@@ -657,9 +688,9 @@ export default function ChatRoomPage() {
               style={{
                 width: 34, height: 34, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                background: contractStatus === "done" ? "rgba(16,185,129,0.15)" : contractStatus === "pending" ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.12)",
-                border: `1px solid ${contractStatus === "done" ? "rgba(16,185,129,0.4)" : contractStatus === "pending" ? "rgba(245,158,11,0.4)" : "rgba(239,68,68,0.4)"}`,
-                color: contractStatus === "done" ? "#10b981" : contractStatus === "pending" ? "#f59e0b" : "#ef4444",
+                background: contractStatus === "done" ? "var(--success-bg)" : contractStatus === "pending" ? "var(--warning-bg)" : "var(--danger-bg)",
+                border: `1px solid ${contractStatus === "done" ? "var(--success-border)" : contractStatus === "pending" ? "var(--warning-border)" : "var(--danger-border)"}`,
+                color: contractStatus === "done" ? "var(--success)" : contractStatus === "pending" ? "var(--warning)" : "var(--danger)",
                 fontSize: 16,
               }}
               title={contractStatus === "done" ? "계약완료" : contractStatus === "pending" ? "서명대기" : "계약서 미작성"}>
@@ -676,7 +707,7 @@ export default function ChatRoomPage() {
               <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", width: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 50 }}>
                 {/* AI 사전미팅 */}
                 <button onClick={() => { setShowMenu(false); router.push(`/pre-meet/${params.id}`); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#c4b5fd", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--purple-text)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 15 }}>🤖</span> AI 사전미팅
                 </button>
                 {/* 알림 끄기 */}
@@ -687,7 +718,7 @@ export default function ChatRoomPage() {
                 {/* 면접 예약/수정 (사장님 + accepted 상태만) */}
                 {isEmployer && progressStatus === "accepted" && (
                   <button onClick={() => { setShowMenu(false); setShowInterviewModal(true); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--warning)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 15 }}>📅</span> {hasInterview ? "면접 일정 수정" : "면접 예약하기"}
                   </button>
                 )}
@@ -695,29 +726,29 @@ export default function ChatRoomPage() {
                 {progressStatus === "interviewing" && (<>
                   {isEmployer && (
                     <button onClick={() => { setShowMenu(false); handleInterviewResult("complete"); }}
-                      style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#86efac", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                      style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--success)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 15 }}>✅</span> 면접 완료
                     </button>
                   )}
                   <button onClick={() => { setShowMenu(false); handleInterviewResult("cancel"); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#fbbf24", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--warning)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 15 }}>❌</span> 면접 취소 (합의)
                   </button>
                   <button onClick={() => { setShowMenu(false); handleInterviewResult("noshow"); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 15 }}>🚫</span> 노쇼 신고
                   </button>
                 </>)}
                 {/* 채용 확정 (사장님 + accepted or interviewing만) */}
                 {isEmployer && ["accepted", "interviewing"].includes(progressStatus) && (
                   <button onClick={() => { setShowMenu(false); handleProgress("hire"); }}
-                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#86efac", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--success)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 15 }}>✅</span> 채용 제안 보내기
                   </button>
                 )}
                 {/* 채팅방 나가기 */}
                 <button onClick={() => { setShowMenu(false); setShowLeaveModal(true); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 15 }}>🚪</span> 채팅방 나가기
                 </button>
               </div>
@@ -726,17 +757,340 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
-      {/* 채용 확정 후 계약서 작성 배너 (사장님용) */}
-      {progressStatus === "hired" && contractStatus === "none" && isEmployer && (
+      {/* 상대방이 나간 상태 배너 */}
+      {(() => {
+        const isEmp = match?.employer_id === userId;
+        const counterpartLeft = isEmp ? match?.worker_left : match?.employer_left;
+        if (counterpartLeft) {
+          return (
+            <div style={{
+              background: "var(--danger-bg)",
+              borderBottom: "1px solid var(--border)",
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              boxShadow: "var(--shadow-elevate)"
+            }}>
+              <span style={{ fontSize: 18 }}>🚪</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)" }}>상대방이 채팅방을 나갔습니다</span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>더 이상 메시지를 보낼 수 없습니다.</span>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* 지원/제안 대기 중 배너 */}
+      {progressStatus === "pending" && (
         <div style={{
-          background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(236,72,153,0.08))",
+          background: "var(--primary-light)",
+          borderBottom: "1px solid var(--border)",
+          padding: "12px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          boxShadow: "var(--shadow-elevate)"
+        }}>
+          {(() => {
+            const isEmp = match?.employer_id === userId;
+            const initiatedByMe = match?.initiated_by === userId;
+            if (initiatedByMe) {
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>⏳</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>수락 대기 중...</span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>상대방이 지원/제안을 검토하고 있습니다. 답변을 기다려주세요.</span>
+                  </div>
+                </div>
+              );
+            } else {
+              return (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 200 }}>
+                    <span style={{ fontSize: 20 }}>📥</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
+                        {isEmp ? "새로운 매장 지원서 도착" : "새로운 채용 제안 도착"}
+                      </span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        {isEmp ? "지원서를 수락하고 대화를 시작할까요?" : "채용 제안을 수락하고 대화를 시작할까요?"}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={async () => {
+                      const res = await fetch("/api/lovecall", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ matchId, action: "accept" })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        updateProgressStatus("accepted");
+                        await sendMessage("🎉 지원/제안을 수락했습니다! 대화를 나눠보세요. 😊", "system");
+                      }
+                    }}
+                      style={{ background: "var(--primary)", border: "none", borderRadius: 12, padding: "8px 16px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      수락하기
+                    </button>
+                    <button onClick={async () => {
+                      const res = await fetch("/api/lovecall", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ matchId, action: "reject" })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        updateProgressStatus("rejected");
+                        await sendMessage("💔 지원/제안이 거절되었습니다.", "system");
+                      }
+                    }}
+                      style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12, padding: "8px 16px", color: "var(--danger)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      거절하기
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+          })()}
+        </div>
+      )}
+
+      {/* 채용 프로세스 액션 가이드 배너 (사장님용) */}
+      {isEmployer && (
+        <>
+          {progressStatus === "accepted" && (
+            <div style={{
+              background: "var(--surface)",
+              borderBottom: "1px solid var(--border)",
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+            }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>채용 진행하기 🎯</span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>알바생과 소통 후 면접 예약 또는 채용을 진행해 보세요.</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={() => setShowInterviewModal(true)}
+                  style={{
+                    background: "var(--warning-bg)",
+                    border: "1px solid var(--warning-border)",
+                    borderRadius: 12,
+                    padding: "8px 14px",
+                    color: "var(--warning)",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4
+                  }}>
+                  📅 면접 예약
+                </button>
+                <button onClick={() => handleProgress("hire")}
+                  style={{
+                    background: "var(--primary)",
+                    border: "none",
+                    borderRadius: 12,
+                    padding: "8px 14px",
+                    color: "#fff",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4
+                  }}>
+                  ✅ 채용 제안
+                </button>
+              </div>
+            </div>
+          )}
+
+          {progressStatus === "interviewing" && (
+            <div style={{
+              background: "var(--surface)",
+              borderBottom: "1px solid var(--border)",
+              padding: "12px 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+            }}>
+              {match?.hire_confirmed_by_employer && !match?.hire_confirmed_by_worker ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>⏳ 채용 제안 수락 대기 중</span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>알바생의 채용 수락 결정을 기다리고 있습니다.</span>
+                  </div>
+                  <button onClick={() => handleInterviewResult("cancel")}
+                    style={{
+                      background: "var(--danger-bg)",
+                      border: "1px solid var(--danger-border)",
+                      borderRadius: 12,
+                      padding: "8px 14px",
+                      color: "var(--danger)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer"
+                    }}>
+                    제안 취소
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>📅 면접 일정이 예약되었습니다</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>면접 진행 후 결과를 아래에서 결정해 주세요.</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => setShowInterviewModal(true)}
+                        style={{
+                          background: "var(--surface2)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 12,
+                          padding: "6px 12px",
+                          color: "var(--text-muted)",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: "pointer"
+                        }}>
+                        일정 수정
+                      </button>
+                      <button onClick={() => handleProgress("hire")}
+                        style={{
+                          background: "var(--primary)",
+                          border: "none",
+                          borderRadius: 12,
+                          padding: "6px 12px",
+                          color: "#fff",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: "pointer"
+                        }}>
+                        바로 채용
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, width: "100%" }}>
+                    <button onClick={() => handleInterviewResult("complete")}
+                      style={{
+                        flex: 1,
+                        background: "var(--success-bg)",
+                        border: "1px solid var(--success-border)",
+                        borderRadius: 12,
+                        padding: "8px",
+                        color: "var(--success)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer"
+                      }}>
+                      ✅ 면접 완료
+                    </button>
+                    <button onClick={() => handleInterviewResult("cancel")}
+                      style={{
+                        flex: 1,
+                        background: "var(--warning-bg)",
+                        border: "1px solid var(--warning-border)",
+                        borderRadius: 12,
+                        padding: "8px",
+                        color: "var(--warning)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer"
+                      }}>
+                      ❌ 면접 취소
+                    </button>
+                    <button onClick={() => handleInterviewResult("noshow")}
+                      style={{
+                        flex: 1,
+                        background: "var(--danger-bg)",
+                        border: "1px solid var(--danger-border)",
+                        borderRadius: 12,
+                        padding: "8px",
+                        color: "var(--danger)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer"
+                      }}>
+                      🚫 노쇼 신고
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 채용 프로세스 액션 가이드 배너 (알바생용) */}
+      {!isEmployer && progressStatus === "interviewing" && match?.hire_confirmed_by_employer && !match?.hire_confirmed_by_worker && (
+        <div style={{
+          background: "var(--primary-light)",
           borderBottom: "1px solid var(--border)",
           padding: "12px 16px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: 12,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+          boxShadow: "var(--shadow-elevate)"
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>🏪 사장님의 채용 제안 도착!</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>이 매장에서 일하시겠습니까? 수락하면 채용이 완료됩니다.</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button onClick={() => setShowRejectConfirmModal(true)}
+              style={{
+                background: "var(--danger-bg)",
+                border: "1px solid var(--danger-border)",
+                borderRadius: 12,
+                padding: "8px 14px",
+                color: "var(--danger)",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer"
+              }}>
+              거절하기
+            </button>
+            <button onClick={() => handleProgress("hire_accept")}
+              style={{
+                background: "var(--success)",
+                border: "none",
+                borderRadius: 12,
+                padding: "8px 14px",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer"
+              }}>
+              수락하기
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 채용 확정 후 계약서 작성 배너 (사장님용) */}
+      {progressStatus === "hired" && contractStatus === "none" && isEmployer && (
+        <div style={{
+          background: "var(--primary-light)",
+          borderBottom: "1px solid var(--border)",
+          padding: "12px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          boxShadow: "var(--shadow-elevate)"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
             <span style={{ fontSize: 20 }}>📄</span>
@@ -747,7 +1101,7 @@ export default function ChatRoomPage() {
           </div>
           <button onClick={goToUpdateContract}
             style={{
-              background: "linear-gradient(135deg,#7c3aed,#ec4899)",
+              background: "var(--primary)",
               border: "none",
               borderRadius: 20,
               padding: "6px 14px",
@@ -765,13 +1119,13 @@ export default function ChatRoomPage() {
       {/* 채용 확정 후 계약서 서명 대기 배너 (알바생용) */}
       {progressStatus === "hired" && contractStatus === "none" && !isEmployer && (
         <div style={{
-          background: "rgba(245,158,11,0.08)",
+          background: "var(--warning-bg)",
           borderBottom: "1px solid var(--border)",
           padding: "12px 16px",
           display: "flex",
           alignItems: "center",
           gap: 10,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+          boxShadow: "var(--shadow-elevate)"
         }}>
           <span style={{ fontSize: 20 }}>⏳</span>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -807,13 +1161,13 @@ export default function ChatRoomPage() {
               )}
               {msg.message_type === "system" ? (
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-                  <div style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.1), rgba(236,72,153,0.07))", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 18, padding: "10px 18px", fontSize: 13, color: "#c4b5fd", textAlign: "center", maxWidth: "88%", lineHeight: 1.7, whiteSpace: "pre-line", boxShadow: "0 2px 8px rgba(139,92,246,0.08)" }}>
+                  <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 18, padding: "10px 18px", fontSize: 13, color: "var(--purple-text)", textAlign: "center", maxWidth: "88%", lineHeight: 1.7, whiteSpace: "pre-line", boxShadow: "var(--shadow-elevate)" }}>
                     {msg.message}
                     {/* 채용 확정 → 사장님: 계약서 작성 버튼 */}
                     {msg.message?.includes("채용이 확정됐어요") && msg.message?.includes("계약서를 작성") && isEmployer && (
                       <div style={{ marginTop: 10 }}>
                         <button onClick={() => router.push(`/contract?matchId=${matchId}&mode=update&from=chat`)}
-                          style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: "8px 18px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(124,58,237,0.35)" }}>
+                          style={{ background: "var(--primary)", border: "none", borderRadius: 12, padding: "8px 18px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "var(--shadow-elevate)" }}>
                           ✏️ 계약서 작성하기
                         </button>
                       </div>
@@ -822,7 +1176,7 @@ export default function ChatRoomPage() {
                     {(msg.message?.includes("근로계약서가 발행") || msg.message?.includes("근로계약서가 수정")) && (
                       <div style={{ marginTop: 10, display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" as const }}>
                         <button onClick={loadContract}
-                          style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          style={{ background: "var(--primary)", border: "none", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           📄 계약서 확인하기
                         </button>
                         {isEmployer && (
@@ -837,7 +1191,7 @@ export default function ChatRoomPage() {
                     {msg.message?.includes("수정 요청") && isEmployer && (
                       <div style={{ marginTop: 10 }}>
                         <button onClick={goToUpdateContract}
-                          style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 12, padding: "8px 16px", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 12, padding: "8px 16px", color: "var(--warning)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           ✏️ 계약서 수정하기
                         </button>
                       </div>
@@ -846,7 +1200,7 @@ export default function ChatRoomPage() {
                     {msg.message?.includes("동의가 완료") && (
                       <div style={{ marginTop: 10, display:"flex", gap:6, justifyContent:"center", flexWrap:"wrap" as const }}>
                         <button onClick={loadContract}
-                          style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 12, padding: "8px 14px", color: "#10b981", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          style={{ background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 12, padding: "8px 14px", color: "var(--success)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           📄 계약서 보기
                         </button>
                         {isEmployer && (
@@ -863,11 +1217,11 @@ export default function ChatRoomPage() {
                 /* 내 메시지 - 오른쪽 */
                 <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 3, alignItems: "flex-end", gap: 6 }}>
                   <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                    {!msg.is_read && <span style={{ color: "#c4b5fd", fontSize: 9, fontWeight: 800, lineHeight: 1 }}>1</span>}
+                    {!msg.is_read && <span style={{ color: "var(--purple-text)", fontSize: 9, fontWeight: 800, lineHeight: 1 }}>1</span>}
                     <span>{formatTime(msg.created_at)}</span>
                   </div>
                   <div style={{ maxWidth: "78%" }}>
-                    <div style={{ background: "linear-gradient(135deg, #8b5cf6, #6d28d9)", borderRadius: "20px 20px 4px 20px", padding: "10px 15px", fontSize: 14, color: "#fff", lineHeight: 1.55, wordBreak: "break-word", boxShadow: "0 2px 10px rgba(109,40,217,0.35)" }}>
+                    <div style={{ background: "var(--primary)", borderRadius: "20px 20px 4px 20px", padding: "10px 15px", fontSize: 14, color: "#fff", lineHeight: 1.55, wordBreak: "break-word", boxShadow: "var(--shadow-elevate)" }}>
                       {msg.message}
                     </div>
                   </div>
@@ -883,8 +1237,9 @@ export default function ChatRoomPage() {
                       <img src={counterpartAvatar} alt="avatar"
                         style={{ width: 34, height: 34, borderRadius: counterpart?.user_type === "employer" ? "6px" : "50%", objectFit: "cover", border: "1.5px solid var(--border)" }} />
                     ) : (
-                      <div style={{ width: 34, height: 34, borderRadius: counterpart?.user_type === "employer" ? "6px" : "50%", background: "linear-gradient(135deg, #f59e0b, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, border: "1.5px solid var(--border)" }}>
-                        <span>{counterpart?.user_type === "employer" ? "🏪" : "👤"}</span>
+                      <div style={{ width: 34, height: 34, borderRadius: counterpart?.user_type === "employer" ? "6px" : "50%", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid var(--border)" }}>
+                        <i className={counterpart?.user_type === "employer" ? "ti ti-building-store" : "ti ti-user"}
+                          style={{ fontSize: 15, color: "var(--text-muted)" }} aria-hidden="true" />
                       </div>
                     )}
                   </button>
@@ -913,10 +1268,19 @@ export default function ChatRoomPage() {
       </div>
 
       {/* 입력창 */}
-      <div style={{ borderTop: "1px solid var(--border)", background: "rgba(var(--bg-rgb, 24,24,27),0.95)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+      <div style={{ borderTop: "1px solid var(--border)", background: "var(--nav-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "10px 14px", paddingBottom: "calc(10px + env(safe-area-inset-bottom))" }}>
-        {/* 상대방 나간 상태 */}
+        {/* 상대방 나간 상태 및 매칭 종료 상태 */}
         {(() => {
+          if (["failed", "rejected", "cancelled"].includes(progressStatus)) {
+            return (
+              <div style={{ textAlign: "center", padding: "6px 0", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--surface2)", padding: "5px 14px", borderRadius: 20, border: "1px solid var(--border)" }}>
+                  종료된 매칭으로 메시지를 보낼 수 없습니다.
+                </span>
+              </div>
+            );
+          }
           const isEmp = match?.employer_id === userId;
           const counterpartLeft = isEmp ? match?.worker_left : match?.employer_left;
           if (counterpartLeft) return (
@@ -928,29 +1292,36 @@ export default function ChatRoomPage() {
           );
           return null;
         })()}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* 음성 입력 버튼 */}
-          <button
-            onClick={recording ? stopRecording : startRecording}
-            disabled={sending || !!(match?.employer_id === userId ? match?.worker_left : match?.employer_left)}
-            style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0, background: recording ? "linear-gradient(135deg, #ef4444, #dc2626)" : "var(--surface)", border: `1px solid ${recording ? "rgba(239,68,68,0.6)" : "var(--border)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: recording ? "0 0 0 4px rgba(239,68,68,0.2), 0 2px 8px rgba(239,68,68,0.3)" : "0 1px 4px rgba(0,0,0,0.1)", transition: "all 0.18s", color: recording ? "#fff" : "var(--text-muted)" }}>
-            <i className={`ti ${recording ? "ti-player-stop" : "ti-microphone"}`} style={{ fontSize: 17 }} aria-hidden="true" />
-          </button>
-          {/* 텍스트 입력 */}
-          <div style={{ flex: 1, position: "relative" }}>
-            <input ref={inputRef} type="text" value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder={recording ? "말씀하세요... 🎤" : "메시지를 입력하세요..."}
-              disabled={!!(match?.employer_id === userId ? match?.worker_left : match?.employer_left)}
-              style={{ width: "100%", background: "var(--surface)", border: `1.5px solid ${recording ? "rgba(139,92,246,0.5)" : input ? "rgba(139,92,246,0.3)" : "var(--border)"}`, borderRadius: 24, padding: "10px 18px", color: "var(--text)", fontSize: 14, outline: "none", transition: "border 0.18s, box-shadow 0.18s", opacity: (match?.employer_id === userId ? match?.worker_left : match?.employer_left) ? 0.5 : 1, boxSizing: "border-box", boxShadow: input ? "0 0 0 3px rgba(139,92,246,0.08)" : "none" }} />
-          </div>
-          {/* 전송 버튼 */}
-          <button onClick={() => sendMessage()} disabled={!input.trim() || sending || !!(match?.employer_id === userId ? match?.worker_left : match?.employer_left)}
-            style={{ width: 40, height: 40, borderRadius: "50%", background: input.trim() ? "linear-gradient(135deg, #8b5cf6, #6d28d9)" : "var(--surface)", border: input.trim() ? "none" : "1px solid var(--border)", color: input.trim() ? "#fff" : "var(--text-muted)", cursor: input.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", boxShadow: input.trim() ? "0 2px 10px rgba(109,40,217,0.4)" : "none", transform: input.trim() ? "scale(1)" : "scale(0.92)" }}>
-            <i className="ti ti-send" style={{ fontSize: 17 }} aria-hidden="true" />
-          </button>
-        </div>
+        {(() => {
+          const isEmp = match?.employer_id === userId;
+          const counterpartLeft = isEmp ? match?.worker_left : match?.employer_left;
+          const isChatDisabled = !!counterpartLeft || ["failed", "rejected", "cancelled"].includes(progressStatus);
+          return (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {/* 음성 입력 버튼 */}
+              <button
+                onClick={recording ? stopRecording : startRecording}
+                disabled={sending || isChatDisabled}
+                style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0, background: recording ? "var(--danger)" : "var(--surface)", border: `1px solid ${recording ? "var(--danger-border)" : "var(--border)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "var(--shadow-elevate)", transition: "all 0.18s", color: recording ? "#fff" : "var(--text-muted)" }}>
+                <i className={`ti ${recording ? "ti-player-stop" : "ti-microphone"}`} style={{ fontSize: 17 }} aria-hidden="true" />
+              </button>
+              {/* 텍스트 입력 */}
+              <div style={{ flex: 1, position: "relative" }}>
+                <input ref={inputRef} type="text" value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                  placeholder={recording ? "말씀하세요... 🎤" : "메시지를 입력하세요..."}
+                  disabled={isChatDisabled}
+                  style={{ width: "100%", background: "var(--surface)", border: `1.5px solid ${recording || input ? "var(--primary-border)" : "var(--border)"}`, borderRadius: 24, padding: "10px 18px", color: "var(--text)", fontSize: 14, outline: "none", transition: "border 0.18s, box-shadow 0.18s", opacity: isChatDisabled ? 0.5 : 1, boxSizing: "border-box" }} />
+              </div>
+              {/* 전송 버튼 */}
+              <button onClick={() => sendMessage()} disabled={!input.trim() || sending || isChatDisabled}
+                style={{ width: 40, height: 40, borderRadius: "50%", background: input.trim() ? "var(--primary)" : "var(--surface)", border: input.trim() ? "none" : "1px solid var(--border)", color: input.trim() ? "#fff" : "var(--text-muted)", cursor: input.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", boxShadow: input.trim() ? "var(--shadow-elevate)" : "none", transform: input.trim() ? "scale(1)" : "scale(0.92)" }}>
+                <i className="ti ti-send" style={{ fontSize: 17 }} aria-hidden="true" />
+              </button>
+            </div>
+          );
+        })()}
       </div>
       </div>
 
@@ -996,7 +1367,7 @@ export default function ChatRoomPage() {
                 <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                   {["매장 내", "카페", "화상 면접"].map(p => (
                     <button key={p} onClick={() => setInterviewPlace(p)}
-                      style={{ padding: "5px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer", background: interviewPlace === p ? "var(--primary-light)" : "var(--surface2)", color: interviewPlace === p ? "#c4b5fd" : "var(--text-muted)", border: interviewPlace === p ? "1px solid var(--primary-border)" : "1px solid transparent" }}>
+                      style={{ padding: "5px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer", background: interviewPlace === p ? "var(--primary-light)" : "var(--surface2)", color: interviewPlace === p ? "var(--purple-text)" : "var(--text-muted)", border: interviewPlace === p ? "1px solid var(--primary-border)" : "1px solid transparent" }}>
                       {p}
                     </button>
                   ))}
@@ -1005,7 +1376,7 @@ export default function ChatRoomPage() {
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
               <button onClick={handleInterviewSubmit} disabled={!interviewDate || !interviewTime}
-                style={{ flex: 1, background: !interviewDate || !interviewTime ? "var(--surface2)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: !interviewDate || !interviewTime ? "var(--text-muted)" : "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: !interviewDate || !interviewTime ? "default" : "pointer", fontSize: 14 }}>
+                style={{ flex: 1, background: !interviewDate || !interviewTime ? "var(--surface2)" : "var(--primary)", border: "none", color: !interviewDate || !interviewTime ? "var(--text-muted)" : "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: !interviewDate || !interviewTime ? "default" : "pointer", fontSize: 14 }}>
                 {hasInterview ? "일정 수정" : "예약 확정"}
               </button>
               <button onClick={() => setShowInterviewModal(false)}
@@ -1021,14 +1392,15 @@ export default function ChatRoomPage() {
       {showContractModal && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", flexDirection:"column" }}>
           {/* 모달 헤더 */}
-          <div style={{ background:"rgba(24,24,27,0.98)", borderBottom:"1px solid var(--border)", padding:"12px 16px", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+          <div style={{ background:"var(--nav-bg)", borderBottom:"1px solid var(--border)", padding:"12px 16px", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
             <button onClick={() => setShowContractModal(false)}
               style={{ background:"none", border:"none", color:"var(--text-muted)", fontSize:20, cursor:"pointer" }}>←</button>
             <span style={{ fontSize:15, fontWeight:700, color:"var(--text)" }}>근로계약서</span>
             <div style={{ flex:1 }} />
-            <span style={{ fontSize:11, borderRadius:8, padding:"3px 8px", fontWeight:600,
-              background: contractData?.worker_signed ? "#10b98120" : "#f59e0b20",
-              color: contractData?.worker_signed ? "#10b981" : "#f59e0b" }}>
+            <span style={{ ...chipStyle, fontWeight:600,
+              background: contractData?.worker_signed ? "var(--success-bg)" : "var(--warning-bg)",
+              border: `1px solid ${contractData?.worker_signed ? "var(--success-border)" : "var(--warning-border)"}`,
+              color: contractData?.worker_signed ? "var(--success)" : "var(--warning)" }}>
               {contractData?.worker_signed ? "✅ 서명 완료" : "⏳ 서명 대기"}
             </span>
           </div>
@@ -1147,7 +1519,7 @@ export default function ChatRoomPage() {
                       작성 후 저장하면 알바생에게 알림이 가요.
                     </p>
                     <button onClick={() => { setShowContractModal(false); router.push(`/contract?matchId=${matchId}&mode=update&from=chat`); }}
-                      style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:14, padding:"12px 24px", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                      style={{ background:"var(--primary)", border:"none", borderRadius:14, padding:"12px 24px", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
                       ✏️ 계약서 작성하기
                     </button>
                   </>
@@ -1165,18 +1537,18 @@ export default function ChatRoomPage() {
           </div>
 
           {/* 하단 버튼 */}
-          <div style={{ padding:"12px 16px 24px", background:"rgba(24,24,27,0.98)", borderTop:"1px solid var(--border)", flexShrink:0 }}>
+          <div style={{ padding:"12px 16px 24px", background:"var(--nav-bg)", borderTop:"1px solid var(--border)", flexShrink:0 }}>
             {!isEmployer && contractData && !contractData.worker_signed ? (
               <div style={{ display:"flex", gap:8 }}>
                 <button onClick={() => {
                   setRevisionReason("");
                   setShowRevisionModal(true);
                 }}
-                  style={{ flex:1, background:"var(--surface2)", border:"1px solid #f59e0b40", color:"#f59e0b", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
+                  style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--warning-border)", color:"var(--warning)", fontWeight:600, padding:14, borderRadius:14, fontSize:13, cursor:"pointer" }}>
                   ⚠️ 수정 요청
                 </button>
                 <button onClick={() => setShowSignConfirm(true)}
-                  style={{ flex:2, background:"linear-gradient(135deg,#10b981,#059669)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
+                  style={{ flex:2, background:"var(--success)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
                   ✅ 계약서에 동의합니다
                 </button>
               </div>
@@ -1194,7 +1566,7 @@ export default function ChatRoomPage() {
                 </div>
                 {contractData && !contractData.worker_signed && (
                   <button onClick={() => setShowCancelConfirm(true)}
-                    style={{ width:"100%", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", color:"#ef4444", fontWeight:600, padding:12, borderRadius:14, fontSize:13, cursor:"pointer" }}>
+                    style={{ width:"100%", background:"var(--danger-bg)", border:"1px solid var(--danger-border)", color:"var(--danger)", fontWeight:600, padding:12, borderRadius:14, fontSize:13, cursor:"pointer" }}>
                     🗑️ 계약서 발행 취소
                   </button>
                 )}
@@ -1230,7 +1602,7 @@ export default function ChatRoomPage() {
             </h3>
             <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
               정말로 계약서 발행을 취소하시겠습니까?<br />
-              취소하시면 알바생의 <span style={{ fontWeight: 700, color: "#f59e0b" }}>서명 대기</span> 상태가 해제되며, 계약서가 무효 처리됩니다.
+              취소하시면 알바생의 <span style={{ fontWeight: 700, color: "var(--warning)" }}>서명 대기</span> 상태가 해제되며, 계약서가 무효 처리됩니다.
             </p>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setShowCancelConfirm(false)}
@@ -1246,7 +1618,7 @@ export default function ChatRoomPage() {
                 setShowCancelConfirm(false);
                 setShowContractModal(false);
               }}
-                style={{ flex: 1, padding: "12px", background: "#ef4444", border: "none", color: "#fff", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                style={{ flex: 1, padding: "12px", background: "var(--danger)", border: "none", color: "#fff", borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
                 발행 취소
               </button>
             </div>
@@ -1308,7 +1680,7 @@ export default function ChatRoomPage() {
                 }}
                 style={{
                   flex: 1, padding: "12px",
-                  background: revisionReason.trim() ? "linear-gradient(135deg,#f59e0b,#d97706)" : "var(--border)",
+                  background: revisionReason.trim() ? "var(--warning)" : "var(--border)",
                   border: "none", color: "#fff", borderRadius: 12,
                   cursor: revisionReason.trim() ? "pointer" : "default",
                   fontSize: 13, fontWeight: 700,
@@ -1338,15 +1710,62 @@ export default function ChatRoomPage() {
                 확인한 후 진행해주세요.
               </p>
             </div>
-            <div style={{ background:"rgba(245,158,11,0.1)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:12, color:"#f59e0b", lineHeight:1.7 }}>
+            <div style={{ background:"var(--warning-bg)", border:"1px solid var(--warning-border)", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:12, color:"var(--warning)", lineHeight:1.7 }}>
               📌 계약서를 출력해 양측이 서명 후 각 1부씩 보관하시길 권장해요.
             </div>
+            {(() => {
+              const needBirth = !signSelfInfo?.birth_date;
+              const needPhone = !signSelfInfo?.phone;
+              const needAddr = !signSelfInfo?.address;
+              if (!needBirth && !needPhone && !needAddr) return null;
+              const errBorder = { border: "1.5px solid var(--danger)" };
+              return (
+                <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
+                  <p style={{ fontSize:12, color:"var(--text-muted)", margin:0 }}>계약서에 아직 없는 본인 정보를 채워주세요 (계약 처리에 필요해요)</p>
+                  {needBirth && (
+                    <input type="date" value={signBirth} onChange={e => setSignBirth(e.target.value)}
+                      style={{ width:"100%", background:"var(--surface2)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box", ...(signTried && !signBirth ? errBorder : { border: "1px solid var(--border)" }) }} />
+                  )}
+                  {needPhone && (
+                    <input type="tel" inputMode="tel" placeholder="연락처 (010-0000-0000)" value={signPhone}
+                      onChange={e => setSignPhone(formatPhone(e.target.value))}
+                      style={{ width:"100%", background:"var(--surface2)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box", ...(signTried && !signPhone ? errBorder : { border: "1px solid var(--border)" }) }} />
+                  )}
+                  {needAddr && (
+                    <>
+                      <input type="text" placeholder="주소 (등본지 주소)" value={signAddr} onChange={e => setSignAddr(e.target.value)}
+                        style={{ width:"100%", background:"var(--surface2)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box", ...(signTried && !signAddr ? errBorder : { border: "1px solid var(--border)" }) }} />
+                      <input type="text" placeholder="상세주소 (동·호수·층 등, 선택)" value={signAddrDetail} onChange={e => setSignAddrDetail(e.target.value)}
+                        style={{ width:"100%", background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:12, padding:"12px 14px", color:"var(--text)", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ display:"flex", gap:10 }}>
               <button onClick={() => setShowSignConfirm(false)}
                 style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text-muted)", fontWeight:600, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
                 다시 확인할게요
               </button>
               <button onClick={async () => {
+                const needBirth = !signSelfInfo?.birth_date;
+                const needPhone = !signSelfInfo?.phone;
+                const needAddr = !signSelfInfo?.address;
+                if ((needBirth && !signBirth) || (needPhone && !signPhone.trim()) || (needAddr && !signAddr.trim())) {
+                  setSignTried(true);
+                  showToast("⚠️ 비어있는 본인 정보를 입력해주세요.", "error");
+                  return;
+                }
+                const selfUpdate: Record<string, string> = {};
+                if (needBirth && signBirth) selfUpdate.birth_date = signBirth;
+                if (needPhone && signPhone.trim()) selfUpdate.phone = signPhone.trim();
+                if (needAddr && signAddr.trim()) {
+                  selfUpdate.address = signAddr.trim();
+                  if (signAddrDetail.trim()) selfUpdate.address_detail = signAddrDetail.trim();
+                }
+                if (Object.keys(selfUpdate).length > 0 && userId) {
+                  await supabase.from("users").update(selfUpdate).eq("id", userId);
+                }
                 setShowSignConfirm(false);
                 // 서버 API로 서명 처리 (team_members 업데이트는 service role 필요)
                 await fetch("/api/contract", {
@@ -1368,7 +1787,7 @@ export default function ChatRoomPage() {
                 setContractStatus("done");
                 setShowContractModal(false);
               }}
-                style={{ flex:2, background:"linear-gradient(135deg,#10b981,#059669)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
+                style={{ flex:2, background:"var(--success)", border:"none", color:"#fff", fontWeight:700, padding:14, borderRadius:14, fontSize:14, cursor:"pointer" }}>
                 ✅ 동의합니다
               </button>
             </div>
@@ -1389,12 +1808,12 @@ export default function ChatRoomPage() {
               </p>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { handleProgress("hire_reject"); setShowHireProposalModal(false); }}
+              <button onClick={() => setShowRejectConfirmModal(true)}
                 style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
                 거절하기
               </button>
               <button onClick={() => { handleProgress("hire_accept"); setShowHireProposalModal(false); }}
-                style={{ flex: 2, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
+                style={{ flex: 2, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
                 🎉 수락하기
               </button>
             </div>
@@ -1433,7 +1852,7 @@ export default function ChatRoomPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <button onClick={handleSubmitReview} disabled={!reviewScore}
-                style={{ width: "100%", background: reviewScore ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--surface2)", border: "none", color: reviewScore ? "#fff" : "var(--text-muted)", fontWeight: 700, padding: 14, borderRadius: 12, cursor: reviewScore ? "pointer" : "default", fontSize: 14 }}>
+                style={{ width: "100%", background: reviewScore ? "var(--primary)" : "var(--surface2)", border: "none", color: reviewScore ? "#fff" : "var(--text-muted)", fontWeight: 700, padding: 14, borderRadius: 12, cursor: reviewScore ? "pointer" : "default", fontSize: 14 }}>
                 평가 제출하기
               </button>
               <button onClick={() => setShowReviewModal(false)}
@@ -1461,7 +1880,7 @@ export default function ChatRoomPage() {
                 </p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => { setLeaveStep("review"); }}
-                    style={{ flex: 1, background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
+                    style={{ flex: 1, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
                     나가기
                   </button>
                   <button onClick={() => { setShowLeaveModal(false); setLeaveStep("confirm"); }}
@@ -1478,12 +1897,12 @@ export default function ChatRoomPage() {
                 {/* 간단 평가 버튼 */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                   <button onClick={() => setQuickReview("good")}
-                    style={{ flex: 1, padding: "12px", borderRadius: 12, border: `2px solid ${quickReview === "good" ? "#86efac" : "var(--border)"}`, background: quickReview === "good" ? "rgba(34,197,94,0.1)" : "var(--surface2)", cursor: "pointer", fontSize: 22 }}>
-                    😊<br /><span style={{ fontSize: 11, color: quickReview === "good" ? "#86efac" : "var(--text-muted)", fontWeight: 600 }}>괜찮았어요</span>
+                    style={{ flex: 1, padding: "12px", borderRadius: 12, border: `2px solid ${quickReview === "good" ? "var(--success)" : "var(--border)"}`, background: quickReview === "good" ? "var(--success-bg)" : "var(--surface2)", cursor: "pointer", fontSize: 22 }}>
+                    😊<br /><span style={{ fontSize: 11, color: quickReview === "good" ? "var(--success)" : "var(--text-muted)", fontWeight: 600 }}>괜찮았어요</span>
                   </button>
                   <button onClick={() => setQuickReview("bad")}
-                    style={{ flex: 1, padding: "12px", borderRadius: 12, border: `2px solid ${quickReview === "bad" ? "#f87171" : "var(--border)"}`, background: quickReview === "bad" ? "rgba(239,68,68,0.1)" : "var(--surface2)", cursor: "pointer", fontSize: 22 }}>
-                    😞<br /><span style={{ fontSize: 11, color: quickReview === "bad" ? "#f87171" : "var(--text-muted)", fontWeight: 600 }}>별로였어요</span>
+                    style={{ flex: 1, padding: "12px", borderRadius: 12, border: `2px solid ${quickReview === "bad" ? "var(--danger)" : "var(--border)"}`, background: quickReview === "bad" ? "var(--danger-bg)" : "var(--surface2)", cursor: "pointer", fontSize: 22 }}>
+                    😞<br /><span style={{ fontSize: 11, color: quickReview === "bad" ? "var(--danger)" : "var(--text-muted)", fontWeight: 600 }}>별로였어요</span>
                   </button>
                 </div>
 
@@ -1492,7 +1911,7 @@ export default function ChatRoomPage() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, justifyContent: "center" }}>
                     {["노쇼/연락두절", "비매너", "허위정보", "약속불이행", "기타"].map(r => (
                       <button key={r} onClick={() => setQuickReviewReason(r)}
-                        style={{ padding: "5px 12px", borderRadius: 20, fontSize: 11, cursor: "pointer", background: quickReviewReason === r ? "rgba(239,68,68,0.15)" : "var(--surface2)", color: quickReviewReason === r ? "#f87171" : "var(--text-muted)", border: quickReviewReason === r ? "1px solid rgba(239,68,68,0.4)" : "1px solid transparent" }}>
+                        style={{ padding: "5px 12px", borderRadius: 20, fontSize: 11, cursor: "pointer", background: quickReviewReason === r ? "var(--danger-bg)" : "var(--surface2)", color: quickReviewReason === r ? "var(--danger)" : "var(--text-muted)", border: quickReviewReason === r ? "1px solid var(--danger-border)" : "1px solid transparent" }}>
                         {r}
                       </button>
                     ))}
@@ -1501,7 +1920,7 @@ export default function ChatRoomPage() {
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <button onClick={handleLeaveWithReview}
-                    style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 12, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
+                    style={{ width: "100%", background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 12, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
                     {quickReview ? "평가하고 나가기" : "그냥 나가기"}
                   </button>
                   <button onClick={() => { setLeaveStep("confirm"); setQuickReview(null); setQuickReviewReason(""); }}
@@ -1514,6 +1933,35 @@ export default function ChatRoomPage() {
           </div>
         </div>
       )}
+
+      {/* 채용 제안 거절 확인 모달 (커스텀) */}
+      {showRejectConfirmModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--surface)", borderRadius: 20, padding: 24, width: "100%", maxWidth: 320, textAlign: "center", border: "1px solid var(--border)", boxShadow: "0 10px 25px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <h3 style={{ fontSize: 16, fontWeight: 900, margin: "0 0 10px", color: "var(--text)" }}>채용 제안 거절</h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
+              정말로 채용 제안을 거절하시겠습니까?<br />
+              <span style={{ color: "var(--danger)", fontWeight: 600 }}>거절 시 대화방이 종료되며<br />더 이상 대화할 수 없습니다.</span>
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => {
+                handleProgress("hire_reject");
+                setShowRejectConfirmModal(false);
+                setShowHireProposalModal(false);
+              }}
+                style={{ flex: 1, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
+                거절하기
+              </button>
+              <button onClick={() => setShowRejectConfirmModal(false)}
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {ToastUI}
     </main>
   );
 }

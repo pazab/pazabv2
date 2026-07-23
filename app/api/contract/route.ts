@@ -656,9 +656,12 @@ export async function PATCH(req: NextRequest) {
           const { data: existingTm } = await supabaseAdmin.from("team_members")
             .select("id").eq("match_id", matchId).maybeSingle();
           if (!existingTm) {
+            const { data: matchRow } = await supabaseAdmin.from("matches")
+              .select("employer_profile_id").eq("id", matchId).maybeSingle();
             await supabaseAdmin.from("team_members").insert({
               employer_id: employerId,
               worker_id: workerId,
+              employer_profile_id: matchRow?.employer_profile_id || null,
               match_id: matchId,
               hire_date: new Date().toISOString().split("T")[0],
               status: "active",

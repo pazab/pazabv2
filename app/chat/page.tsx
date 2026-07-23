@@ -1,13 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 import AppHeader from "@/components/AppHeader";
-import { btnPrimary } from "@/lib/styles";
+import { btnPrimary, chipStyle, chipSuccess, chipWarning, chipPrimary } from "@/lib/styles";
 
 const GRADE_EMOJI: Record<string, string> = { bronze: "🥉", silver: "🥈", gold: "🥇", platinum: "💎" };
+
+const mutedChip: CSSProperties = {
+  ...chipStyle,
+  background: "var(--surface2)",
+  border: "1px solid var(--border)",
+  color: "var(--text-muted)",
+};
 
 export default function ChatListPage() {
   const router = useRouter();
@@ -149,8 +157,8 @@ export default function ChatListPage() {
                   <button key={room.id} onClick={() => router.push("/paz")}
                     style={{
                       width: "100%",
-                      background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(236,72,153,0.06))",
-                      border: "1px solid rgba(236,72,153,0.2)",
+                      background: "var(--primary-light)",
+                      border: "1px solid var(--primary-border)",
                       borderRadius: 18,
                       padding: "14px 16px",
                       cursor: "pointer",
@@ -159,27 +167,22 @@ export default function ChatListPage() {
                       alignItems: "center",
                       gap: 14,
                       transition: "all 0.18s",
-                      boxShadow: "0 2px 12px rgba(236,72,153,0.08)",
+                      boxShadow: "var(--shadow-elevate)",
                     }}
                     onMouseEnter={e => {
-                      e.currentTarget.style.background = "linear-gradient(135deg, rgba(124,58,237,0.14), rgba(236,72,153,0.10))";
                       e.currentTarget.style.transform = "translateY(-1px)";
-                      e.currentTarget.style.boxShadow = "0 4px 18px rgba(236,72,153,0.15)";
                     }}
                     onMouseLeave={e => {
-                      e.currentTarget.style.background = "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(236,72,153,0.06))";
                       e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow = "0 2px 12px rgba(236,72,153,0.08)";
                     }}>
                     {/* 아바타 */}
                     <div style={{ position: "relative", flexShrink: 0 }}>
                       <div style={{
                         width: 50, height: 50, borderRadius: "50%",
-                        background: "linear-gradient(135deg, #7c3aed, #ec4899)",
+                        background: "var(--primary)",
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center", gap: 1,
                         overflow: "hidden",
-                        boxShadow: "0 0 0 2px rgba(236,72,153,0.4), 0 3px 10px rgba(236,72,153,0.3)",
                       }}>
                         {pazAvatar ? (
                           <img src={pazAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -191,43 +194,43 @@ export default function ChatListPage() {
                         )}
                       </div>
                       {/* 온라인 도트 */}
-                      <div style={{ position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: "50%", background: "#22c55e", border: "2px solid var(--bg)" }} />
+                      <div style={{ position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: "50%", background: "var(--success)", border: "2px solid var(--bg)" }} />
                     </div>
                     {/* 내용 */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 15, fontWeight: 800, color: "#fbcfe8" }}>{room.counterpartName}</span>
-                          <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: "linear-gradient(135deg, #ec4899, #f43f5e)", padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 }}>AI</span>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{room.counterpartName}</span>
+                          <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: "var(--accent)", padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 }}>AI</span>
                         </div>
-                        <span style={{ fontSize: 11, color: "rgba(236,72,153,0.6)", fontWeight: 500 }}>{formatTime(room.last_message_at)}</span>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>{formatTime(room.last_message_at)}</span>
                       </div>
-                      <p style={{ fontSize: 13, color: "#fbcfe8", opacity: 0.7, margin: "0 0 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
+                      <p style={{ fontSize: 13, color: "var(--text-sub)", margin: "0 0 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
                         {room.last_message}
                       </p>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: "#fbcfe8", background: "rgba(236,72,153,0.15)", padding: "2px 8px", borderRadius: 10, border: "1px solid rgba(236,72,153,0.2)" }}>AI 비서 · 언제나 대화 가능</span>
+                      <span style={{ ...chipPrimary, fontWeight: 700 }}>AI 비서 · 언제나 대화 가능</span>
                     </div>
                   </button>
                 );
               }
 
               const status = room.progress_status || room.status;
-              const statusConfig: Record<string, { label: string; color: string }> = {
-                accepted: { label: "대화중", color: "#86efac" },
-                interviewing: { label: "면접중", color: "#fbbf24" },
-                hired: { label: "채용완료", color: "#c4b5fd" },
-                failed: { label: "종료", color: "#71717a" },
-                cancelled: { label: "취소", color: "#71717a" },
+              const statusChipConfig: Record<string, { label: string; chip: CSSProperties }> = {
+                accepted: { label: "대화중", chip: chipSuccess },
+                interviewing: { label: "면접중", chip: chipWarning },
+                hired: { label: "채용완료", chip: chipPrimary },
+                failed: { label: "종료", chip: mutedChip },
+                cancelled: { label: "취소", chip: mutedChip },
               };
-              const statusInfo = statusConfig[status] || { label: "대기중", color: "#71717a" };
+              const statusInfo = statusChipConfig[status] || { label: "대기중", chip: mutedChip };
               const hasUnread = room.unreadCount > 0;
 
               return (
                 <button key={room.id} onClick={() => router.push(`/chat/${room.id}`)}
                   style={{
                     width: "100%",
-                    background: hasUnread ? "rgba(139,92,246,0.06)" : "var(--surface)",
-                    border: `1px solid ${hasUnread ? "rgba(139,92,246,0.25)" : "var(--border)"}`,
+                    background: hasUnread ? "var(--primary-light)" : "var(--surface)",
+                    border: `1px solid ${hasUnread ? "var(--primary-border)" : "var(--border)"}`,
                     borderRadius: 18,
                     padding: "14px 16px",
                     cursor: "pointer",
@@ -236,35 +239,32 @@ export default function ChatListPage() {
                     alignItems: "center",
                     gap: 14,
                     transition: "all 0.18s",
-                    boxShadow: hasUnread ? "0 2px 12px rgba(139,92,246,0.1)" : "0 1px 4px rgba(0,0,0,0.06)",
+                    boxShadow: "var(--shadow-elevate)",
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.background = "rgba(139,92,246,0.09)";
                     e.currentTarget.style.transform = "translateY(-1px)";
-                    e.currentTarget.style.boxShadow = "0 4px 16px rgba(139,92,246,0.12)";
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.background = hasUnread ? "rgba(139,92,246,0.06)" : "var(--surface)";
                     e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = hasUnread ? "0 2px 12px rgba(139,92,246,0.1)" : "0 1px 4px rgba(0,0,0,0.06)";
                   }}>
                   {/* 아바타 */}
                   <div style={{ position: "relative", flexShrink: 0 }}>
                     <div style={{
                       width: 50, height: 50, borderRadius: room.counterpartType === "employer" ? "8px" : "50%",
-                      background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                      background: "var(--surface2)",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 22, overflow: "hidden",
-                      boxShadow: hasUnread ? "0 0 0 2px rgba(139,92,246,0.5)" : "0 0 0 1.5px var(--border)",
+                      overflow: "hidden",
+                      boxShadow: hasUnread ? "0 0 0 2px var(--primary-border)" : "0 0 0 1.5px var(--border)",
                     }}>
                       {room.counterpartAvatar ? (
                         <img src={room.counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       ) : (
-                        <span>{room.counterpartType === "employer" ? "🏪" : "👤"}</span>
+                        <i className={room.counterpartType === "employer" ? "ti ti-building-store" : "ti ti-user"}
+                          style={{ fontSize: 22, color: "var(--text-muted)" }} aria-hidden="true" />
                       )}
                     </div>
                     {hasUnread && (
-                      <div style={{ position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: "50%", background: "#8b5cf6", border: "2px solid var(--bg)" }} />
+                      <div style={{ position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: "50%", background: "var(--primary)", border: "2px solid var(--bg)" }} />
                     )}
                   </div>
                   {/* 내용 */}
@@ -277,14 +277,14 @@ export default function ChatListPage() {
                       {room.businessName && (
                         <span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{room.businessName}</span>
                       )}
-                      <span style={{ fontSize: 10, fontWeight: 700, color: statusInfo.color, background: `${statusInfo.color}18`, padding: "2px 8px", borderRadius: 10, border: `1px solid ${statusInfo.color}30`, flexShrink: 0 }}>{statusInfo.label}</span>
+                      <span style={{ ...statusInfo.chip, flexShrink: 0 }}>{statusInfo.label}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 13, color: hasUnread ? "var(--text)" : "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, fontWeight: hasUnread ? 600 : 400 }}>
                         {room.last_message || "채팅을 시작해보세요 👋"}
                       </span>
                       {hasUnread && (
-                        <span style={{ background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", color: "#fff", fontSize: 11, fontWeight: 700, minWidth: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 11, flexShrink: 0, padding: "0 6px" }}>
+                        <span style={{ background: "var(--primary)", color: "#fff", fontSize: 11, fontWeight: 700, minWidth: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 11, flexShrink: 0, padding: "0 6px" }}>
                           {room.unreadCount}
                         </span>
                       )}

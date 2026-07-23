@@ -237,8 +237,8 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         .from("employer_profiles")
         .select("id, business_name, business_type, region, lat, lng, category_id, category_ids")
         .eq("user_id", userId)
-        .eq("is_active", true)
-        .eq("is_deleted", false)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .not("business_name", "is", null)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -465,18 +465,18 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ width: "100%", maxWidth: 480, background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: "20px", maxHeight: "90vh", overflowY: "auto", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", borderTop: "1px solid rgba(255,255,255,0.08)", color: "#fff" }}>
-        
+      <div style={{ width: "100%", maxWidth: 480, background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: "20px", maxHeight: "90vh", overflowY: "auto", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", borderTop: "1px solid var(--border)", color: "var(--text)" }}>
+
         {/* 모달 헤더 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 900, margin: 0, color: "#fff" }}>
+          <h3 style={{ fontSize: 18, fontWeight: 900, margin: 0, color: "var(--text)" }}>
             {step === "cert" ? "⚡ 대타 간편 등록 & 본인 인증" : "⚡ 대타 근무조건 입력"}
           </h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 20, cursor: "pointer" }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
 
         {loading ? (
-          <p style={{ textAlign: "center", padding: "40px 0", color: "#94a3b8" }}>정보를 불러오는 중...</p>
+          <p style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)" }}>정보를 불러오는 중...</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             
@@ -484,7 +484,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
             {step === "cert" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 
-                <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 12, padding: "12px", fontSize: 12, lineHeight: 1.5, color: "#c4b5fd" }}>
+                <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 12, padding: "12px", fontSize: 12, lineHeight: 1.5, color: "var(--purple-text)" }}>
                   💡 <strong>처음 오셨군요!</strong><br />
                   바쁘신 사장님을 위해 1회성 간편 정보 등록 및 본인 확인을 거친 후 바로 대타를 구하실 수 있습니다. (성향분석 생략)
                 </div>
@@ -498,11 +498,11 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                       searchAddress(e.target.value);
                     }}
                     placeholder="예: 파스쿠찌 아산신정호점 (검색어 입력)"
-                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-                  
+                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+
                   {/* 주소 및 상호명 검색 결과 드롭다운 */}
                   {addressResults.length > 0 && (
-                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1c1c1e", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 12, zIndex: 100, overflow: "hidden", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, zIndex: 100, overflow: "hidden", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
                       {addressResults.map((item, i) => (
                         <div key={i} onClick={() => {
                           setNewBusinessName(item.place_name);
@@ -512,11 +512,11 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                           }
                           setAddressResults([]);
                         }}
-                          style={{ padding: "10px 12px", cursor: "pointer", borderBottom: i < addressResults.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none", fontSize: 12, transition: "background 0.2s" }}
-                          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                          style={{ padding: "10px 12px", cursor: "pointer", borderBottom: i < addressResults.length - 1 ? "1px solid var(--border)" : "none", fontSize: 12, transition: "background 0.2s" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "var(--surface2)"}
                           onMouseLeave={e => e.currentTarget.style.background = "none"}>
-                          <div style={{ fontWeight: 700, color: "#fff" }}>{item.place_name || item.address_name}</div>
-                          <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, marginTop: 2 }}>{item.road_address_name || item.address_name}</div>
+                          <div style={{ fontWeight: 700, color: "var(--text)" }}>{item.place_name || item.address_name}</div>
+                          <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 2 }}>{item.road_address_name || item.address_name}</div>
                         </div>
                       ))}
                     </div>
@@ -525,13 +525,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
 
                 {/* 확인된 주소 및 업종 표시 */}
                 {selectedAddress && (
-                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
-                      <span style={{ fontSize: 10, color: "#4ade80", fontWeight: 700, letterSpacing: 0.5, display: "block", marginBottom: 2 }}>📍 확인된 매장 위치</span>
+                      <span style={{ fontSize: 10, color: "var(--success)", fontWeight: 700, letterSpacing: 0.5, display: "block", marginBottom: 2 }}>📍 확인된 매장 위치</span>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>{selectedAddress.road_address_name || selectedAddress.address_name}</div>
                     </div>
                     <div>
-                      <span style={{ fontSize: 10, color: "#8b5cf6", fontWeight: 700, letterSpacing: 0.5, display: "block", marginBottom: 2 }}>📂 자동 감지된 업종</span>
+                      <span style={{ fontSize: 10, color: "var(--purple-text)", fontWeight: 700, letterSpacing: 0.5, display: "block", marginBottom: 2 }}>📂 자동 감지된 업종</span>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>
                         {newBusinessType === "카페/음료" ? "☕ 카페 / 음료" :
                          newBusinessType === "식당/음식점" ? "🍳 식당 / 음식점" :
@@ -550,7 +550,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
                   <input type="checkbox" id="phoneCheck" checked={phoneVerified} onChange={e => setPhoneVerified(e.target.checked)}
                     style={{ width: 18, height: 18, cursor: "pointer" }} />
-                  <label htmlFor="phoneCheck" style={{ fontSize: 13, cursor: "pointer", color: "rgba(255,255,255,0.8)" }}>
+                  <label htmlFor="phoneCheck" style={{ fontSize: 13, cursor: "pointer", color: "var(--text-sub)" }}>
                     📱 휴대폰 본인 신원 인증 동의 (10초 인증)
                   </label>
                 </div>
@@ -560,18 +560,18 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>💰 급여 지급 정산 계좌 연동 *</label>
                   <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                     <select value={bankName} onChange={e => setBankName(e.target.value)}
-                      style={{ width: 110, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "#fff", fontSize: 13, outline: "none" }}>
+                      style={{ width: 110, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "var(--text)", fontSize: 13, outline: "none" }}>
                       {BANK_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
                     <input type="text" value={accountNum} onChange={e => setAccountNum(e.target.value)} placeholder="계좌번호 입력 (숫자만)"
-                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
                     <button type="button" onClick={verifyAccount}
-                      style={{ background: accountVerified ? "#22c55e" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: 12, padding: "0 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      style={{ background: accountVerified ? "var(--success)" : "var(--surface2)", border: "none", color: accountVerified ? "#fff" : "var(--text)", borderRadius: 12, padding: "0 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
                       {accountVerified ? "인증완료" : "1원 인증"}
                     </button>
                   </div>
                   {accountVerified && (
-                    <span style={{ fontSize: 11, color: "#4ade80" }}>예금주: {verifiedName} (신원 대조 완료)</span>
+                    <span style={{ fontSize: 11, color: "var(--success)" }}>예금주: {verifiedName} (신원 대조 완료)</span>
                   )}
                 </div>
 
@@ -583,61 +583,51 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 
                 {/* 상점 정보 확인 */}
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "12px 14px" }}>
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 6 }}>SELECTED SHOP</span>
+                <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px" }}>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 6 }}>SELECTED SHOP</span>
                   {myShops.length > 0 ? (
-                    <select
-                      value={shopInfo?.id || ""}
-                      onChange={e => {
-                        if (e.target.value === "new_shop") {
-                          setNewBusinessName("");
-                          setNewBusinessType("식당/음식점");
-                          setAddressQuery("");
-                          setAddressResults([]);
-                          setSelectedAddress(null);
-                          setPhoneVerified(false);
-                          setAccountVerified(false);
-                          setStep("cert");
-                          return;
-                        }
-                        const selected = myShops.find(s => s.id === e.target.value);
-                        if (selected) {
-                          setShopInfo({
-                            id: selected.id,
-                            businessName: selected.business_name || "",
-                            businessType: selected.business_type || "기타",
-                            region: selected.region || "",
-                            lat: selected.lat || 37.5665,
-                            lng: selected.lng || 126.9780,
-                          });
-                          if (selected.category_id) {
-                            setProfileCategoryId(selected.category_id);
-                          } else {
-                            setProfileCategoryId(null);
-                          }
-                        }
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {myShops.map(s => {
+                        const isSelected = shopInfo?.id === s.id;
+                        return (
+                          <button key={s.id} type="button" onClick={() => {
+                            setShopInfo({
+                              id: s.id,
+                              businessName: s.business_name || "",
+                              businessType: s.business_type || "기타",
+                              region: s.region || "",
+                              lat: s.lat || 37.5665,
+                              lng: s.lng || 126.9780,
+                            });
+                            if (s.category_id) {
+                              setProfileCategoryId(s.category_id);
+                            } else {
+                              setProfileCategoryId(null);
+                            }
+                          }}
+                            style={{ padding: "8px 14px", borderRadius: 20, border: "none", fontSize: 13, cursor: "pointer", fontWeight: isSelected ? 700 : 400, background: isSelected ? "var(--primary)" : "var(--surface)", color: isSelected ? "#fff" : "var(--text)" }}>
+                            {s.business_name} <span style={{ opacity: 0.7, fontSize: 11 }}>({s.region})</span>
+                          </button>
+                        );
+                      })}
+                      <button type="button" onClick={() => {
+                        setNewBusinessName("");
+                        setNewBusinessType("식당/음식점");
+                        setAddressQuery("");
+                        setAddressResults([]);
+                        setSelectedAddress(null);
+                        setPhoneVerified(false);
+                        setAccountVerified(false);
+                        setStep("cert");
                       }}
-                      style={{
-                        width: "100%",
-                        background: "var(--surface2)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 12,
-                        padding: "12px",
-                        color: "#fff",
-                        fontSize: 14,
-                        outline: "none",
-                        cursor: "pointer"
-                      }}
-                    >
-                      {myShops.map(s => (
-                        <option key={s.id} value={s.id}>{s.business_name} ({s.region})</option>
-                      ))}
-                      <option value="new_shop">➕ 새 매장 추가 등록...</option>
-                    </select>
+                        style={{ padding: "8px 14px", borderRadius: 20, border: "1px dashed var(--border)", fontSize: 13, cursor: "pointer", background: "none", color: "var(--text-muted)" }}>
+                        ➕ 새 매장 추가
+                      </button>
+                    </div>
                   ) : (
                     <>
                       <div style={{ fontSize: 15, fontWeight: 900 }}>{shopInfo?.businessName}</div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{shopInfo?.region}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{shopInfo?.region}</div>
                     </>
                   )}
                 </div>
@@ -646,8 +636,8 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                 <div>
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>📅 대타 필요한 날짜 *</label>
                   <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} min={todayStr} max={maxDateStr}
-                    style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none" }} />
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginTop: 4 }}>* 대타 구인은 오늘 기준 3일 이내 긴급 일정만 가능합니다.</span>
+                    style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }} />
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 대타 구인은 오늘 기준 3일 이내 긴급 일정만 가능합니다.</span>
                 </div>
 
                 {/* 근무시간 */}
@@ -655,20 +645,20 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>⏰ 근무시간 *</label>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <select value={startHour} onChange={e => setStartHour(e.target.value)}
-                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }}>
                       {Array.from({ length: 24 }, (_, i) => <option key={i} value={String(i).padStart(2, "0")}>{String(i).padStart(2, "0")}시</option>)}
                     </select>
                     <select value={startMin} onChange={e => setStartMin(e.target.value)}
-                      style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "var(--text)", fontSize: 14, outline: "none" }}>
                       <option value="00">00분</option><option value="30">30분</option>
                     </select>
-                    <span style={{ color: "rgba(255,255,255,0.4)" }}>~</span>
+                    <span style={{ color: "var(--text-muted)" }}>~</span>
                     <select value={endHour} onChange={e => setEndHour(e.target.value)}
-                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }}>
                       {Array.from({ length: 24 }, (_, i) => <option key={i} value={String(i).padStart(2, "0")}>{String(i).padStart(2, "0")}시</option>)}
                     </select>
                     <select value={endMin} onChange={e => setEndMin(e.target.value)}
-                      style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "#fff", fontSize: 14, outline: "none" }}>
+                      style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "var(--text)", fontSize: 14, outline: "none" }}>
                       <option value="00">00분</option><option value="30">30분</option>
                     </select>
                   </div>
@@ -679,13 +669,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>💰 제시 시급 *</label>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <input type="number" value={wage} onChange={e => { setWage(e.target.value); setWageTouched(true); }}
-                      style={{ flex: 1, background: "var(--surface2)", border: wageHint ? "1px solid rgba(251,146,60,0.5)" : "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-                    <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>원/시간</span>
+                      style={{ flex: 1, background: "var(--surface2)", border: wageHint ? "1px solid var(--warning-border)" : "1px solid var(--border)", borderRadius: 12, padding: "12px 16px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                    <span style={{ color: "var(--text-muted)", fontSize: 14 }}>원/시간</span>
                   </div>
                   {wageHint && (
-                    <span style={{ fontSize: 11, color: "#fb923c", fontWeight: 700, display: "block", marginTop: 4 }}>{wageHint}</span>
+                    <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 700, display: "block", marginTop: 4 }}>{wageHint}</span>
                   )}
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginTop: 4 }}>* 최저시급({minWage.toLocaleString()}원) 이상. 급한 대타일수록 할증 시급이 매칭율을 크게 높여요.</span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 최저시급({minWage.toLocaleString()}원) 이상. 급한 대타일수록 할증 시급이 매칭율을 크게 높여요.</span>
                 </div>
 
                 {/* 업종 및 담당 업무 선택 */}
@@ -694,30 +684,30 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: selectedParent ? 10 : 0 }}>
                     {parentCategories.map(cat => (
                       <button key={cat.id} type="button" onClick={() => { setSelectedParent(cat); setDuty(""); setCustomDuty(""); }}
-                        style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: selectedParent?.id === cat.id ? 700 : 400, background: selectedParent?.id === cat.id ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: selectedParent?.id === cat.id ? "#fff" : "rgba(255,255,255,0.6)", transition: "all 0.15s" }}>
+                        style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: selectedParent?.id === cat.id ? 700 : 400, background: selectedParent?.id === cat.id ? "var(--primary)" : "var(--surface2)", color: selectedParent?.id === cat.id ? "#fff" : "var(--text-muted)", transition: "all 0.15s" }}>
                         {cat.emoji} {cat.name}
                       </button>
                     ))}
                   </div>
                   {selectedParent && (
-                    <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 12, padding: 12, marginTop: 10 }}>
-                      <p style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", margin: "0 0 8px", fontWeight: 600 }}>{selectedParent.emoji} {selectedParent.name} › 직무 선택</p>
+                    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, marginTop: 10 }}>
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px", fontWeight: 600 }}>{selectedParent.emoji} {selectedParent.name} › 직무 선택</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {childCategories.filter(c => c.parent_id === selectedParent.id).map(child => (
                           child.name === "직접입력" ? (
                             <div key={child.id} style={{ width: "100%", marginTop: 4 }}>
                               <button type="button" onClick={() => { setDuty("직접입력"); }}
-                                style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: duty === "직접입력" ? 700 : 400, background: duty === "직접입력" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: duty === "직접입력" ? "#fff" : "rgba(255,255,255,0.6)", marginBottom: duty === "직접입력" ? 8 : 0 }}>
+                                style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: duty === "직접입력" ? 700 : 400, background: duty === "직접입력" ? "var(--primary)" : "var(--surface2)", color: duty === "직접입력" ? "#fff" : "var(--text-muted)", marginBottom: duty === "직접입력" ? 8 : 0 }}>
                                 ✏️ 직접입력
                               </button>
                               {duty === "직접입력" && (
                                 <input type="text" value={customDuty} onChange={e => setCustomDuty(e.target.value)} placeholder="직무명을 입력해 주세요"
-                                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 12px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box", marginTop: 4 }} />
+                                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", color: "var(--text)", fontSize: 13, outline: "none", boxSizing: "border-box", marginTop: 4 }} />
                               )}
                             </div>
                           ) : (
                             <button key={child.id} type="button" onClick={() => { setDuty(child.name); setCustomDuty(""); }}
-                              style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: duty === child.name ? 700 : 400, background: duty === child.name ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.06)", color: duty === child.name ? "#fff" : "rgba(255,255,255,0.6)", transition: "all 0.15s" }}>
+                              style={{ padding: "6px 12px", borderRadius: 14, border: "none", fontSize: 12, cursor: "pointer", fontWeight: duty === child.name ? 700 : 400, background: duty === child.name ? "var(--primary)" : "var(--surface2)", color: duty === child.name ? "#fff" : "var(--text-muted)", transition: "all 0.15s" }}>
                               {child.emoji} {child.name}
                             </button>
                           )
@@ -759,9 +749,9 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                                 cursor: "pointer",
                                 fontWeight: isSelected ? 700 : 400,
                                 background: isSelected
-                                  ? (isMandatory ? "linear-gradient(135deg, #db2777, #ec4899)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)")
-                                  : (isMandatory ? "rgba(236,72,153,0.15)" : "var(--surface2)"),
-                                color: isSelected ? "#fff" : (isMandatory ? "#fbcfe8" : "var(--text-muted)"),
+                                  ? (isMandatory ? "var(--accent)" : "var(--primary)")
+                                  : (isMandatory ? "var(--chip-pink-bg)" : "var(--surface2)"),
+                                color: isSelected ? "#fff" : (isMandatory ? "var(--pink-text)" : "var(--text-muted)"),
                                 boxShadow: "none",
                                 outline: "none",
                                 transition: "all 0.15s"
@@ -820,9 +810,9 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                             style={{
                               padding: "6px 12px",
                               borderRadius: 20,
-                              border: "1px solid #c4b5fd",
+                              border: "1px solid var(--primary-border)",
                               background: "var(--surface)",
-                              color: "#fff",
+                              color: "var(--text)",
                               fontSize: 11,
                               width: 100,
                               outline: "none"
@@ -834,7 +824,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                               top: "calc(100% + 4px)",
                               left: 0,
                               width: 180,
-                              background: "#1e1e24",
+                              background: "var(--surface)",
                               border: "1px solid var(--border)",
                               borderRadius: 10,
                               zIndex: 100,
@@ -856,14 +846,14 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                                     padding: "8px 12px",
                                     background: "none",
                                     border: "none",
-                                    borderBottom: i < suggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                                    borderBottom: i < suggestions.length - 1 ? "1px solid var(--border)" : "none",
                                     textAlign: "left",
                                     cursor: "pointer",
-                                    color: "#fff",
+                                    color: "var(--text)",
                                     fontSize: 11,
                                     display: "block"
                                   }}
-                                  onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.1)"}
+                                  onMouseEnter={e => e.currentTarget.style.background = "var(--primary-light)"}
                                   onMouseLeave={e => e.currentTarget.style.background = "none"}
                                 >
                                   {c.name}
@@ -910,9 +900,9 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                               onClick={() => setSelectedCreds(prev => prev.filter(p => p.name !== sc.name))}
                               style={{
                                 fontSize: 11,
-                                background: "rgba(236,72,153,0.1)",
-                                border: "1px solid rgba(236,72,153,0.3)",
-                                color: "#fbcfe8",
+                                background: "var(--chip-pink-bg)",
+                                border: "1px solid var(--chip-pink-border)",
+                                color: "var(--pink-text)",
                                 padding: "4px 10px",
                                 borderRadius: 10,
                                 cursor: "pointer"
@@ -935,7 +925,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                       <label htmlFor="allowNewCheck" style={{ fontSize: 13, fontWeight: 800, color: "#93c5fd", cursor: "pointer", display: "block", marginBottom: 4 }}>
                         🔵 신규 알바생에게도 열기
                       </label>
-                      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.5, display: "block" }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, display: "block" }}>
                         기본은 ✅검증된 인력(팀 이력·대타 이력 보유)에게 먼저 공개돼요. 체크하면 검증 인력이 응답하지 않을 때 신규 알바생에게도 순차 공개됩니다.
                       </span>
                     </div>
@@ -948,10 +938,10 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                     <input type="checkbox" id="secureCheck" checked={secureOption} onChange={e => setSecureOption(e.target.checked)}
                       style={{ width: 20, height: 20, cursor: "pointer", marginTop: 2, flexShrink: 0 }} />
                     <div>
-                      <label htmlFor="secureCheck" style={{ fontSize: 13, fontWeight: 800, color: "#fbcfe8", cursor: "pointer", display: "block", marginBottom: 4 }}>
+                      <label htmlFor="secureCheck" style={{ fontSize: 13, fontWeight: 800, color: "var(--pink-text)", cursor: "pointer", display: "block", marginBottom: 4 }}>
                         🛡️ 노쇼 안심 보장 수수료 가입 (건당 3,000원)
                       </label>
-                      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.5, display: "block" }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, display: "block" }}>
                         체크 시 공고에 [안심보장 🛡️] 마크가 표시되어 매칭률이 3배 급상승합니다. 알바생이 노쇼할 경우 플랫폼이 위로금(일당 전액 환불 및 쿠폰)을 보장합니다.
                       </span>
                     </div>
@@ -959,7 +949,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                 </div>
 
                 {/* 패널티 규정 동의 고지 */}
-                <p style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", lineHeight: 1.4, margin: "4px 0 0" }}>
+                <p style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.4, margin: "4px 0 0" }}>
                   ※ 파잡 대타 매칭은 민법상 적법한 근로계약 성립의 청약 행위입니다. 매칭 성사 후 사장님의 사유로 일방 취소(해고 등) 시 위약금이 부과되거나 서비스 영구 정지 처리가 될 수 있습니다.
                 </p>
 
@@ -967,13 +957,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
             )}
 
             {errMsg && (
-              <p style={{ color: "#f87171", fontSize: 13, fontWeight: 700, textAlign: "center", margin: 0 }}>🚨 {errMsg}</p>
+              <p style={{ color: "var(--danger)", fontSize: 13, fontWeight: 700, textAlign: "center", margin: 0 }}>🚨 {errMsg}</p>
             )}
 
             {/* 하단 버튼 */}
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               {step === "form" && !hasProfile && (
-                <button type="button" onClick={() => setStep("cert")} style={{ flex: 1, padding: "14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                <button type="button" onClick={() => setStep("cert")} style={{ flex: 1, padding: "14px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 16, color: "var(--text)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                   이전
                 </button>
               )}
@@ -997,12 +987,12 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                       setProfileCategoryId(null);
                     }
                   }
-                }} style={{ flex: 1, padding: "14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                }} style={{ flex: 1, padding: "14px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 16, color: "var(--text)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                   취소
                 </button>
               )}
               <button type="button" onClick={handleRegister} disabled={saving}
-                style={{ flex: 2, padding: "14px", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", borderRadius: 16, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 15px rgba(139,92,246,0.3)" }}>
+                style={{ flex: 2, padding: "14px", background: "var(--primary)", border: "none", borderRadius: 16, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "var(--shadow-elevate)" }}>
                 {saving ? "등록 중..." : step === "cert" ? "매장 등록 및 다음으로 →" : "대타 긴급 등록하기 🚀"}
               </button>
             </div>
