@@ -49,12 +49,16 @@ export async function createNotification(params: CreateNotificationParams) {
   const supabase = getServiceClient();
 
   // 1. notifications 테이블에 저장
+  const dataPayload = {
+    ...(params.data || {}),
+    ...(params.url ? { url: params.url } : {}),
+  };
   const { error } = await supabase.from("notifications").insert({
     user_id: params.userId,
     type: params.type,
     title: params.title,
     body: params.body ?? null,
-    data: params.data ?? null,
+    data: Object.keys(dataPayload).length > 0 ? dataPayload : null,
   });
   if (error) console.error("[notify] insert error:", error);
 

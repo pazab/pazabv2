@@ -21,35 +21,25 @@ export async function GET(req: NextRequest) {
     // 현재 match 정보
     const { data: match } = await supabaseAdmin
       .from("matches")
-      .select("employer_id, worker_id, progress_status, match_score, interview_at, interview_memo")
+      .select("employer_id, worker_id, progress_status, match_score, interview_at, interview_memo, initiated_by, worker_left, employer_left")
       .eq("id", matchId)
       .single();
 
     if (!match) return NextResponse.json({ error: "매칭 없음", success: false }, { status: 404 });
 
-    // 같은 두 사람의 모든 match_id 가져오기 (B방식: 이전 대화 이어가기)
-    const { data: allMatches } = await supabaseAdmin
-      .from("matches")
-      .select("id, created_at")
-      .eq("employer_id", match.employer_id)
-      .eq("worker_id", match.worker_id)
-      .order("created_at", { ascending: true });
-
-    const allMatchIds = (allMatches || []).map(m => m.id);
-
     const { data: messages, error } = await supabaseAdmin
       .from("chats")
       .select("*")
-      .in("match_id", allMatchIds)
+      .eq("match_id", matchId)
       .order("created_at", { ascending: true });
 
     if (error) throw error;
 
-    // 읽음 처리 - 같은 두 사람 모든 채팅방의 내가 받은 메시지
+    // 읽음 처리 - 현재 채팅방의 내가 받은 메시지
     await supabaseAdmin
       .from("chats")
       .update({ is_read: true })
-      .in("match_id", allMatchIds)
+      .eq("match_id", matchId)
       .eq("receiver_id", userId)
       .eq("is_read", false);
 

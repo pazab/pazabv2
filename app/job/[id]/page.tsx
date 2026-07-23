@@ -117,12 +117,14 @@ export default function JobDetailPage() {
   const [hasWorkerProfile, setHasWorkerProfile] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showJobMenu, setShowJobMenu] = useState(false);
+  const [storeFeeds, setStoreFeeds] = useState<any[]>([]);
+  const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
+  const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
   const [teamCompat, setTeamCompat] = useState<Record<string, unknown> | null>(null);
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
-  const [storeFeeds, setStoreFeeds] = useState<any[]>([]);
 
   useEffect(() => {
     let lastY = 0;
@@ -189,7 +191,6 @@ export default function JobDetailPage() {
 
   const fetchJob = async (uid?: string, role?: string | null) => {
     let data: Record<string, unknown> | null = null;
-    // jobs 테이블 먼저 시도 (새 구조)
     const { data: jobRow } = await supabase.from("jobs")
       .select("*, employer_profiles!inner(id, business_name, business_type, region, address, address_detail, logo_url, image_url, image_urls, video_url, biz_reg_number, ceo_name, biz_tel, lat, lng)")
       .eq("id", id).maybeSingle();
@@ -197,46 +198,24 @@ export default function JobDetailPage() {
       const ep = jobRow.employer_profiles as Record<string, unknown>;
       data = { ...ep, ...jobRow, id: jobRow.id, employer_profile_id: ep?.id } as Record<string, unknown>;
     } else {
-      // 구 employer_profiles.id 로 직접 진입한 경우 fallback
-      const { data: byId } = await supabase.from("employer_profiles").select("*").eq("id", id).maybeSingle();
-      if (byId) {
-        data = byId as Record<string, unknown>;
-        const { data: latestJob } = await supabase.from("jobs").select("id, wage, work_days, work_hours, is_active, job_status, hexaco_data, tagline, employer_type, best_matches, worst_matches, caution")
-          .eq("employer_profile_id", (byId as Record<string,unknown>).id as string)
-          .order("created_at", { ascending: false }).limit(1).maybeSingle();
-        if (latestJob) data = { ...data, ...latestJob, employer_profile_id: (byId as Record<string,unknown>).id, id: latestJob.id ?? (byId as Record<string,unknown>).id };
-      } else {
-        const { data: byUserId } = await supabase.from("employer_profiles").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-        data = byUserId as Record<string, unknown>;
-      }
+      const { data: epRow } = await supabase.from("employer_profiles")
+        .select("*, users!employer_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname)")
+        .eq("id", id).maybeSingle();
+      if (epRow) data = epRow as Record<string, unknown>;
     }
     if (data) {
-      const { data: userData } = await supabase.from("users").select("trust_score, nickname, avatar_url").eq("id", data.user_id).maybeSingle();
-      const { data: badgeData } = await supabase.from("user_badges").select("badge_key").eq("user_id", data.user_id);
-      const employerBadges = (badgeData || []).filter((b: Record<string, string>) => BADGE_DEFS[b.badge_key]).map((b: Record<string, string>) => ({ key: b.badge_key, ...BADGE_DEFS[b.badge_key] }));
-      data = { ...data, trust_score: userData?.trust_score || 0, employer_badges: employerBadges, employer_nickname: userData?.nickname || null, employer_avatar: userData?.avatar_url || null };
       setJob(data);
-      setLikeCount(Number(data.like_count || 0));
-
-      // 피드 가져오기 추가
-      try {
-        const { data: feeds } = await supabase
-          .from("feed_posts")
-          .select("*")
-          .eq("user_id", data.user_id)
-          .order("created_at", { ascending: false })
-          .limit(2);
+      const jType = String(data.job_type || "regular");
+      if (jType !== "urgent") {
+        const { data: feeds } = await supabase.from("feed_posts").select("*").eq("employer_profile_id", data.employer_profile_id || data.id).eq("is_deleted", false).order("created_at", { ascending: false }).limit(6);
         setStoreFeeds(feeds || []);
-      } catch (e) {
-        console.error("매장 피드 로드 오류:", e);
       }
-
+      setLikeCount(Number(data.like_count || 0));
       if (uid) {
-        if (uid === data.user_id || role === "admin") setIsOwner(true);
-        const { data: wp } = await supabase.from("worker_profiles").select("id").eq("user_id", uid).eq("is_public", true).eq("is_active", true).neq("job_status", "completed").maybeSingle();
-        setHasWorkerProfile(!!wp);
-        const { data: likeData } = await supabase.from("job_likes").select("id").eq("user_id", uid).eq("target_id", data.id).eq("target_type", "employer").maybeSingle();
-        setIsLiked(!!likeData);
+        const { data: like } = await supabase.from("job_likes").select("id").eq("user_id", uid).eq("target_id", data.id).maybeSingle();
+        setIsLiked(!!like);
+        const { data: wps } = await supabase.from("worker_profiles").select("id").eq("user_id", uid).maybeSingle();
+        setHasWorkerProfile(!!wps);
         if (uid !== data.user_id) {
           try {
             const tcRes = await fetch(`/api/team-compat?employerUserId=${data.user_id}&targetUserId=${uid}`);
@@ -280,41 +259,84 @@ export default function JobDetailPage() {
 
   const handleInterest = async () => {
     if (!isLoggedIn || !userId) { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); return; }
-    if (existingMatch && (existingMatch.progress_status === "cancelled" || existingMatch.progress_status === "rejected")) { setShowConfirm(true); return; }
-    
-    setSending(true);
-    // 구직 프로필이 없는 경우 백그라운드 자동 생성
-    if (!hasWorkerProfile) {
-      try {
-        const { data: u } = await supabase.from("users").select("nickname, real_name").eq("id", userId).single();
-        const profileName = u?.nickname || u?.real_name || "알바생";
-        const { error: insertErr } = await supabase.from("worker_profiles").insert({
-          user_id: userId,
-          name: profileName,
-          is_active: true,
-          is_public: true,
-          desired_region: "협의",
-          desired_type: "기타",
-          worker_type: "묵묵수행형"
-        });
-        if (!insertErr) {
-          setHasWorkerProfile(true);
-        }
-      } catch (err) {
-        console.error("자동 프로필 생성 오류:", err);
-      }
-    }
-    await sendLoveCall();
+    setShowConfirm(true);
   };
 
   const sendLoveCall = async () => {
     setSending(true);
     try {
+      if (!hasWorkerProfile) {
+        try {
+          const { data: u } = await supabase.from("users").select("nickname, real_name").eq("id", userId).single();
+          const profileName = u?.nickname || u?.real_name || "알바생";
+          const { error: insertErr } = await supabase.from("worker_profiles").insert({
+            user_id: userId,
+            name: profileName,
+            is_active: true,
+            is_public: true,
+            desired_region: "협의",
+            desired_type: "기타",
+            worker_type: "묵묵수행형"
+          });
+          if (!insertErr) {
+            setHasWorkerProfile(true);
+          }
+        } catch (err) {
+          console.error("자동 프로필 생성 오류:", err);
+        }
+      }
       const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: job?.user_id, workerId: userId, matchScore: matchScore || 0, senderType: "worker", employerProfileId: job?.employer_profile_id ?? job?.id, jobId: job?.id }) });
       const data = await res.json();
-      if (data.success) { setSent(true); setShowConfirm(false); }
-      else showToast(data.error || "오류가 발생했어요", "error");
-    } catch { showToast("오류가 발생했어요", "error"); }
+      if (data.success) {
+        setSent(true);
+        setShowConfirm(false);
+        setSuccessMatchId(data.data.id);
+      } else {
+        showToast(data.error || "오류가 발생했어요", "error");
+      }
+    } catch {
+      showToast("오류가 발생했어요", "error");
+    }
+    setSending(false);
+  };
+
+  const handleRespondDirect = async (action: "accept" | "reject") => {
+    if (!existingMatch || !userId) return;
+    const matchId = String(existingMatch.id);
+    setSending(true);
+    try {
+      const res = await fetch("/api/lovecall", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId, action }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (action === "accept") {
+          const counterpartId = existingMatch.employer_id === userId ? existingMatch.worker_id : existingMatch.employer_id;
+          await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              matchId,
+              senderId: userId,
+              receiverId: counterpartId,
+              message: "🎉 매칭이 성사됐어요! 서로 인사를 나눠보세요 😊",
+              messageType: "system",
+            }),
+          });
+          setExistingMatch(prev => prev ? { ...prev, progress_status: "accepted" } : null);
+          setMatchModal({ matchId });
+        } else {
+          setExistingMatch(prev => prev ? { ...prev, progress_status: "rejected" } : null);
+          showToast("지원을 거절했습니다.");
+        }
+      } else {
+        showToast(data.error || "오류가 발생했습니다.", "error");
+      }
+    } catch (e) {
+      showToast("오류가 발생했습니다.", "error");
+    }
     setSending(false);
   };
 
@@ -579,15 +601,24 @@ export default function JobDetailPage() {
             <span style={{ fontSize: 12 }}>{likeCount}</span>
           </button>
           {isOwner ? null : isReceived && status === "pending" ? (
-            <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "default" }}>📥 지원 받음 · MY에서 수락/거절</button>
+            <div style={{ display: "flex", gap: 8, flex: 1 }}>
+              <button onClick={() => handleRespondDirect("reject")} disabled={sending}
+                style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                거절하기
+              </button>
+              <button onClick={() => handleRespondDirect("accept")} disabled={sending}
+                style={{ flex: 2, height: 52, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
+                수락하기
+              </button>
+            </div>
           ) : status === "sent" || status === "pending" ? (
             <button disabled style={{ flex: 1, height: 52, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>📤 지원 완료 (수락 대기중)</button>
           ) : status === "accepted" ? (
             <button onClick={() => router.push(`/chat/${existingMatch?.id}`)} style={{ flex: 1, height: 52, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💬 대화 중 · 채팅방 가기</button>
           ) : status === "hired" ? (
             <button disabled style={{ flex: 1, height: 52, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fde68a", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>✅ 채용 완료</button>
-          ) : status === "rejected" ? (
-            <button onClick={handleInterest} disabled={sending} style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 거절됨 · 다시 보내기</button>
+          ) : ["rejected", "failed", "cancelled"].includes(status) ? (
+            <button onClick={handleInterest} disabled={sending} style={{ flex: 1, height: 52, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 결렬됨 · 다시 보내기</button>
           ) : (
             <button onClick={handleInterest} disabled={sending} style={{ flex: 1, height: 52, background: isLoggedIn ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "rgba(255,255,255,0.08)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 15, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
               {sending ? "처리 중..." : isLoggedIn ? "지원하기" : "로그인하고 지원하기 →"}
@@ -600,11 +631,33 @@ export default function JobDetailPage() {
       {showConfirm && (
         <div style={{ ...modalOverlay }}>
           <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>다시 지원하기</h3>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{existingMatch?.progress_status === "rejected" ? "거절된 공고에 다시 보낼까요?" : "이전에 취소한 공고예요. 다시 보낼까요?"}</p>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>
+              {existingMatch && ["cancelled", "rejected", "failed"].includes(existingMatch.progress_status) ? "재지원 확인" : "지원 확인"}
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
+              {existingMatch && ["cancelled", "rejected", "failed"].includes(existingMatch.progress_status)
+                ? "이전에 매칭이 결렬(거절/취소/실패)된 이력이 있는 매장입니다. 다시 지원서를 보내시겠습니까?"
+                : "이 매장에 지원서를 보내시겠습니까?"}
+            </p>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={sendLoveCall} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "보내기 →"}</button>
+              <button onClick={sendLoveCall} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "지원하기"}</button>
               <button onClick={() => setShowConfirm(false)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 지원 완료 모달 */}
+      {successMatchId && (
+        <div style={{ ...modalOverlay }}>
+          <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>지원 완료 🎉</h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
+              지원이 정상적으로 완료되었으며 사장님께 알림이 전송되었습니다.<br />
+              사장님이 지원을 수락하면 대화방이 열립니다.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setSuccessMatchId(null)} style={{ ...btnPrimary, flex: 1 }}>확인</button>
             </div>
           </div>
         </div>
@@ -655,6 +708,31 @@ export default function JobDetailPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {matchModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--surface)", borderRadius: 24, padding: 28, width: "100%", maxWidth: 360, textAlign: "center" }}>
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🎉</div>
+            <h3 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 8px", color: "var(--text)" }}>매칭 성사!</h3>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 24px", lineHeight: 1.6 }}>
+              본격적인 채팅 전에<br />AI 사전미팅으로 먼저 알아가볼까요? 😊
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
+                style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
+                🤖 AI 사전미팅 하기
+              </button>
+              <button onClick={() => { setMatchModal(null); router.push(`/chat/${matchModal.matchId}`); }}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>
+                💬 바로 채팅하기
+              </button>
+              <button onClick={() => setMatchModal(null)}
+                style={{ width: "100%", background: "none", border: "none", color: "var(--text-muted)", fontSize: 13, cursor: "pointer", padding: 8 }}>
+                나중에
+              </button>
+            </div>
           </div>
         </div>
       )}

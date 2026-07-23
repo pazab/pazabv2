@@ -31,6 +31,9 @@ export interface CardProps {
   onDislike?: (id: string) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
+  matchStatus?: string;
+  matchIsSent?: boolean;
+  matchId?: string;
 }
 
 export function getRegionMatchLevel(myRegion: string, targetRegion: string): "same-dong" | "same-gu" | "same-sido" | "other" {
@@ -72,7 +75,7 @@ export function DeadlineBadge({ expiresAt }: { expiresAt: string }) {
   );
 }
 
-export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onLovecall, onClick, likedIds, onHide, onReport, onDislike, onEdit, onDelete }: CardProps) {
+export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onLovecall, onClick, likedIds, onHide, onReport, onDislike, onEdit, onDelete, matchStatus, matchIsSent, matchId }: CardProps) {
   const router = useRouter();
   const id = String(item.id || item.user_id || "");
   const isLiked = likedIds ? likedIds.has(id) : false;
@@ -178,6 +181,21 @@ export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onL
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <RegionBadge />
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {matchStatus === "pending" && (
+                <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(139,92,246,0.9)", color: "#fff", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)", border: "1px solid rgba(139,92,246,0.3)" }}>
+                  {matchIsSent ? "📤 수락 대기" : "📥 지원 받음"}
+                </span>
+              )}
+              {(matchStatus === "accepted" || matchStatus === "interviewing") && (
+                <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(34,197,94,0.9)", color: "#fff", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)", border: "1px solid rgba(34,197,94,0.3)" }}>
+                  💬 대화 중
+                </span>
+              )}
+              {matchStatus === "hired" && (
+                <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(251,191,36,0.9)", color: "#000", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)" }}>
+                  ✅ 채용 완료
+                </span>
+              )}
               {jobType === "urgent" && (
                 <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(239,68,68,0.9)", color: "#fff", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)" }}>
                   🚨 {workStartDate ? formatDateBadge(workStartDate) : "긴급"}
@@ -214,6 +232,21 @@ export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onL
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <RegionBadge />
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {matchStatus === "pending" && (
+                <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(236,72,153,0.9)", color: "#fff", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)", border: "1px solid rgba(236,72,153,0.3)" }}>
+                  {matchIsSent ? "📤 제안 완료" : "📥 제안 받음"}
+                </span>
+              )}
+              {(matchStatus === "accepted" || matchStatus === "interviewing") && (
+                <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(34,197,94,0.9)", color: "#fff", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)", border: "1px solid rgba(34,197,94,0.3)" }}>
+                  💬 대화 중
+                </span>
+              )}
+              {matchStatus === "hired" && (
+                <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(251,191,36,0.9)", color: "#000", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)" }}>
+                  ✅ 채용 완료
+                </span>
+              )}
               {!!item.available_now && (
                 <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(34,197,94,0.85)", color: "#fff", padding: "3px 7px", borderRadius: 8, backdropFilter: "blur(4px)" }}>⚡ 즉시출근</span>
               )}

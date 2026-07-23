@@ -28,9 +28,10 @@ export async function GET(req: NextRequest) {
       ...(employerRes.data || []).map(m => ({ ...m, myRole: "employer" })),
     ];
 
-    // 같은 employer+worker 조합은 최신 match만 표시
+    // 최신 날짜순 정렬 후 같은 employer+worker 조합은 최신 match만 표시
+    const sortedMatches = allMatches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     const seen = new Set<string>();
-    const deduped = allMatches.filter(m => {
+    const deduped = sortedMatches.filter(m => {
       const key = [m.employer_id, m.worker_id].sort().join("-");
       if (seen.has(key)) return false;
       seen.add(key);
