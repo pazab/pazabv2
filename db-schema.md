@@ -42,6 +42,7 @@
 | sudoku_records | ✅ 사용 중 | |
 | tax_rates | ✅ 사용 중 | 세율 |
 | team_members | ✅ 사용 중 | |
+| team_member_documents | ⏳ 스키마만 작성 (2026-07-24) | 서류함(등본/보건증/통장사본) — `supabase/patch_team_documents.sql`, 미실행. UI/API 미구현 |
 | user_badges | ✅ 사용 중 | |
 | users | ✅ 사용 중 | name 컬럼 DROP 완료 |
 | worker_profiles | ✅ 사용 중 | trust_score/grade DROP 완료 |

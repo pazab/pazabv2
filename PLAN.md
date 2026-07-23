@@ -14,7 +14,9 @@
 - **team_members.employer_profile_id 누락 — 매장 여러 개인 사장님 계약서에서 엉뚱한 매장 뜨는 버그**: 채팅에서 직접 채용확정(`hire_accept`)할 때와 계약서 서명 API 양쪽 다 `matches.employer_profile_id`를 넘기지 않고 team_members를 생성해서, `/contract`가 "가장 최근 등록한 매장"으로 잘못 폴백. `app/api/chat/route.ts`가 애초에 그 컬럼을 select 안 하던 게 원인 — select에 추가하고 두 생성 경로 다 실제 값을 넘기도록 수정.
 - **`/contract` 페이지 자체의 불일치 버그**: "매장 선택 칩"과 "주소/사업자정보 폼"을 서로 다른 독립 쿼리로 채우고 있어서, 매장이 여러 개면 두 쿼리의 "최근 매장" 폴백이 서로 다른 걸 골라 화면 안에서 매장이 안 맞는 프랑켄슈타인 현상 발생. `loadByMember`/`load`/`handleSelectMatch` 세 곳 다 매장 정보를 항상 매장칩 목록(`availableEps`/`myEps`)에서 찾아 쓰도록 통일. `load()`의 폴백 쿼리에 존재하지 않는 컬럼명(`biz_address`)이 섞여 있던 것도 같이 제거.
 - **근로자 개인정보(생년월일/연락처/주소) 수집 시점 변경**: 원래 계약서 "근로자" 스텝에서 필수였는데, 사장님이 정확히 모를 수 있는 정보라 여기선 선택으로 풀고(`app/contract/page.tsx`), 대신 알바생이 "계약서 동의" 하는 순간(`app/chat/[id]/page.tsx`의 `showSignConfirm`)에 비어있는 항목만 인라인으로 채우게 하고 `users`에 저장하도록 이동. 이 화면에 토스트(`useToast`)도 새로 연결.
-- **남은 작업**: 등본/보건증/통장사본을 팀원 상세에 업로드해두는 "서류함" 기능 — 논의만 하고 아직 미구현. 주민등록번호는 구조화된 필드로 저장하지 않고(개인정보보호법 이슈), 4대보험 신고 등 실제 필요 시점에만 다루는 방향으로 합의, 별도 구현 없음.
+- **서류함 (등본/보건증/통장사본) — 스키마만 작성, 아직 미실행/미구현**: `supabase/patch_team_documents.sql`에 `team_member_documents` 테이블 정의 완료 (team_member_id, doc_type: resident_registration/health_certificate/bank_copy, file_url, expires_at, uploaded_by + RLS). **Supabase에 아직 실행 안 함.** 파일은 기존 `media` 스토리지 버킷 재사용 예정, 새 버킷 불필요. 계약서는 이미 `contracts` 테이블이 있어서 이 테이블 대상에서 제외.
+  - **다음에 할 일**: (1) 위 SQL Supabase에서 실행 (2) 팀원 상세(`app/employer/team/[id]/page.tsx`) 페이지에 서류함 섹션 UI 추가 — 문서 타입별 업로드 버튼 + 미리보기 + 삭제 (3) 업로드는 클라이언트에서 `media` 버킷에 직접 올리고 `team_member_documents`에 메타데이터만 insert (4) 보건증은 만료일 입력 필드 추가하고, 가능하면 만료 임박 알림(기존 알림 시스템 재사용) 연동
+  - 주민등록번호는 구조화된 필드로 저장하지 않고(개인정보보호법 이슈), 4대보험 신고 등 실제 필요 시점에만 다루는 방향으로 합의, 별도 구현 없음.
 
 **매칭 프로세스 고도화, 양방향 알림 및 탐색 페이지 매칭 상태 연동 (2026-07-18)**
 - **양방향 알림 발송 연동 (`app/api/lovecall/route.ts`)**:
