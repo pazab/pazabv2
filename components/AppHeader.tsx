@@ -101,21 +101,17 @@ export default function AppHeader({
               <i className="ti ti-dots-vertical" style={{ fontSize: 20 }} aria-hidden="true" />
             </button>
             {menuOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", width: 190, boxShadow: "var(--shadow-elevate)", zIndex: 50 }}>
-                {/* 동결군 — 탐색/피드: 톤다운, 대타 SOS는 하단 네비 중앙에 이미 있어 중복 노출 안 함 */}
-                <div style={{ padding: "8px 16px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", letterSpacing: 0.3 }}>
-                  둘러보기
-                </div>
-                <button onClick={() => { setMenuOpen(false); router.push("/explore"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "11px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 10 }}>
-                  <i className="ti ti-compass" style={{ fontSize: 15, opacity: 0.7 }} aria-hidden="true" /> 알바 탐색
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", width: 180, boxShadow: "var(--shadow-elevate)", zIndex: 50 }}>
+                <button onClick={() => { setMenuOpen(false); router.push("/mypage"); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", fontWeight: 600, display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border)" }}>
+                  <i className="ti ti-user" style={{ fontSize: 16, color: "var(--primary)" }} aria-hidden="true" /> 마이페이지
                 </button>
-                <button onClick={() => { setMenuOpen(false); router.push("/feed"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "11px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text-muted)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                  <i className="ti ti-news" style={{ fontSize: 15, opacity: 0.7 }} aria-hidden="true" /> 피드
+                <button onClick={() => { setMenuOpen(false); router.push("/chat"); }}
+                  style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", fontWeight: 600, display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border)" }}>
+                  <i className="ti ti-message-dots" style={{ fontSize: 16, color: "var(--primary)" }} aria-hidden="true" /> 전체 채팅함
                 </button>
                 <button onClick={() => { setMenuOpen(false); router.push("/settings"); }}
-                  style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+                  style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
                   <i className="ti ti-settings" style={{ fontSize: 16 }} aria-hidden="true" /> 설정
                 </button>
               </div>

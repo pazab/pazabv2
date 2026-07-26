@@ -348,6 +348,7 @@ export default function TeamMemberPage() {
   const [inlineStart, setInlineStart] = useState("");
   const [inlineEnd, setInlineEnd] = useState("");
   const [inlineSaving, setInlineSaving] = useState(false);
+  const [showAllMonthAtt, setShowAllMonthAtt] = useState(false);
 
   // 근무조건 수정 모달
   const [showWorkModal, setShowWorkModal] = useState(false);
@@ -1385,9 +1386,38 @@ export default function TeamMemberPage() {
           {/* 날짜별 인라인 출퇴근 편집 리스트 */}
           {monthAtt.length > 0 && (
             <div style={{ marginTop: 14 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 8px" }}>이번달 근태 기록</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", margin: 0 }}>
+                  이번달 근태 기록 {monthAtt.length > 3 && !showAllMonthAtt && <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.7 }}>(최근 3건 표시 중)</span>}
+                </p>
+                {monthAtt.length > 3 && (
+                  <button
+                    onClick={() => setShowAllMonthAtt(!showAllMonthAtt)}
+                    style={{
+                      background: "var(--primary-light, rgba(139,92,246,0.12))",
+                      border: "1px solid var(--primary-border, rgba(139,92,246,0.3))",
+                      color: "var(--primary, #8b5cf6)",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      padding: "4px 10px",
+                      borderRadius: 12,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    <span>{showAllMonthAtt ? "접기" : `전체보기 (${monthAtt.length}건)`}</span>
+                    <i className={`ti ${showAllMonthAtt ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {[...monthAtt].sort((a, b) => a.work_date < b.work_date ? -1 : 1).map(att => {
+                {(showAllMonthAtt
+                  ? [...monthAtt].sort((a, b) => b.work_date.localeCompare(a.work_date))
+                  : [...monthAtt].sort((a, b) => b.work_date.localeCompare(a.work_date)).slice(0, 3)
+                ).map(att => {
                   const isEditing = inlineEditDate === att.work_date;
                   const statusMeta = ATTENDANCE_STATUS.find(s => s.id === att.status);
                   const ciTime = att.check_in ? new Date(att.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
@@ -1480,8 +1510,35 @@ export default function TeamMemberPage() {
                   );
                 })}
               </div>
+              {monthAtt.length > 3 && (
+                <button
+                  onClick={() => setShowAllMonthAtt(!showAllMonthAtt)}
+                  style={{
+                    width: "100%",
+                    marginTop: 10,
+                    background: "var(--primary-light, rgba(139,92,246,0.12))",
+                    border: "1px solid var(--primary-border, rgba(139,92,246,0.3))",
+                    borderRadius: 12,
+                    padding: "10px",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: "var(--primary, #8b5cf6)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    boxShadow: "0 2px 8px rgba(139,92,246,0.15)",
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  <span>{showAllMonthAtt ? "최근 3개만 보기 (접기)" : `이번달 전체 근태 기록 펼치기 (${monthAtt.length}건)`}</span>
+                  <i className={`ti ${showAllMonthAtt ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 14, fontWeight: 900 }} aria-hidden="true" />
+                </button>
+              )}
             </div>
           )}
+
 
           {/* 근태 수정 이력 */}
           <AttendanceLogs memberId={member.id} refreshKey={attLogRefreshKey} />

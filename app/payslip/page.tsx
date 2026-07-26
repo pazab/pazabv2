@@ -757,18 +757,24 @@ function PayslipContent() {
               onClick={() => setExpandAttendance(!expandAttendance)}
               style={{
                 width: "100%",
-                background: "none",
-                border: "none",
-                padding: "10px 0 0",
-                color: "#8b5cf6",
-                fontSize: 11,
-                fontWeight: 700,
+                marginTop: 8,
+                background: "var(--primary-light, rgba(139,92,246,0.12))",
+                border: "1px solid var(--primary-border, rgba(139,92,246,0.3))",
+                borderRadius: 12,
+                padding: "8px",
+                color: "var(--primary, #8b5cf6)",
+                fontSize: 12,
+                fontWeight: 800,
                 cursor: "pointer",
-                textAlign: "center",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
                 outline: "none"
               }}
             >
-              {expandAttendance ? "접기 ▴" : `더보기 (외 ${attendance.length - 3}건) ▾`}
+              <span>{expandAttendance ? "근태 기록 접기" : `근태 더보기 (외 ${attendance.length - 3}건)`}</span>
+              <i className={`ti ${expandAttendance ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
             </button>
           )}
         </div>

@@ -154,7 +154,7 @@ export default function ProfilePage() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 100, width: "100%", maxWidth: 480, margin: "0 auto" }}>
-      <AppHeader title="프로필" showBack showBellAndMenu={true} />
+      <AppHeader title="소셜 프로필" showBack showBellAndMenu={true} />
 
       <div style={{ padding: "16px" }}>
 

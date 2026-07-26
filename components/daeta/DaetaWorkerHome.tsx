@@ -10,8 +10,10 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
 import AppHeader from "@/components/AppHeader";
 import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
+import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import TierBadge from "@/components/TierBadge";
 import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
+
 
 interface WorkerProfileLite {
   id: string;
@@ -53,7 +55,13 @@ function calcDistance(a: { lat: number; lng: number }, b: { lat: number; lng: nu
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-export default function DaetaWorkerHome({ userId }: { userId: string }) {
+interface DaetaWorkerHomeProps {
+  userId: string;
+  roleView?: "employer" | "worker";
+  onRoleChange?: (r: "employer" | "worker") => void;
+}
+
+export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: DaetaWorkerHomeProps) {
   const router = useRouter();
   const { showToast, ToastUI } = useToast();
 
@@ -65,14 +73,17 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [userInfo, setUserInfo] = useState<{ nickname?: string; avatar_url?: string } | null>(null);
 
   const load = useCallback(async () => {
-    // 1) 내 프로필 (최신 active)
+    const { data: u } = await supabase.from("users").select("nickname, avatar_url").eq("id", userId).maybeSingle();
+    if (u) setUserInfo(u);
+
+    // 1) 내 프로필
     const { data: profiles } = await supabase
       .from("worker_profiles")
       .select("id, available_now, lat, lng")
       .eq("user_id", userId)
-      .eq("is_active", true)
       .order("created_at", { ascending: false })
       .limit(1);
     const p = (profiles?.[0] as WorkerProfileLite | undefined) || null;
@@ -98,46 +109,41 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
     );
     setAppliedIds(new Set(myApplied.map((m: { daeta_posting_id: string }) => m.daeta_posting_id)));
 
-    let incomingList: IncomingRequest[] = [];
+    // 4) 나에게 전달된 대타 요청 공고 세부 정보 로드
     if (receivedMatches.length > 0) {
       const postingIds = receivedMatches.map((m: { daeta_posting_id: string }) => m.daeta_posting_id);
-      const { data: postings } = await supabase
+      const { data: postingRows } = await supabase
         .from("daeta_postings")
-        .select("id, business_name, region, work_date, work_hours, wage, duty, status")
+        .select("id, business_name, region, work_date, work_hours, wage, duty")
         .in("id", postingIds)
         .eq("status", "pending");
-      const postingMap: Record<string, { business_name: string; region: string; work_date: string; work_hours: string; wage: number; duty: string }> = {};
-      (postings || []).forEach((row: { id: string; business_name: string; region: string; work_date: string; work_hours: string; wage: number; duty: string }) => {
-        postingMap[row.id] = row;
-      });
-      incomingList = receivedMatches
-        .filter((m: { daeta_posting_id: string }) => postingMap[m.daeta_posting_id])
-        .map((m: { id: string; daeta_posting_id: string }) => {
-          const post = postingMap[m.daeta_posting_id];
-          return {
-            matchId: m.id,
-            postingId: m.daeta_posting_id,
-            businessName: post.business_name,
-            region: post.region,
-            workDate: post.work_date,
-            workHours: post.work_hours,
-            wage: post.wage,
-            duty: post.duty,
-          };
-        });
-    }
-    setIncoming(incomingList);
 
-    // 4) 동네 대타 자리 — Tier별 노출 규칙 (STRATEGY.md §4)
-    //    Tier1: stage>=2 / Tier2: (stage>=3 && allow_new) 또는 stage 4
+      const matchMap: Record<string, string> = {};
+      receivedMatches.forEach((m: { id: string; daeta_posting_id: string }) => {
+        matchMap[m.daeta_posting_id] = m.id;
+      });
+
+      const list: IncomingRequest[] = (postingRows || []).map((row: { id: string; business_name: string; region: string; work_date: string; work_hours: string; wage: number; duty: string }) => ({
+        matchId: matchMap[row.id] || "",
+        postingId: row.id,
+        businessName: row.business_name,
+        region: row.region,
+        workDate: row.work_date,
+        workHours: row.work_hours,
+        wage: row.wage,
+        duty: row.duty,
+      }));
+      setIncoming(list);
+    } else {
+      setIncoming([]);
+    }
+
+    // 5) 내 동네/Tier 기준 주변 대타 공고 로드
     const { data: openPostings } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, lat, lng, escalation_stage, allow_new, status, expires_at")
+      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, lat, lng, escalation_stage, allow_new")
       .eq("status", "pending")
-      .neq("user_id", userId)
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
-      .limit(30);
+      .order("created_at", { ascending: false });
 
     const visible = (openPostings || []).filter((row: { escalation_stage: number; allow_new: boolean }) => {
       const stage = row.escalation_stage || 1;
@@ -170,21 +176,54 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
   useEffect(() => { load(); }, [load]);
 
   const toggleAvailable = async () => {
-    if (!profile) {
-      showToast("먼저 마이페이지에서 알바 프로필을 만들어 주세요", "warning");
-      router.push("/mypage");
+    let currentProfile = profile;
+
+    if (!currentProfile) {
+      const { data: existing } = await supabase
+        .from("worker_profiles")
+        .select("id, available_now, lat, lng")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        currentProfile = existing;
+      }
+    }
+
+    if (!currentProfile) {
+      const { data: newP, error: upsertErr } = await supabase
+        .from("worker_profiles")
+        .upsert({
+          user_id: userId,
+          available_now: true,
+          is_active: true,
+          is_public: true,
+        }, { onConflict: "user_id" })
+        .select("id, available_now, lat, lng")
+        .single();
+
+      if (upsertErr || !newP) {
+        showToast("알바 프로필 생성 실패: " + (upsertErr?.message || ""), "error");
+        return;
+      }
+      setProfile(newP);
+      showToast("🟢 대타 가능! 동네 SOS 알림을 받아요", "success");
       return;
     }
-    const next = !profile.available_now;
+
+    const next = !currentProfile.available_now;
     const { error } = await supabase
       .from("worker_profiles")
-      .update({ available_now: next })
-      .eq("id", profile.id);
+      .update({ available_now: next, is_active: true, is_public: true })
+      .eq("id", currentProfile.id);
+
     if (error) {
       showToast("변경 실패: " + error.message, "error");
       return;
     }
-    setProfile({ ...profile, available_now: next });
+    setProfile({ ...currentProfile, available_now: next });
     showToast(next ? "🟢 대타 가능! 동네 SOS 알림을 받아요" : "⚪ 대타 알림을 껐어요", next ? "success" : "info");
   };
 
@@ -251,6 +290,9 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg, #0a0a0f)", paddingBottom: 100 }}>
       <AppHeader title="대타" showBellAndMenu />
+      {roleView && onRoleChange && (
+        <DaetaRoleTabBar roleView={roleView} onRoleChange={onRoleChange} />
+      )}
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px 0" }}>
 
@@ -295,6 +337,82 @@ export default function DaetaWorkerHome({ userId }: { userId: string }) {
             }} />
           </div>
         </button>
+
+        {/* 🟢 대타 활성화 시 노출되는 실시간 레이더 & 내 프로필 카드 미리보기 */}
+        {available && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(34,197,94,0.14) 0%, rgba(16,185,129,0.06) 100%)",
+            border: "1px solid rgba(34, 197, 94, 0.35)",
+            borderRadius: 20,
+            padding: 16,
+            marginBottom: 16,
+            boxShadow: "0 4px 20px rgba(34, 197, 94, 0.15)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ position: "relative", display: "flex", width: 10, height: 10 }}>
+                  <span style={{ position: "absolute", display: "inline-flex", width: "100%", height: "100%", borderRadius: "50%", background: "#22c55e", opacity: 0.75, animation: "ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite" }} />
+                  <span style={{ position: "relative", display: "inline-flex", width: 10, height: 10, borderRadius: "50%", background: "#22c55e" }} />
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 900, color: "#4ade80", letterSpacing: "-0.3px" }}>
+                  📡 실시간 대타 탐색망 감지 중
+                </span>
+              </div>
+              <span style={{ fontSize: 10, background: "rgba(34,197,94,0.2)", color: "#86efac", padding: "3px 8px", borderRadius: 12, fontWeight: 800 }}>
+                사장님 매칭 가능
+              </span>
+            </div>
+
+            {/* 내 프로필 카드 미리보기 */}
+            <div style={{
+              background: "var(--surface, rgba(255,255,255,0.06))",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 14,
+              padding: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}>
+              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--primary, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 18, overflow: "hidden", flexShrink: 0, border: "2px solid rgba(34,197,94,0.6)" }}>
+                {userInfo?.avatar_url ? (
+                  <img src={userInfo.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span>{userInfo?.nickname?.[0]?.toUpperCase() || "👤"}</span>
+                )}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)" }}>
+                    {userInfo?.nickname || "내 프로필"}
+                  </span>
+                  <TierBadge tier={myTier} size="sm" />
+                </div>
+                <p style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.6))", margin: 0 }}>
+                  👁️ 사장님들에게 내 대타 카드가 1순위 추천 중
+                </p>
+              </div>
+              <button
+                onClick={() => router.push(`/worker/${userId}`)}
+                style={{
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                내 카드 보기
+              </button>
+            </div>
+            <style>{`@keyframes ping { 75%,100%{transform:scale(2.2);opacity:0} }`}</style>
+          </div>
+        )}
+
 
         {/* 내 Tier + 승격 배너 */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, padding: "0 4px" }}>

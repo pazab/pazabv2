@@ -10,6 +10,7 @@ import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
 import TierBadge from "@/components/TierBadge";
 import { btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 import { EntityLink } from "@/components/EntityLink";
+import AppHeader from "@/components/AppHeader";
 
 function HeroScoreBadge({ score }: { score: number }) {
   const level = getMatchLevel(score);
@@ -101,6 +102,7 @@ export default function WorkerDetailPage() {
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [feeds, setFeeds] = useState<Record<string, unknown>[]>([]);
   const [workerTier, setWorkerTier] = useState<DaetaTier | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   useEffect(() => {
     if (typeof id === "string") {
@@ -255,7 +257,34 @@ export default function WorkerDetailPage() {
 
   const handleLoveCall = async () => {
     if (!isLoggedIn || !userId) { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); return; }
+    if (employerProfiles.length === 0) {
+      setPendingConfirm({
+        title: "사장님 프로필 등록 필요",
+        message: "채용 제안은 매장을 등록하신 사장님만 보낼 수 있습니다. 사장님 프로필(매장)을 등록하시겠습니까?",
+        onConfirm: () => {
+          setPendingConfirm(null);
+          router.push("/employer/register?return=" + encodeURIComponent(window.location.pathname));
+        }
+      });
+      return;
+    }
     setShowConfirm(true);
+  };
+
+  const handleSosClick = () => {
+    if (!isLoggedIn || !userId) { localStorage.setItem("login_redirect", window.location.pathname); router.push("/login"); return; }
+    if (employerProfiles.length === 0) {
+      setPendingConfirm({
+        title: "사장님 프로필 등록 필요",
+        message: "대타 SOS 요청은 매장을 등록하신 사장님만 보낼 수 있습니다. 사장님 프로필(매장)을 등록하시겠습니까?",
+        onConfirm: () => {
+          setPendingConfirm(null);
+          router.push("/employer/register?return=" + encodeURIComponent(window.location.pathname));
+        }
+      });
+      return;
+    }
+    router.push(`/daeta?targetWorkerId=${id}`);
   };
 
   const sendLoveCall = async () => {
@@ -358,6 +387,7 @@ export default function WorkerDetailPage() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 150, width: "100%", maxWidth: 480, margin: "0 auto" }}>
+      <AppHeader title="파잡 커리어" showBack showBellAndMenu={true} />
       {ToastUI}
 
       {/* 히어로 */}
@@ -390,12 +420,10 @@ export default function WorkerDetailPage() {
           </>
         )}
 
-        {/* 상단 컨트롤 */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "48px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <button onClick={() => router.back()} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
-          <div style={{ display: "flex", gap: 8 }}>
-            {matchScore != null && <HeroScoreBadge score={matchScore} />}
-            <div style={{ position: "relative" }}>
+        {/* 히어로 오버레이 컨트롤 */}
+        <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, zIndex: 30 }}>
+          {matchScore != null && <HeroScoreBadge score={matchScore} />}
+          <div style={{ position: "relative" }}>
               <button onClick={() => setShowMenu(!showMenu)} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⋯</button>
               {showMenu && (
                 <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", width: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 50 }}>
@@ -414,7 +442,6 @@ export default function WorkerDetailPage() {
               )}
             </div>
           </div>
-        </div>
 
         {/* 히어로 하단 */}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
@@ -580,9 +607,34 @@ export default function WorkerDetailPage() {
           ) : ["rejected", "failed", "cancelled"].includes(status) ? (
             <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 결렬됨 · 다시 보내기</button>
           ) : (
-            <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: isLoggedIn ? "var(--primary)" : "var(--surface2)", border: "none", color: isLoggedIn ? "#fff" : "var(--text-muted)", fontWeight: 800, borderRadius: 14, fontSize: 15, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
-              {sending ? "처리 중..." : isLoggedIn ? "채용 제안하기" : "로그인하고 채용 제안하기 →"}
-            </button>
+            <div style={{ display: "flex", gap: 8, flex: 1 }}>
+              {Boolean(worker?.available_now) && (
+                <button
+                  onClick={handleSosClick}
+                  style={{
+                    flex: 1,
+                    height: 52,
+                    background: "linear-gradient(135deg, #f97316, #ef4444)",
+                    border: "none",
+                    color: "#fff",
+                    fontWeight: 900,
+                    borderRadius: 14,
+                    fontSize: 14,
+                    cursor: "pointer",
+                    boxShadow: "0 3px 12px rgba(249,115,22,0.35)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4
+                  }}
+                >
+                  ⚡ 대타 SOS 요청
+                </button>
+              )}
+              <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: isLoggedIn ? "var(--primary)" : "var(--surface2)", border: "none", color: isLoggedIn ? "#fff" : "var(--text-muted)", fontWeight: 800, borderRadius: 14, fontSize: 14, cursor: "pointer", opacity: sending ? 0.7 : 1, letterSpacing: "-0.3px" }}>
+                {sending ? "..." : isLoggedIn ? "💼 채용 제안" : "로그인 후 제안 →"}
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -626,6 +678,20 @@ export default function WorkerDetailPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={sendLoveCall} disabled={sending} style={{ ...btnPrimary, flex: 1 }}>{sending ? "처리 중..." : "제안하기"}</button>
               <button onClick={() => setShowConfirm(false)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 사장님 프로필 등록 확인 모달 */}
+      {pendingConfirm && (
+        <div style={{ ...modalOverlay }}>
+          <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 8px" }}>{pendingConfirm.title}</h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{pendingConfirm.message}</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={pendingConfirm.onConfirm} style={{ ...btnPrimary, flex: 2 }}>확인 (등록으로 이동)</button>
+              <button onClick={() => setPendingConfirm(null)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
             </div>
           </div>
         </div>

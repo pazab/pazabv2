@@ -134,9 +134,16 @@ export default function DaetaPage() {
   };
 
   const handleCall = async (c: Candidate) => {
-    if (!currentUserId || !isEmployer) {
-      showToast("대타 요청은 사장님 회원만 가능합니다.", "error");
+    if (!currentUserId) {
+      showToast("로그인이 필요한 서비스입니다.", "error");
+      router.push("/login");
       return;
+    }
+    
+    if (!isEmployer || userType !== "both") {
+      setIsEmployer(true);
+      setUserType("both");
+      await supabase.from("users").update({ user_type: "both" }).eq("id", currentUserId);
     }
     
     if (!activePosting) {
@@ -382,8 +389,8 @@ export default function DaetaPage() {
       `)
       .eq("is_active", true)
       .eq("is_public", true)
-      .not("lat", "is", null)
       .limit(50);
+
 
     if (error || !data) { setStep("feed"); return; }
 
@@ -481,31 +488,14 @@ export default function DaetaPage() {
     </div>
   );
 
-  // ── 역할별 SOS 홈 (로그인 유저 기본 화면) ──
+  // ── 단일 통합 대타 허브 홈 ──
   if (view === "home" && currentUserId) {
     return (
-      <>
-        {userType === "both" && (
-          <div style={{ position: "fixed", top: 62, left: "50%", transform: "translateX(-50%)", zIndex: 40, display: "flex", background: "rgba(24,24,27,0.92)", backdropFilter: "blur(12px)", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 20, padding: 3 }}>
-            {(["employer", "worker"] as const).map(r => (
-              <button key={r} onClick={() => setRoleView(r)}
-                style={{
-                  padding: "6px 14px", borderRadius: 17, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                  background: roleView === r ? "#fb923c" : "none",
-                  color: roleView === r ? "#fff" : "rgba(255,255,255,0.5)",
-                  display: "flex", alignItems: "center", gap: 4,
-                }}>
-                <i className={`ti ${r === "employer" ? "ti-building-store" : "ti-user"}`} aria-hidden="true" /> {r === "employer" ? "사장님" : "알바생"}
-              </button>
-            ))}
-          </div>
-        )}
-        {roleView === "employer" ? (
-          <DaetaSosHome userId={currentUserId} userType={userType} onOpenDeck={openDeck} />
-        ) : (
-          <DaetaWorkerHome userId={currentUserId} />
-        )}
-      </>
+      <DaetaSosHome
+        userId={currentUserId}
+        userType={userType}
+        onOpenDeck={openDeck}
+      />
     );
   }
 

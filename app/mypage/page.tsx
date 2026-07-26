@@ -339,27 +339,27 @@ function ConfirmModal({ title, desc, confirmLabel, confirmColor, onConfirm, onCa
   );
 }
 
-function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, onCancel, onDelete, onNavigate, onProgress, router }: {
-  title: string; calls: any[]; showRespond: boolean;
-  respondingId: string | null;
-  onRespond: (id: string, action: "accept" | "reject") => void;
-  onCancel: (id: string) => void;
-  onDelete: (id: string) => void;
-  onNavigate: (lc: any) => void;
-  onProgress?: (id: string, action: string) => void;
-  router: any;
-}) {
-  // 정렬: 진행중 > 대기중 > 성사됨 > 채용완료 > 기타
-  const sortOrder: Record<string, number> = {
-    interviewing: 0, accepted: 1, pending: 2,
-    hired: 3, rejected: 4, cancelled: 5, failed: 6
-  };
+function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, onCancel, onNavigate, onDelete, router }: any) {
+  const [expanded, setExpanded] = useState(false);
+
   const sorted = [...calls].sort((a, b) => {
-    const as = sortOrder[a.progress_status || a.status] ?? 9;
-    const bs = sortOrder[b.progress_status || b.status] ?? 9;
+    const statusPriority = (lc: any) => {
+      const ps = lc.progress_status || lc.status;
+      if (ps === "interviewing") return 1;
+      if (ps === "accepted") return 2;
+      if (ps === "pending") return 3;
+      if (ps === "hired") return 4;
+      return 5;
+    };
+
+    const as = statusPriority(a);
+    const bs = statusPriority(b);
     if (as !== bs) return as - bs;
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
+
+  const visibleCalls = expanded ? sorted : sorted.slice(0, 3);
+  const hasMore = sorted.length > 3;
 
   const getStatusInfo = (lc: any) => {
     const ps = lc.progress_status || lc.status;
@@ -377,15 +377,21 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
 
   return (
     <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, marginBottom: 12 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>{title}
-        {calls.filter(lc => (lc.progress_status || lc.status) === "pending").length > 0 && (
-          <span style={{ marginLeft: 8, background: "var(--primary)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 20 }}>
-            {calls.filter(lc => (lc.progress_status || lc.status) === "pending").length}
-          </span>
-        )}
+      <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          {title}
+          {calls.filter((lc: any) => (lc.progress_status || lc.status) === "pending").length > 0 && (
+            <span style={{ marginLeft: 8, background: "var(--primary)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 20 }}>
+              {calls.filter((lc: any) => (lc.progress_status || lc.status) === "pending").length}
+            </span>
+          )}
+        </div>
+        <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
+          총 {sorted.length}건
+        </span>
       </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {sorted.map(lc => {
+        {visibleCalls.map((lc: any) => {
           const cp = lc.counterpart;
           const statusInfo = getStatusInfo(lc);
           const isWorkerRole = lc.myRole === "worker";
@@ -471,12 +477,7 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                       style={{ flex: 1, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
                       💬 채팅하기
                     </button>
-                    {onProgress && lc.myRole === "employer" && (
-                      <button onClick={() => onProgress(lc.id, "interview")}
-                        style={{ flex: 1, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-                        📅 면접 예약
-                      </button>
-                    )}
+                    {/* (Optional logic for onProgress) */}
                   </div>
                 );
                 if (ps === "interviewing") return (
@@ -485,18 +486,6 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                       style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
                       💬 채팅
                     </button>
-                    {onProgress && lc.myRole === "employer" && (
-                      <>
-                        <button onClick={() => onProgress(lc.id, "hire")}
-                          style={{ flex: 1, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-                          ✅ 채용 확정
-                        </button>
-                        <button onClick={() => onProgress(lc.id, "fail")}
-                          style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 600, padding: "8px 10px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-                          ✗
-                        </button>
-                      </>
-                    )}
                   </div>
                 );
                 if (ps === "hired") return (
@@ -525,6 +514,31 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
           );
         })}
       </div>
+
+      {hasMore && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            width: "100%",
+            marginTop: 10,
+            padding: "10px",
+            borderRadius: 12,
+            background: "var(--surface2)",
+            border: "1px solid var(--border)",
+            color: "var(--primary, #8b5cf6)",
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6
+          }}
+        >
+          <span>{expanded ? "접기" : `펼치기 (전체 ${sorted.length}개 보기)`}</span>
+          <i className={`ti ${expanded ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 14 }} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }
@@ -1046,7 +1060,7 @@ function MyPageContent() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 120 }}>
-      <AppHeader title="MY" showSettings />
+      <AppHeader title="마이페이지" showSettings />
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px" }}>
         <div style={{ padding: "0 0px" }}>
@@ -1107,7 +1121,44 @@ function MyPageContent() {
             {/* 등급 + 뱃지 */}
             <UserGradeBadge userId={user.id} trustScore={user.trust_score} userType={user.user_type} />
           </div>
+        </div>
 
+        {/* 내 공개 프로필 바로가기 덱 */}
+        <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "14px 16px", marginBottom: 14 }}>
+          <p style={{ fontSize: 12, fontWeight: 900, color: "var(--text-muted)", margin: "0 0 10px", letterSpacing: "0.5px" }}>
+            내 공개 프로필 카드 미리보기
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <button
+              onClick={() => router.push(`/worker/${user.id}`)}
+              style={{
+                background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(139,92,246,0.08) 100%)",
+                border: "1px solid var(--primary-border)",
+                borderRadius: 14,
+                padding: "12px",
+                textAlign: "left",
+                cursor: "pointer"
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 900, color: "var(--purple-text)", marginBottom: 2 }}>파잡 커리어</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>경력 및 신뢰도 이력</div>
+            </button>
+
+            <button
+              onClick={() => router.push(`/profile/${user.id}`)}
+              style={{
+                background: "linear-gradient(135deg, rgba(236,72,153,0.15) 0%, rgba(244,114,182,0.08) 100%)",
+                border: "1px solid var(--chip-pink-border)",
+                borderRadius: 14,
+                padding: "12px",
+                textAlign: "left",
+                cursor: "pointer"
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 900, color: "var(--pink-text)", marginBottom: 2 }}>소셜 프로필</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>피드 및 활동 뱃지</div>
+            </button>
+          </div>
         </div>
 
         {/* 팀·소속 바로가기 */}
@@ -1168,14 +1219,32 @@ function MyPageContent() {
                 {/* 지원 현황 배지 버튼 */}
                 {!loveCallLoading && (
                   <button onClick={() => setShowWorkerCalls(v => !v)}
-                    style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                      📋 지원 현황
-                      {wPending > 0 && <span style={{ background: "#fff", color: "var(--accent)", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{wPending}개 대기</span>}
-                      {wPending === 0 && wTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{wTotal}건</span>}
-                      {wTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
-                    </span>
-                    <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, transition: "transform 0.2s", transform: showWorkerCalls ? "rotate(180deg)" : "none" }}>▾</span>
+                    style={{
+                      width: "100%",
+                      background: showWorkerCalls
+                        ? "var(--surface2, rgba(255,255,255,0.08))"
+                        : "var(--surface, rgba(255,255,255,0.04))",
+                      border: showWorkerCalls
+                        ? "1.5px solid var(--primary, #8b5cf6)"
+                        : "1px solid var(--border, rgba(255,255,255,0.12))",
+                      borderRadius: 14,
+                      padding: "12px 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease"
+                    }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: "var(--text, #fff)" }}>📋 지원 현황</span>
+                      {wPending > 0 && <span style={{ background: "#ec4899", color: "#fff", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "2px 8px" }}>{wPending}개 대기</span>}
+                      {wPending === 0 && wTotal > 0 && <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{wTotal}건</span>}
+                      {wTotal === 0 && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>없음</span>}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: showWorkerCalls ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800 }}>
+                      <span>{showWorkerCalls ? "접기" : "펼치기"}</span>
+                      <i className={`ti ${showWorkerCalls ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
+                    </div>
                   </button>
                 )}
               </div>
@@ -1204,7 +1273,7 @@ function MyPageContent() {
                           respondingId={respondingId} 
                           onRespond={handleRespond} 
                           onCancel={handleCancel} 
-                          onNavigate={(lc) => router.push(`/profile/${lc.employer_id}`)} 
+                          onNavigate={(lc: any) => router.push(`/profile/${lc.employer_id}`)} 
                           onDelete={handleDelete} 
                           router={router} 
                         />
@@ -1217,7 +1286,7 @@ function MyPageContent() {
                           respondingId={respondingId} 
                           onRespond={handleRespond} 
                           onCancel={handleCancel} 
-                          onNavigate={(lc) => router.push(`/profile/${lc.employer_id}`)} 
+                          onNavigate={(lc: any) => router.push(`/profile/${lc.employer_id}`)} 
                           onDelete={handleDelete} 
                           router={router} 
                         />
@@ -1251,14 +1320,32 @@ function MyPageContent() {
               </div>
               {!loveCallLoading && (
                 <button onClick={() => setShowEmployerCalls(v => !v)}
-                  style={{ width: "100%", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                    📋 채용 제안
-                    {ePending > 0 && <span style={{ background: "#fff", color: "var(--primary)", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "1px 7px" }}>{ePending}개 대기</span>}
-                    {ePending === 0 && eTotal > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{eTotal}건</span>}
-                    {eTotal === 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>없음</span>}
-                  </span>
-                  <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, transition: "transform 0.2s", transform: showEmployerCalls ? "rotate(180deg)" : "none" }}>▾</span>
+                  style={{
+                    width: "100%",
+                    background: showEmployerCalls
+                      ? "var(--surface2, rgba(255,255,255,0.08))"
+                      : "var(--surface, rgba(255,255,255,0.04))",
+                    border: showEmployerCalls
+                      ? "1.5px solid var(--primary, #8b5cf6)"
+                      : "1px solid var(--border, rgba(255,255,255,0.12))",
+                    borderRadius: 14,
+                    padding: "12px 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease"
+                  }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 900, color: "var(--text, #fff)" }}>📋 채용 제안</span>
+                    {ePending > 0 && <span style={{ background: "#8b5cf6", color: "#fff", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "2px 8px" }}>{ePending}개 대기</span>}
+                    {ePending === 0 && eTotal > 0 && <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{eTotal}건</span>}
+                    {eTotal === 0 && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>없음</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: showEmployerCalls ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800 }}>
+                    <span>{showEmployerCalls ? "접기" : "펼치기"}</span>
+                    <i className={`ti ${showEmployerCalls ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
+                  </div>
                 </button>
               )}
             </div>
@@ -1341,8 +1428,8 @@ function MyPageContent() {
                   </div>
                 ) : (
                   <>
-                    {eReceived.length > 0 && <LoveCallSection title="📥 받은 지원" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
-                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 채용 제안" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                    {eReceived.length > 0 && <LoveCallSection title="📥 받은 지원" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 채용 제안" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
                   </>
                 )}
               </div>

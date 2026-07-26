@@ -701,18 +701,24 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
               onClick={() => setExpandPayslips(!expandPayslips)}
               style={{
                 width: "100%",
-                background: "none",
-                border: "none",
-                padding: "8px 0 0",
-                color: "#8b5cf6",
-                fontSize: 11,
-                fontWeight: 700,
+                marginTop: 8,
+                background: "var(--primary-light, rgba(139,92,246,0.12))",
+                border: "1px solid var(--primary-border, rgba(139,92,246,0.3))",
+                borderRadius: 12,
+                padding: "8px",
+                color: "var(--primary, #8b5cf6)",
+                fontSize: 12,
+                fontWeight: 800,
                 cursor: "pointer",
-                textAlign: "center",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
                 outline: "none"
               }}
             >
-              {expandPayslips ? "명세서 접기 ▴" : `명세서 더보기 (외 ${payslips.length - 2}건) ▾`}
+              <span>{expandPayslips ? "명세서 접기" : `명세서 더보기 (외 ${payslips.length - 2}건)`}</span>
+              <i className={`ti ${expandPayslips ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
             </button>
           )}
         </>
@@ -981,18 +987,24 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                 onClick={() => setExpandRecentAtt(!expandRecentAtt)}
                 style={{
                   width: "100%",
-                  background: "none",
-                  border: "none",
-                  padding: "10px 0 0",
-                  color: "#8b5cf6",
-                  fontSize: 11,
-                  fontWeight: 700,
+                  marginTop: 8,
+                  background: "var(--primary-light, rgba(139,92,246,0.12))",
+                  border: "1px solid var(--primary-border, rgba(139,92,246,0.3))",
+                  borderRadius: 12,
+                  padding: "8px",
+                  color: "var(--primary, #8b5cf6)",
+                  fontSize: 12,
+                  fontWeight: 800,
                   cursor: "pointer",
-                  textAlign: "center",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
                   outline: "none"
                 }}
               >
-                {expandRecentAtt ? "접기 ▴" : `더보기 (외 ${recentAtt.length - 3}건) ▾`}
+                <span>{expandRecentAtt ? "접기" : `근태 더보기 (외 ${recentAtt.length - 3}건)`}</span>
+                <i className={`ti ${expandRecentAtt ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
               </button>
             )}
           </>
@@ -1050,18 +1062,24 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                 onClick={() => setExpandContracts(!expandContracts)}
                 style={{
                   width: "100%",
-                  background: "none",
-                  border: "none",
-                  padding: "6px 0 0",
-                  color: "#8b5cf6",
-                  fontSize: 11,
-                  fontWeight: 700,
+                  marginTop: 8,
+                  background: "var(--primary-light, rgba(139,92,246,0.12))",
+                  border: "1px solid var(--primary-border, rgba(139,92,246,0.3))",
+                  borderRadius: 12,
+                  padding: "8px",
+                  color: "var(--primary, #8b5cf6)",
+                  fontSize: 12,
+                  fontWeight: 800,
                   cursor: "pointer",
-                  textAlign: "center",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
                   outline: "none"
                 }}
               >
-                {expandContracts ? "이전 계약 접기 ▴" : `이전 계약 보기 (외 ${contracts.length - 1}건) ▾`}
+                <span>{expandContracts ? "이전 계약 접기" : `이전 계약 보기 (외 ${contracts.length - 1}건)`}</span>
+                <i className={`ti ${expandContracts ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
               </button>
             )}
           </>
@@ -1868,7 +1886,10 @@ function MyTeamPageContent() {
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{current.length > 0 ? `${current.length}곳 재직 중` : "소속 없음"}</p>
                     </div>
                   </div>
-                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: workOpen ? "rotate(180deg)" : "none", display:"block", flexShrink:0 }}>⌄</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: workOpen ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                    <span>{workOpen ? "접기" : "펼치기"}</span>
+                    <i className={`ti ${workOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
+                  </div>
                 </button>
 
                 {/* 통계 그리드 — 펼쳤을 때 나오는 매장별 카드 통계와 동일한 스타일 */}
@@ -2000,7 +2021,10 @@ function MyTeamPageContent() {
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{myStores.length > 0 ? `${myStores.length}곳 운영 중` : "매장 없음"}</p>
                     </div>
                   </div>
-                  <span style={{ color:"var(--text-muted)", fontSize:22, lineHeight:1, transition:"transform 0.2s", transform: teamOpen ? "rotate(180deg)" : "none", display:"block", flexShrink:0 }}>⌄</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: teamOpen ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                    <span>{teamOpen ? "접기" : "펼치기"}</span>
+                    <i className={`ti ${teamOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
+                  </div>
                 </button>
 
                 {/* 통계 그리드 — 펼쳤을 때 매장 카드 내부와 동일한 스타일(라벨/값 그리드)을 접힌 상태에도 그대로 사용 */}

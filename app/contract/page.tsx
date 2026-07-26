@@ -2486,8 +2486,22 @@ function ContractContent() {
                   크게 보기 ↗
                 </button>
                 <button onClick={() => setIsPreviewCollapsed(!isPreviewCollapsed)}
-                  style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px", color: "var(--text)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                  {isPreviewCollapsed ? "▼ 펼치기" : "▲ 접기"}
+                  style={{
+                    background: "var(--primary-light, rgba(139,92,246,0.12))",
+                    border: "1px solid var(--primary-border, rgba(139,92,246,0.3))",
+                    borderRadius: 10,
+                    padding: "4px 10px",
+                    color: "var(--primary, #8b5cf6)",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4
+                  }}
+                >
+                  <span>{isPreviewCollapsed ? "펼치기" : "접기"}</span>
+                  <i className={`ti ${isPreviewCollapsed ? "ti-chevron-down" : "ti-chevron-up"}`} style={{ fontSize: 12, fontWeight: 900 }} aria-hidden="true" />
                 </button>
               </div>
             </div>
