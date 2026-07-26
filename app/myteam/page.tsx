@@ -9,7 +9,7 @@ import StoreRegisterModal from "@/components/StoreRegisterModal";
 import DateWheelPicker from "@/components/DateWheelPicker";
 import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
-import { getTrustGrade } from "@/lib/utils";
+import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX } from "@/lib/utils";
 import { sendPushNotification } from "@/lib/usePush";
 import { cardStyle, cardInnerStyle, cardGradientStyle, btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
@@ -26,6 +26,17 @@ function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * c;
 }
 
+// "HH:MM~HH:MM" 또는 "HH:MM-HH:MM" 형식의 근무시간에서 시작/종료를 분단위로 추출 (야간 근무처럼 종료<시작이면 게이팅 안 함)
+function parseShiftRange(workHours: string | null | undefined): { startMins: number; endMins: number } | null {
+  if (!workHours) return null;
+  const m = workHours.replace(/\s+/g, "").match(/(\d{1,2}):(\d{2})[~-](\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return {
+    startMins: parseInt(m[1]) * 60 + parseInt(m[2]),
+    endMins: parseInt(m[3]) * 60 + parseInt(m[4]),
+  };
+}
+
 // 출퇴근 버튼 컴포넌트
 function CheckInButton({ member, userId, onRefresh }: { member: any; userId: string; onRefresh?: () => void }) {
   const [todayAtt, setTodayAtt] = useState<any>(null);
@@ -34,6 +45,7 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
   const [distance, setDistance] = useState<number | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [showOffScheduleConfirm, setShowOffScheduleConfirm] = useState(false);
 
   // KST 기준 오늘 날짜
   const today = (() => {
@@ -87,6 +99,19 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
   const hasStoreCoords = storeLat != null && storeLng != null;
   const isInRange = !hasStoreCoords || (distance !== null && distance <= 200);
 
+  // 근무 종료 시각이 지났는데 아직 출근을 안 눌렀으면 셀프 출근을 막고 사장님 수정으로 유도
+  // (지난 근무를 뒤늦게 셀프 체크인하면 시간이 꼬여서 "오늘 출근" 집계가 어긋나던 문제)
+  const shiftRange = parseShiftRange(member?.work_hours);
+  const nowMinsKst = (() => {
+    const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    return kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  })();
+  const pastShiftEnd = !!(shiftRange && shiftRange.endMins > shiftRange.startMins && nowMinsKst > shiftRange.endMins);
+
+  // 오늘이 이 팀원의 정규 근무요일이 아니면(대타/추가근무 등) 원터치로 바로 출근되지 않고 한 번 확인받음
+  const todayKo = KOREAN_DAY_BY_INDEX[new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay()];
+  const isScheduledToday = isWorkingOnDay(member?.work_days, todayKo);
+
   async function handleCheckIn() {
     if (!isInRange) {
       alert("📍 매장 반경 200m 외부에서는 출근할 수 없습니다.");
@@ -113,7 +138,9 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
       }
     }
 
-    const { data, error } = await supabase.from("attendance").insert({
+    // 크론이 미리 만들어둔 absent 행 등 그날 기존 기록이 있을 수 있어 insert 대신 upsert로 덮어씀
+    // (예전엔 매번 insert라서 같은 날짜에 행이 중복 생성되던 버그가 있었음)
+    const { data, error } = await supabase.from("attendance").upsert({
       team_member_id: member.id,
       employer_id: member.employer_id,
       worker_id: userId,
@@ -121,7 +148,7 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
       status,
       check_in: checkInTime,
       actual_hours: 0,
-    }).select().single();
+    }, { onConflict: "team_member_id,work_date" }).select().single();
 
     if (!error && data) {
       setTodayAtt(data);
@@ -277,9 +304,17 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
 
   return (
     <div style={{ marginBottom:12 }}>
-      {!checkedIn && (
+      {!checkedIn && pastShiftEnd && (
+        <div style={{ background:"var(--surface2)", borderRadius:14, padding:"12px 14px", textAlign:"center" }}>
+          <p style={{ fontSize:13, color:"var(--text-muted)", margin:0, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+            <i className="ti ti-clock-off" aria-hidden="true" /> 오늘 근무 시간이 지났어요
+          </p>
+          <p style={{ fontSize:11, color:"var(--text-muted)", margin:"4px 0 0" }}>출근 기록이 필요하면 사장님께 확인 요청해 주세요</p>
+        </div>
+      )}
+      {!checkedIn && !pastShiftEnd && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <button onClick={handleCheckIn} disabled={processing || !isInRange || gpsLoading}
+          <button onClick={() => { if (!isScheduledToday) { setShowOffScheduleConfirm(true); } else { handleCheckIn(); } }} disabled={processing || !isInRange || gpsLoading}
             style={{
               width:"100%",
               background: !isInRange ? "var(--border)" : "var(--success)",
@@ -329,6 +364,31 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
         <div style={{ background:"var(--surface2)", borderRadius:12, padding:"10px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <span style={{ fontSize:13, color:"var(--text-muted)", fontWeight:600, display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 오늘 근무 완료</span>
           <span style={{ fontSize:12, color:"var(--text-muted)" }}>{checkInTime} ~ {checkOutTime} ({todayAtt.actual_hours}h)</span>
+        </div>
+      )}
+      {showOffScheduleConfirm && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+          onClick={() => setShowOffScheduleConfirm(false)}>
+          <div style={{ background:"var(--surface)", borderRadius:"20px 20px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:480 }}
+            onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize:15, fontWeight:800, color:"var(--text)", marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
+              <i className="ti ti-calendar-exclamation" aria-hidden="true" /> 오늘은 정규 근무일이 아니에요
+            </p>
+            <p style={{ fontSize:13, color:"var(--text-muted)", marginBottom:20, lineHeight:1.6 }}>
+              등록된 근무요일({member?.work_days || "요일 미정"})에 오늘이 없어요.<br/>
+              대타·추가 근무 등으로 출근하는 게 맞다면 계속 진행해 주세요.
+            </p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowOffScheduleConfirm(false)}
+                style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text-muted)", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+                취소
+              </button>
+              <button onClick={() => { setShowOffScheduleConfirm(false); handleCheckIn(); }}
+                style={{ flex:1, background:"var(--primary)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                맞아요, 출근할게요
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1042,7 +1102,7 @@ function MyTeamPageContent() {
   // 사장님 데이터
   const [myStores, setMyStores] = useState<any[]>([]);
   const [membersByStore, setMembersByStore] = useState<Record<string, any[]>>({});
-  const [statsByStore, setStatsByStore] = useState<Record<string, { today: number; pending: number }>>({});
+  const [statsByStore, setStatsByStore] = useState<Record<string, { today: number; scheduled: number; pending: number }>>({});
   const [teamOpen, setTeamOpen] = useState(true);
   const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -1248,11 +1308,9 @@ function MyTeamPageContent() {
 
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-    const todayStr = (() => {
-      const d = new Date();
-      const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-      return kst.toISOString().split("T")[0];
-    })();
+    const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const todayStr = kstNow.toISOString().split("T")[0];
+    const todayKo = KOREAN_DAY_BY_INDEX[kstNow.getUTCDay()];
 
     const ids = data.map((m: any) => m.id);
     const { data: att } = ids.length > 0
@@ -1318,12 +1376,14 @@ function MyTeamPageContent() {
     setMembersByStore(grouped);
 
     // 매장별 통계
-    const stats: Record<string, { today: number; pending: number }> = {};
+    const stats: Record<string, { today: number; scheduled: number; pending: number }> = {};
     for (const s of storeList) {
       const sm = grouped[s.id] || [];
       const smIds = sm.map((m: any) => m.id);
       stats[s.id] = {
         today: att?.filter((a: any) => smIds.includes(a.team_member_id) && a.work_date === todayStr && ["normal","late","early_leave"].includes(a.status)).length || 0,
+        // 근무요일이 명확히 설정 + 오늘이 포함된 팀원 수 (요일 미설정 팀원은 분모에서 제외 — 오탐 방지)
+        scheduled: sm.filter((m: any) => isWorkingOnDay(m.work_days, todayKo)).length,
         pending: sm.filter((m: any) => m.contractStatus !== "done").length,
       };
     }
@@ -1637,6 +1697,7 @@ function MyTeamPageContent() {
   // 접힌 헤더 한 줄 요약용 (오늘의 요약 카드를 따로 두지 않고 헤더 서브텍스트에 압축)
   const teamEmployeeCount = Object.values(membersByStore).flat().length;
   const teamTodayCount = myStores.reduce((sum, s) => sum + (statsByStore[s.id]?.today || 0), 0);
+  const teamScheduledCount = myStores.reduce((sum, s) => sum + (statsByStore[s.id]?.scheduled || 0), 0);
   const teamPendingCount = myStores.reduce((sum, s) => sum + (statsByStore[s.id]?.pending || 0), 0);
   const workPendingCount = current.filter((m: any) => m.contractStatus !== "done").length;
 
@@ -1812,14 +1873,19 @@ function MyTeamPageContent() {
 
                 {/* 통계 그리드 — 펼쳤을 때 나오는 매장별 카드 통계와 동일한 스타일 */}
                 {current.length > 0 && (
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:1, background:"var(--border)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
                     {[
-                      { label:"재직 매장", value: current.length },
-                      { label:"계약 확인", value: workPendingCount, alert: workPendingCount > 0 },
-                    ].map(s => (
-                      <div key={s.label} style={{ background:"var(--surface)", padding:"9px 4px", textAlign:"center" }}>
-                        <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
-                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
+                      { label:"재직 매장", value: current.length, icon:"ti-briefcase" },
+                      { label:"계약 확인", value: workPendingCount, alert: workPendingCount > 0, icon:"ti-file-text" },
+                    ].map((s, idx) => (
+                      <div key={s.label} style={{
+                        background: s.alert ? "rgba(239,68,68,0.06)" : "transparent",
+                        borderLeft: idx > 0 ? "1px solid var(--border)" : "none",
+                        padding:"10px 4px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                      }}>
+                        <i className={`ti ${s.icon}`} style={{ fontSize:14, color: s.alert ? "var(--danger)" : "var(--text-muted)" }} aria-hidden="true" />
+                        <p style={{ fontSize:9, color:"var(--text-muted)", margin:0 }}>{s.label}</p>
+                        <p style={{ fontSize:16, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
                       </div>
                     ))}
                   </div>
@@ -1939,16 +2005,21 @@ function MyTeamPageContent() {
 
                 {/* 통계 그리드 — 펼쳤을 때 매장 카드 내부와 동일한 스타일(라벨/값 그리드)을 접힌 상태에도 그대로 사용 */}
                 {myStores.length > 0 && (
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:1, background:"var(--border)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
                     {[
-                      { label:"매장", value: myStores.length },
-                      { label:"직원", value: teamEmployeeCount },
-                      { label:"오늘 출근", value: teamTodayCount },
-                      { label:"계약 확인", value: teamPendingCount, alert: teamPendingCount > 0 },
-                    ].map(s => (
-                      <div key={s.label} style={{ background:"var(--surface)", padding:"9px 4px", textAlign:"center" }}>
-                        <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
-                        <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
+                      { label:"매장", value: myStores.length, icon:"ti-building-store" },
+                      { label:"직원", value: teamEmployeeCount, icon:"ti-users" },
+                      { label:"오늘 출근", value: `${teamTodayCount}/${teamScheduledCount}`, icon:"ti-calendar-check" },
+                      { label:"계약 확인", value: teamPendingCount, alert: teamPendingCount > 0, icon:"ti-file-text" },
+                    ].map((s, idx) => (
+                      <div key={s.label} style={{
+                        background: s.alert ? "rgba(239,68,68,0.06)" : "transparent",
+                        borderLeft: idx > 0 ? "1px solid var(--border)" : "none",
+                        padding:"10px 4px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                      }}>
+                        <i className={`ti ${s.icon}`} style={{ fontSize:14, color: s.alert ? "var(--danger)" : "var(--text-muted)" }} aria-hidden="true" />
+                        <p style={{ fontSize:9, color:"var(--text-muted)", margin:0 }}>{s.label}</p>
+                        <p style={{ fontSize:16, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
                       </div>
                     ))}
                   </div>
@@ -2072,12 +2143,12 @@ function MyTeamPageContent() {
                   </div>
                 )}
 
-                {/* Samsung Pass 스타일 — 비활성 카드 위에 쌓이고, 누르면 맨 아래로 내려와 전체 표시 */}
+                {/* Samsung Pass 스타일 스택카드 복원 — 색상환에서 확실히 떨어진 8색 그라데이션(2026-07-26: 아코디언 방식 반려, 그라데이션 카드로 재환원) */}
                 {myStores.length > 0 && (() => {
                   const PEEK = 52; // 비활성 카드 한 장이 보이는 높이 (한 줄만)
                   const activeStore = myStores.find((s: any) => s.id === activeStoreId) || myStores[0];
                   const activeMembers = membersByStore[activeStore.id] || [];
-                  const activeStats = statsByStore[activeStore.id] || { today:0, pending:0 };
+                  const activeStats = statsByStore[activeStore.id] || { today:0, scheduled:0, pending:0 };
                   // 비활성 카드들을 위에, 활성 카드를 맨 아래에 정렬
                   const sorted = [
                     ...myStores.filter((s: any) => s.id !== activeStore.id),
@@ -2085,8 +2156,17 @@ function MyTeamPageContent() {
                   ];
                   const inactiveCount = sorted.length - 1;
 
-                  // 방향 A: 매장마다 색을 돌리던 그라데이션 제거 — 스택 카드는 항상 동일한 톤(순서는 위치로만 구분)
-                  const STACK_CARD_BG = "#3f3f46";
+                  // 색상환에서 확실히 떨어진 8색 그라데이션 — 빨강/파랑/초록/보라/주황/청록/핑크/올리브, 스택 위치(i) 기준 순환
+                  const CARD_GRADIENTS = [
+                    "linear-gradient(135deg,#991b1b 0%,#dc2626 100%)",
+                    "linear-gradient(135deg,#1e40af 0%,#2563eb 100%)",
+                    "linear-gradient(135deg,#065f46 0%,#16a34a 100%)",
+                    "linear-gradient(135deg,#5b21b6 0%,#9333ea 100%)",
+                    "linear-gradient(135deg,#9a3412 0%,#ea580c 100%)",
+                    "linear-gradient(135deg,#155e75 0%,#0891b2 100%)",
+                    "linear-gradient(135deg,#9d174d 0%,#db2777 100%)",
+                    "linear-gradient(135deg,#3f6212 0%,#65a30d 100%)",
+                  ];
 
                   return (
                     <div>
@@ -2094,7 +2174,7 @@ function MyTeamPageContent() {
                         {/* 비활성 카드 — 절대 위치로 쌓임 */}
                         {sorted.slice(0, -1).map((store: any, i: number) => {
                           const storeMembers = membersByStore[store.id] || [];
-                          const stats = statsByStore[store.id] || { today:0, pending:0 };
+                          const stats = statsByStore[store.id] || { today:0, scheduled:0, pending:0 };
                           return (
                             <div
                               key={store.id}
@@ -2106,15 +2186,15 @@ function MyTeamPageContent() {
                                 borderRadius:16,
                                 cursor:"pointer",
                                 zIndex: inactiveCount - i,
-                                background: STACK_CARD_BG,
-                                boxShadow:"var(--shadow-elevate)",
+                                background: CARD_GRADIENTS[i % CARD_GRADIENTS.length],
+                                boxShadow:"0 4px 16px rgba(0,0,0,0.5)",
                               }}>
                               {/* 한 줄만 보이는 헤더 */}
                               <div style={{ display:"flex", alignItems:"center", gap:10, padding:"0 14px", height: PEEK }}>
                                 <i className={`ti ${BIZ_ICON[store.business_type]||"ti-building-store"}`} style={{ fontSize:18, flexShrink:0, color:"#fff" }} aria-hidden="true" />
                                 <span style={{ fontSize:13, fontWeight:700, color:"rgba(255,255,255,0.8)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{store.business_name}</span>
                                 <span style={{ fontSize:11, color:"rgba(255,255,255,0.45)", whiteSpace:"nowrap", flexShrink:0 }}>{store.business_type||"업종미정"} · {storeMembers.length}명</span>
-                                {stats.pending > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"var(--danger)", flexShrink:0 }} />}
+                                {stats.pending > 0 && <span style={{ width:7, height:7, borderRadius:"50%", background:"#ef4444", flexShrink:0 }} />}
                                 <button onClick={e => { e.stopPropagation(); openDeleteModal(store); }}
                                   style={{ background:"rgba(0,0,0,0.25)", border:"none", borderRadius:"50%", width:22, height:22, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.7)", fontSize:12, cursor:"pointer", flexShrink:0, lineHeight:1 }}>
                                   ✕
@@ -2126,9 +2206,9 @@ function MyTeamPageContent() {
                       </div>
 
                       {/* 활성 카드 — 맨 아래, 전체 표시 */}
-                      <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"var(--shadow-elevate)" }}>
-                        {/* 활성 카드 헤더 — 색상 */}
-                        <div style={{ background:"var(--primary)", height: PEEK, display:"flex", alignItems:"center", gap:10, padding:"0 14px" }}>
+                      <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 8px 32px rgba(124,58,237,0.35)" }}>
+                        {/* 활성 카드 헤더 — 브랜드 그라데이션 */}
+                        <div style={{ background:"linear-gradient(135deg,#7c3aed 0%,#a855f7 55%,#ec4899 100%)", height: PEEK, display:"flex", alignItems:"center", gap:10, padding:"0 14px" }}>
                           <i className={`ti ${BIZ_ICON[activeStore.business_type]||"ti-building-store"}`} style={{ fontSize:20, flexShrink:0, color:"#fff" }} aria-hidden="true" />
                           <div style={{ flex:1, minWidth:0 }}>
                             <p style={{ fontSize:14, fontWeight:800, color:"#fff", margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeStore.business_name}</p>
@@ -2144,15 +2224,20 @@ function MyTeamPageContent() {
                           </button>
                         </div>
                         {/* 통계 */}
-                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:1, background:"var(--border)" }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", background:"var(--surface)", borderBottom:"1px solid var(--border)" }}>
                           {[
-                            { label:"총 팀원", value: activeMembers.length },
-                            { label:"오늘 출근", value: activeStats.today },
-                            { label:"계약 대기", value: activeStats.pending, alert: activeStats.pending > 0 },
-                          ].map(s => (
-                            <div key={s.label} style={{ background:"var(--surface)", padding:"9px 8px", textAlign:"center" }}>
-                              <p style={{ fontSize:9, color:"var(--text-muted)", margin:"0 0 1px" }}>{s.label}</p>
-                              <p style={{ fontSize:15, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
+                            { label:"총 팀원", value: activeMembers.length, icon:"ti-users" },
+                            { label:"오늘 출근", value: `${activeStats.today ?? 0}/${activeStats.scheduled ?? 0}`, icon:"ti-calendar-check" },
+                            { label:"계약 대기", value: activeStats.pending, alert: activeStats.pending > 0, icon:"ti-file-text" },
+                          ].map((s, sIdx) => (
+                            <div key={s.label} style={{
+                              background: s.alert ? "rgba(239,68,68,0.06)" : "transparent",
+                              borderRight: sIdx < 2 ? "1px solid var(--border)" : "none",
+                              padding:"10px 8px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                            }}>
+                              <i className={`ti ${s.icon}`} style={{ fontSize:14, color: s.alert ? "var(--danger)" : "var(--text-muted)" }} aria-hidden="true" />
+                              <p style={{ fontSize:9, color:"var(--text-muted)", margin:0 }}>{s.label}</p>
+                              <p style={{ fontSize:16, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
                             </div>
                           ))}
                         </div>
@@ -2195,19 +2280,6 @@ function MyTeamPageContent() {
 
                           {/* 시간표 본체 */}
                           {(() => {
-                            const isWorkingOnDay = (member: any, dayKo: string) => {
-                              const daysMap: Record<string, string> = {
-                                "월": "mon", "화": "tue", "수": "wed", "목": "thu", "금": "fri", "토": "sat", "일": "sun"
-                              };
-                              const engDay = daysMap[dayKo];
-                              const workDaysStr = (member.work_days || "").toLowerCase();
-                              if (workDaysStr.includes(dayKo) || (engDay && workDaysStr.includes(engDay))) return true;
-                              if (workDaysStr.includes("주5일") && ["월", "화", "수", "목", "금"].includes(dayKo)) return true;
-                              if (workDaysStr.includes("주6일") && ["월", "화", "수", "목", "금", "토"].includes(dayKo)) return true;
-                              if (workDaysStr.includes("매일") || workDaysStr.includes("월~일")) return true;
-                              return false;
-                            };
-
                             const parseHours = (hoursStr: string) => {
                               const match = (hoursStr || "").match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
                               if (match) {
@@ -2224,7 +2296,7 @@ function MyTeamPageContent() {
                               return null;
                             };
 
-                            const dayMembers = activeMembers.filter(m => isWorkingOnDay(m, selectedTimetableDay));
+                            const dayMembers = activeMembers.filter(m => isWorkingOnDay(m.work_days, selectedTimetableDay));
 
                             if (dayMembers.length === 0) {
                               return (
@@ -2238,9 +2310,9 @@ function MyTeamPageContent() {
                               <div style={{ position: "relative", paddingBottom: 6 }}>
                                 {/* 시간 축 피드 (08시 ~ 24시, 8구간) */}
                                 <div style={{ display: "flex", marginLeft: 72, marginBottom: 8, paddingBottom: 4, position: "relative", height: 14 }}>
-                                  {Array.from({ length: 9 }).map((_, idx) => {
-                                    const hour = 8 + idx * 2;
-                                    const leftPercent = (idx / 8) * 100;
+                                  {Array.from({ length: 9 }).map((_, hIdx) => {
+                                    const hour = 8 + hIdx * 2;
+                                    const leftPercent = (hIdx / 8) * 100;
                                     return (
                                       <span key={hour} style={{ position: "absolute", left: `${leftPercent}%`, transform: "translateX(-50%)", fontSize: 9, color: "var(--text-muted)", fontWeight: 700 }}>
                                         {String(hour).padStart(2, "0")}
@@ -2251,11 +2323,11 @@ function MyTeamPageContent() {
 
                                 {/* 타임라인 그리드 세로 가이드라인 */}
                                 <div style={{ position: "absolute", top: 14, bottom: 0, left: 72, right: 0, pointerEvents: "none", zIndex: 0 }}>
-                                  {Array.from({ length: 9 }).map((_, idx) => {
-                                    const leftPercent = (idx / 8) * 100;
+                                  {Array.from({ length: 9 }).map((_, gIdx) => {
+                                    const leftPercent = (gIdx / 8) * 100;
                                     return (
                                       <div
-                                        key={idx}
+                                        key={gIdx}
                                         style={{
                                           position: "absolute",
                                           left: `${leftPercent}%`,
