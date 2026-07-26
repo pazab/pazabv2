@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
+import { isWorkingOnDay } from "@/lib/utils";
 
 // service_role 클라이언트 생성
 const getServiceClient = () =>
@@ -32,18 +33,21 @@ export async function GET(req: Request) {
   const dayIndex = kst.getUTCDay(); // 0: 일, 1: 월, ...
   const korDay = ["일", "월", "화", "수", "목", "금", "토"][dayIndex];
 
-  // 오늘 요일 근무인 active 직원 정보 모두 로드
-  const { data: members, error: memError } = await supabase
+  // active 직원 전체 로드 후 오늘 요일 근무자만 JS에서 필터링
+  // (work_days가 "월·화·수" 개별 나열이 아니라 "평일"/"주5일"/"매일" 같은 매크로로 저장된 경우
+  //  DB LIKE 필터로는 못 걸러져서 결근 자동처리가 조용히 빠지던 버그 — isWorkingOnDay로 통일)
+  const { data: allActiveMembers, error: memError } = await supabase
     .from("team_members")
     .select(`id, worker_id, employer_id, work_days, work_hours, status`)
-    .eq("status", "active")
-    .like("work_days", `%${korDay}%`);
+    .eq("status", "active");
 
   if (memError) {
     return NextResponse.json({ error: memError.message }, { status: 500 });
   }
 
-  if (!members || members.length === 0) {
+  const members = (allActiveMembers || []).filter(m => isWorkingOnDay(m.work_days, korDay));
+
+  if (members.length === 0) {
     return NextResponse.json({ message: "No workers scheduled for today" });
   }
 
