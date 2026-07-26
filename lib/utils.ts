@@ -1,3 +1,24 @@
+export const KOREAN_DAY_BY_INDEX = ["일", "월", "화", "수", "목", "금", "토"];
+
+// work_days 문자열이 해당 요일을 포함하는지 판정 — 개별 요일 나열("월·화·수")과
+// 매크로 표현("평일"/"주말"/"주5일"/"주6일"/"매일") 둘 다 지원. 요일 미설정(빈 값)이면 항상 false(오탐 방지).
+// cron(app/api/cron/checkin), myteam.tsx, employer/team/[id] 세 곳에서 각자 다르게 판정하다 결근
+// 자동처리가 조용히 빠지던 버그가 있어 단일 구현으로 통일함(2026-07-26).
+export function isWorkingOnDay(workDays: string | null | undefined, dayKo: string): boolean {
+  const workDaysStr = (workDays || "").toLowerCase();
+  if (!workDaysStr) return false;
+  const daysMap: Record<string, string> = { "월":"mon","화":"tue","수":"wed","목":"thu","금":"fri","토":"sat","일":"sun" };
+  const engDay = daysMap[dayKo];
+  if (workDaysStr.includes(dayKo) || (engDay && workDaysStr.includes(engDay))) return true;
+  const weekdays = ["월","화","수","목","금"];
+  const weekend = ["토","일"];
+  if ((workDaysStr.includes("평일") || workDaysStr.includes("주5일")) && weekdays.includes(dayKo)) return true;
+  if (workDaysStr.includes("주6일") && [...weekdays, "토"].includes(dayKo)) return true;
+  if (workDaysStr.includes("주말") && weekend.includes(dayKo)) return true;
+  if (workDaysStr.includes("매일") || workDaysStr.includes("월~일")) return true;
+  return false;
+}
+
 export function getTrustGrade(score: number): { label: string; emoji: string; color: string } {
   if (score >= 90) return { label: "플래티넘", emoji: "💎", color: "#60a5fa" };
   if (score >= 75) return { label: "골드", emoji: "🥇", color: "#fbbf24" };
