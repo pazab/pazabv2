@@ -1923,6 +1923,11 @@ export default function ChatRoomPage() {
                   showToast("⚠️ 비어있는 본인 정보를 입력해주세요.", "error");
                   return;
                 }
+                if (signPhone.trim() && !/^01[016789]-\d{3,4}-\d{4}$/.test(signPhone.trim())) {
+                  setSignTried(true);
+                  showToast("⚠️ 연락처를 올바른 휴대폰 번호 형식(010-0000-0000)으로 입력해주세요.", "error");
+                  return;
+                }
                 const selfUpdate: Record<string, string> = {};
                 if (needBirth && signBirth) selfUpdate.birth_date = signBirth;
                 if (needPhone && signPhone.trim()) selfUpdate.phone = signPhone.trim();
