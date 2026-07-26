@@ -5,11 +5,56 @@ import { useRouter, useParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
-import { getTrustGrade } from "@/lib/utils";
+import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX } from "@/lib/utils";
 import DateWheelPicker from "@/components/DateWheelPicker";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 import { sendPushNotification } from "@/lib/usePush";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
+
+const PHONE_REGEX = /^01[016789]-\d{3,4}-\d{4}$/;
+function formatPhone(v: string): string {
+  const n = v.replace(/\D/g, "");
+  if (n.length <= 3) return n;
+  if (n.length <= 7) return `${n.slice(0, 3)}-${n.slice(3)}`;
+  if (n.length <= 11) return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7)}`;
+  return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7, 11)}`;
+}
+
+// 개인정보 기본 마스킹 — 탭해서 펼쳐볼 때까지는 최소 정보만 노출
+function maskPhone(phone: string): string {
+  const parts = phone.split("-");
+  if (parts.length !== 3) return phone;
+  return `${parts[0]}-${"*".repeat(parts[1].length)}-${parts[2]}`;
+}
+function ageLabel(birthDate: string): string {
+  const b = new Date(birthDate);
+  if (isNaN(b.getTime())) return birthDate;
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const beforeBirthday = (now.getMonth() < b.getMonth()) || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate());
+  if (beforeBirthday) age -= 1;
+  return `만 ${age}세`;
+}
+function maskAddress(address: string): string {
+  const tokens = address.trim().split(/\s+/);
+  return tokens.slice(0, 2).join(" ") || address;
+}
+
+// 근태 입력 시간 select는 30분 단위 옵션만 있어서 계약 근무시간을 가까운 30분으로 반올림해 기본값으로 채움
+function roundToHalfHour(h: number, m: number): string {
+  let totalMin = Math.round((h * 60 + m) / 30) * 30;
+  totalMin = ((totalMin % 1440) + 1440) % 1440;
+  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+}
+function contractHoursRange(workHours: string | null | undefined): { start: string; end: string } | null {
+  if (!workHours) return null;
+  const m = workHours.replace(/\s+/g, "").match(/^(\d{1,2}):(\d{2})~(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return {
+    start: roundToHalfHour(parseInt(m[1]), parseInt(m[2])),
+    end: roundToHalfHour(parseInt(m[3]), parseInt(m[4])),
+  };
+}
 
 // ─────────────────────────────────────────────
 // 근태 이력 타임라인 (아코디언, 기본 접힘)
@@ -272,6 +317,13 @@ export default function TeamMemberPage() {
   const [editHireDate, setEditHireDate] = useState(false);
   const [hireDateInput, setHireDateInput] = useState("");
 
+  // 개인정보(생년월일/연락처/주소) 수정 및 마스킹
+  const [editPersonalInfo, setEditPersonalInfo] = useState(false);
+  const [revealPersonalInfo, setRevealPersonalInfo] = useState(false);
+  const [personalBirth, setPersonalBirth] = useState("");
+  const [personalPhone, setPersonalPhone] = useState("");
+  const [personalAddr, setPersonalAddr] = useState("");
+
   // 서류 현황
   const [docsSubmitted, setDocsSubmitted] = useState<Record<string, boolean>>({});
   const [docsSaving, setDocsSaving] = useState(false);
@@ -358,7 +410,7 @@ export default function TeamMemberPage() {
 
   async function loadMember() {
     const { data } = await supabase.from("team_members")
-      .select(`*, users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, phone, email, trust_score)`)
+      .select(`*, users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, phone, email, trust_score, birth_date, address, address_detail)`)
       .eq("id", memberId).single();
     if (data) {
       let wage = data.wage;
@@ -722,13 +774,12 @@ export default function TeamMemberPage() {
     absent: monthAtt.filter(a => a.status === "absent").length,
   };
 
-  // 근무 요일 파싱 → 해당 월 예정 근무일 수 계산
-  const WORK_DAY_MAP: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
+  // 근무 요일 파싱("월·화·수" 나열 + "평일"/"주말"/"주5일"/"매일" 매크로 둘 다 지원) → 해당 월 예정 근무일 수 계산
   const scheduledDayNums = new Set<number>();
   if (member?.work_days) {
-    for (const [label, num] of Object.entries(WORK_DAY_MAP)) {
-      if (member.work_days.includes(label)) scheduledDayNums.add(num);
-    }
+    KOREAN_DAY_BY_INDEX.forEach((label, jsDayNum) => {
+      if (isWorkingOnDay(member.work_days, label)) scheduledDayNums.add(jsDayNum);
+    });
   }
   const isScheduledDay = (day: number) => {
     if (scheduledDayNums.size === 0) return false;
@@ -753,6 +804,7 @@ export default function TeamMemberPage() {
   })();
 
   const contractHours = member?.work_hours ? parseFloat(member.work_hours) : 8;
+  const contractRange = contractHoursRange(member?.work_hours);
   const totalActualHours = monthAtt
     .filter(a => a.status !== "absent" && a.status !== "off")
     .reduce((sum, a) => sum + (a.actual_hours || contractHours), 0);
@@ -1001,6 +1053,117 @@ export default function TeamMemberPage() {
                 </div>
               </div>
 
+              {/* 개인정보 (생년월일/연락처/주소) — users 프로필과 계약서 스냅샷(contract_data) 중 있는 쪽으로 자동 채움, 오탈자 정정용 */}
+              {(() => {
+                const personalInfoContract = contracts.find(c => c.status === "active") || contracts[0];
+                const cd = personalInfoContract?.contract_data || {};
+                const mergedBirth = member.worker?.birth_date || cd.workerBirth || "";
+                const mergedPhone = member.worker?.phone || cd.workerPhone || "";
+                const mergedAddr = [member.worker?.address, member.worker?.address_detail].filter(Boolean).join(" ")
+                  || [cd.workerAddr, cd.workerAddrDetail].filter(Boolean).join(" ");
+
+                return (
+                  <div style={{ background: "var(--surface)", borderRadius: 14, padding: 14, border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: editPersonalInfo ? 10 : 4 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", margin: 0 }}>👤 개인정보</p>
+                      {!editPersonalInfo && (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => setRevealPersonalInfo(v => !v)}
+                            style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "3px 10px", fontSize: 11, color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                            {revealPersonalInfo ? "🙈 가리기" : "👁 보기"}
+                          </button>
+                          {!isResigned && (
+                            <button onClick={() => {
+                              setPersonalBirth(mergedBirth);
+                              setPersonalPhone(mergedPhone);
+                              setPersonalAddr(mergedAddr);
+                              setEditPersonalInfo(true);
+                            }}
+                              style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "3px 10px", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>
+                              수정
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {editPersonalInfo && (
+                        <button onClick={() => setEditPersonalInfo(false)}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "3px 10px", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>
+                          취소
+                        </button>
+                      )}
+                    </div>
+
+                    {editPersonalInfo ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <input type="date" value={personalBirth} onChange={e => setPersonalBirth(e.target.value)}
+                          style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", color: "var(--text)", fontSize: 13, outline: "none" }} />
+                        <input type="tel" value={personalPhone} onChange={e => setPersonalPhone(formatPhone(e.target.value))} placeholder="연락처 (010-0000-0000)"
+                          style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", color: "var(--text)", fontSize: 13, outline: "none" }} />
+                        <input type="text" value={personalAddr} onChange={e => setPersonalAddr(e.target.value)} placeholder="주소"
+                          style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", color: "var(--text)", fontSize: 13, outline: "none" }} />
+                        <button onClick={async () => {
+                          if (personalPhone.trim() && !PHONE_REGEX.test(personalPhone.trim())) {
+                            showToast("⚠️ 연락처를 올바른 휴대폰 번호 형식(010-0000-0000)으로 입력해주세요.", "error");
+                            return;
+                          }
+                          // users 테이블은 본인만 수정 가능한 RLS라 클라이언트에서 직접 못 고침 →
+                          // 서버가 "요청자 = 이 팀원의 실제 사장님"인지 검증 후 서비스 롤로 처리
+                          const res = await fetch("/api/team/personal-info", {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              memberId: member.id,
+                              birthDate: personalBirth || null,
+                              phone: personalPhone.trim() || null,
+                              address: personalAddr.trim() || null,
+                            }),
+                          });
+                          const result = await res.json();
+                          if (!res.ok) { showToast("저장 실패: " + (result.error || "알 수 없는 오류"), "error"); return; }
+
+                          const updates = {
+                            birth_date: personalBirth || null,
+                            phone: personalPhone.trim() || null,
+                            address: personalAddr.trim() || null,
+                            address_detail: null,
+                          };
+                          if (personalInfoContract) {
+                            const updatedCd = {
+                              ...cd,
+                              workerBirth: updates.birth_date || cd.workerBirth || null,
+                              workerPhone: updates.phone || cd.workerPhone || null,
+                              workerAddr: updates.address || cd.workerAddr || null,
+                              workerAddrDetail: null,
+                            };
+                            setContracts(prev => prev.map(c => c.id === personalInfoContract.id ? { ...c, contract_data: updatedCd } : c));
+                          }
+
+                          setMember((prev: any) => prev ? { ...prev, worker: { ...prev.worker, ...updates } } : prev);
+                          setEditPersonalInfo(false);
+                          showToast("개인정보가 저장됐어요.");
+                        }}
+                          style={{ background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 10, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          저장
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {[
+                          { label: "생년월일", value: mergedBirth ? (revealPersonalInfo ? mergedBirth : ageLabel(mergedBirth)) : null },
+                          { label: "연락처", value: mergedPhone ? (revealPersonalInfo ? mergedPhone : maskPhone(mergedPhone)) : null },
+                          { label: "주소", value: mergedAddr ? (revealPersonalInfo ? mergedAddr : maskAddress(mergedAddr)) : null },
+                        ].map(row => (
+                          <div key={row.label} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                            <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>{row.label}</span>
+                            <span style={{ fontSize: 12, color: row.value ? "var(--text)" : "#ea580c", fontWeight: 600, textAlign: "right" }}>{row.value || "미입력"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* 상세 정보 */}
               <div style={{ background: "var(--surface)", borderRadius: 14, border: "1px solid var(--border)", overflow: "hidden" }}>
                 {[
@@ -1181,10 +1344,17 @@ export default function TeamMemberPage() {
                     onClick={() => {
                       if (isFuture || isResigned) return;
                       setAttDate(dateStr);
-                      setAttStatus(att?.status || "normal");
+                      const status = att?.status || "normal";
+                      setAttStatus(status);
                       setAttNote(att?.memo || "");
-                      setAttStart(att?.check_in ? new Date(att.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "");
-                      setAttEnd(att?.check_out ? new Date(att.check_out).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+                      // 기존 기록 있으면 그대로, 없으면(신규 입력) 결근/휴무가 아닌 이상 계약 근무시간을 기본값으로 채워 원터치 저장 가능하게
+                      const timeIrrelevant = ["absent", "off"].includes(status);
+                      setAttStart(att?.check_in
+                        ? new Date(att.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
+                        : (!timeIrrelevant && contractRange ? contractRange.start : ""));
+                      setAttEnd(att?.check_out
+                        ? new Date(att.check_out).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
+                        : (!timeIrrelevant && contractRange ? contractRange.end : ""));
                       setShowAttModal(true);
                     }}
                     style={{
@@ -1741,7 +1911,14 @@ export default function TeamMemberPage() {
               <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>상태</p>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {ATTENDANCE_STATUS.map(s => (
-                  <button key={s.id} onClick={() => setAttStatus(s.id)}
+                  <button key={s.id} onClick={() => {
+                    setAttStatus(s.id);
+                    // 결근/휴무 → 다른 상태로 바꿀 때 시간칸이 비어있으면 계약 근무시간으로 채움(원터치 저장)
+                    if (!["absent", "off"].includes(s.id) && !attStart && !attEnd && contractRange) {
+                      setAttStart(contractRange.start);
+                      setAttEnd(contractRange.end);
+                    }
+                  }}
                     style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${attStatus === s.id ? s.color : "var(--border)"}`, background: attStatus === s.id ? s.bg : "none", color: attStatus === s.id ? s.color : "var(--text-muted)", fontSize: 13, fontWeight: attStatus === s.id ? 700 : 400, cursor: "pointer" }}>
                     {s.label}
                   </button>
