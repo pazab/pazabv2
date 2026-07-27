@@ -106,7 +106,7 @@ export default function ProfilePage() {
       const data = await res.json();
       if (data.success) {
         setPersonalPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, like_count: data.likeCount, likedByMe: !p.likedByMe } : p));
-        setSelectedPost(p => p ? { ...p, like_count: data.likeCount, likedByMe: !p.likedByMe } : null);
+        setSelectedPost((p: any) => p ? { ...p, like_count: data.likeCount, likedByMe: !p.likedByMe } : null);
       }
     } catch (e) {
       console.error(e);
@@ -127,7 +127,7 @@ export default function ProfilePage() {
         setComments(prev => [...prev, data.data]);
         setNewComment("");
         setPersonalPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, comment_count: data.commentCount } : p));
-        setSelectedPost(p => p ? { ...p, comment_count: data.commentCount } : null);
+        setSelectedPost((p: any) => p ? { ...p, comment_count: data.commentCount } : null);
       }
     } catch (e) {
       console.error(e);

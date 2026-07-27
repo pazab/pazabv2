@@ -102,13 +102,20 @@ export async function GET(req: Request) {
       });
       results.push({ memberId: m.id, action: "alert_on_time" });
     } else if (diffMins >= 4 && diffMins <= 7) {
-      // +5분 지각 경고
+      // +5분 지각 경고 (알바생 & 사장님)
       await createNotification({
         userId: m.worker_id,
         type: "attendance",
         title: "⚠️ 출근 5분 지연 경고",
         body: `출근 시간이 5분 초과되었습니다. 5분 뒤(출근 10분 초과) 지각 처리됩니다. 서둘러 주세요!`,
         url: "/myteam"
+      });
+      await createNotification({
+        userId: m.employer_id,
+        type: "attendance",
+        title: "⚠️ 팀원 출근 지연 알림",
+        body: `오늘 출근 예정인 팀원이 출근시각(${timeStr}) 5분이 지나도록 아직 출근하지 않았습니다.`,
+        url: `/employer/team/${m.id}`
       });
       results.push({ memberId: m.id, action: "alert_5m_late_warning" });
     } else if (diffMins >= 20) {

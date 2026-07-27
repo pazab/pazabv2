@@ -743,9 +743,19 @@ export default function TeamMemberPage() {
           matchId: member.match_id,
           senderId: member.employer_id,
           receiverId: member.worker_id,
-          message: `📋 ${attDate} 근태가 수정됐어요\n상태: ${statusLabel[attStatus] || attStatus}${timeInfo}${hoursInfo}${attNote ? `\n메모: ${attNote}` : ""}`,
+          message: `📋 ${attDate} 근태가 수정됐어요\n상태: ${statusLabel[attStatus] || attStatus}${timeInfo}${hoursInfo}${!attEnd && attStart ? "\n📱 알바생 앱의 퇴근 버튼이 활성화되었습니다." : ""}${attNote ? `\n메모: ${attNote}` : ""}`,
           messageType: "system",
         }),
+      });
+    }
+
+    if (!attEnd && attStart && ["normal", "late"].includes(attStatus)) {
+      sendPushNotification({
+        userId: member.worker_id,
+        title: "✅ 출근 승인 완료",
+        body: `사장님이 오늘(${attDate}) 출근을 승인했습니다. 퇴근 시 앱에서 퇴근 버튼을 눌러주세요!`,
+        url: "/myteam",
+        tag: "attendance"
       });
     }
 
@@ -1348,14 +1358,16 @@ export default function TeamMemberPage() {
                       const status = att?.status || "normal";
                       setAttStatus(status);
                       setAttNote(att?.memo || "");
-                      // 기존 기록 있으면 그대로, 없으면(신규 입력) 결근/휴무가 아닌 이상 계약 근무시간을 기본값으로 채워 원터치 저장 가능하게
+                      const isTodayDate = dateStr === todayStr;
+                      // 기존 기록 있으면 그대로, 없으면(신규 입력) 결근/휴무가 아닌 이상 계약 근무시간을 기본값으로 채움
+                      // 오늘 날짜이고 퇴근 기록이 없는 경우 기본적으로 퇴근시간을 비워 알바생 퇴근버튼이 활성화되도록 유지
                       const timeIrrelevant = ["absent", "off"].includes(status);
                       setAttStart(att?.check_in
                         ? new Date(att.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
                         : (!timeIrrelevant && contractRange ? contractRange.start : ""));
                       setAttEnd(att?.check_out
                         ? new Date(att.check_out).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
-                        : (!timeIrrelevant && contractRange ? contractRange.end : ""));
+                        : (isTodayDate ? "" : (!timeIrrelevant && contractRange ? contractRange.end : "")));
                       setShowAttModal(true);
                     }}
                     style={{
@@ -1957,6 +1969,46 @@ export default function TeamMemberPage() {
               </div>
             </div>
 
+            {attDate === todayStr && !attEnd && !["absent", "off"].includes(attStatus) && (
+              <div style={{ background: "#10b98112", border: "1.5px solid #10b98140", borderRadius: 14, padding: "12px 14px", marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#10b981", display: "flex", alignItems: "center", gap: 6 }}>
+                    ⚡ 오늘 출근 승인 (알바생 퇴근버튼 활성화)
+                  </span>
+                  <span style={{ fontSize: 10, color: "#10b981", background: "#10b98125", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>원클릭 추천</span>
+                </div>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.4 }}>
+                  알바생이 출근 버튼을 놓친 경우, 지금 출근만 승인해주면 알바생 앱에서 <b>퇴근 버튼이 즉시 활성화</b>됩니다.
+                </p>
+                <button
+                  onClick={saveAttendance}
+                  disabled={saving}
+                  style={{
+                    width: "100%",
+                    background: "#10b981",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "10px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6
+                  }}
+                >
+                  {saving ? "처리 중..." : (
+                    <>
+                      <i className="ti ti-check" aria-hidden="true" />
+                      {attStart ? `'${attStart}' 기준 출근 승인 (퇴근버튼 활성화)` : "현재 시각 기준 출근 승인"}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
             <div style={{ marginBottom: 12 }}>
               <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>날짜</p>
               <input type="date" value={attDate} max={new Date().toISOString().split("T")[0]}
@@ -1973,7 +2025,9 @@ export default function TeamMemberPage() {
                     // 결근/휴무 → 다른 상태로 바꿀 때 시간칸이 비어있으면 계약 근무시간으로 채움(원터치 저장)
                     if (!["absent", "off"].includes(s.id) && !attStart && !attEnd && contractRange) {
                       setAttStart(contractRange.start);
-                      setAttEnd(contractRange.end);
+                      if (attDate !== todayStr) {
+                        setAttEnd(contractRange.end);
+                      }
                     }
                   }}
                     style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${attStatus === s.id ? s.color : "var(--border)"}`, background: attStatus === s.id ? s.bg : "none", color: attStatus === s.id ? s.color : "var(--text-muted)", fontSize: 13, fontWeight: attStatus === s.id ? 700 : 400, cursor: "pointer" }}>
@@ -1995,12 +2049,12 @@ export default function TeamMemberPage() {
                   <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px" }}>근무 시간</p>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <select value={attStart} onChange={e => setAttStart(e.target.value)} style={selectStyle}>
-                      <option value="">시작</option>
+                      <option value="">시작 시간</option>
                       {timeOptions.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>~</span>
                     <select value={attEnd} onChange={e => setAttEnd(e.target.value)} style={selectStyle}>
-                      <option value="">종료</option>
+                      <option value="">퇴근시간 미입력 (알바생 직접 퇴근)</option>
                       {timeOptions.filter(t => !attStart || t > attStart).map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>

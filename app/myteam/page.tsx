@@ -46,6 +46,9 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [showOffScheduleConfirm, setShowOffScheduleConfirm] = useState(false);
+  const [showCheckOutConfirm, setShowCheckOutConfirm] = useState(false);
+  const [showCheckOutSuccess, setShowCheckOutSuccess] = useState(false);
+  const [checkOutSuccessData, setCheckOutSuccessData] = useState<any>(null);
 
   // KST 기준 오늘 날짜
   const today = (() => {
@@ -162,7 +165,23 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
       }
 
       // 사장님에게 푸시 알림
-      sendPushNotification({ userId: member.employer_id, title: "✅ 출근 알림", body: `${(member as any)?.users?.nickname || "팀원"}님이 출근했어요`, url: `/employer/team/${member.id}`, tag: "attendance" });
+      if (status === "late") {
+        sendPushNotification({
+          userId: member.employer_id,
+          title: "⏰ 지각 출근 알림",
+          body: `${(member as any)?.users?.nickname || "팀원"}님이 지각으로 출근했어요 (${timeStr})`,
+          url: `/employer/team/${member.id}`,
+          tag: "attendance"
+        });
+      } else {
+        sendPushNotification({
+          userId: member.employer_id,
+          title: "✅ 출근 알림",
+          body: `${(member as any)?.users?.nickname || "팀원"}님이 출근했어요 (${timeStr})`,
+          url: `/employer/team/${member.id}`,
+          tag: "attendance"
+        });
+      }
       
       // 출근 로그
       await supabase.from("attendance_logs").insert({
@@ -233,7 +252,9 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
       setTodayAtt(data);
       onRefresh?.();
       
-      alert("🔴 퇴근이 완료되었습니다. 오늘도 수고하셨습니다!");
+      const estimatedPay = member?.wage ? Math.round(diffHours * member.wage) : null;
+      setCheckOutSuccessData({ diffHours, timeStr, estimatedPay });
+      setShowCheckOutSuccess(true);
 
       // 사장님에게 푸시 알림
       sendPushNotification({ userId: member.employer_id, title: "🔴 퇴근 알림", body: `${(member as any)?.users?.nickname || "팀원"}님이 퇴근했어요 (${diffHours}h)`, url: `/employer/team/${member.id}`, tag: "attendance" });
@@ -354,7 +375,7 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
             <span style={{ fontSize:13, color:"#10b981", fontWeight:600, display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 근무 중</span>
             <span style={{ fontSize:12, color:"var(--text-muted)" }}>{checkInTime} 출근</span>
           </div>
-          <button onClick={handleCheckOut} disabled={processing}
+          <button onClick={() => setShowCheckOutConfirm(true)} disabled={processing}
             style={{ width:"100%", background:"var(--danger)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
             {processing ? "처리 중..." : (<><i className="ti ti-logout" aria-hidden="true" /> 퇴근하기</>)}
           </button>
@@ -388,6 +409,105 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
                 맞아요, 출근할게요
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showCheckOutConfirm && (() => {
+        const now = new Date();
+        const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+        const h = kst.getUTCHours();
+        const m2 = kst.getUTCMinutes();
+        const timeStr = `${String(h).padStart(2,"0")}:${String(m2).padStart(2,"0")}`;
+
+        const checkIn = todayAtt?.check_in ? new Date(todayAtt.check_in) : new Date();
+        const checkOut = new Date(`${today}T${timeStr}:00+09:00`);
+        const diffHours = Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 36000) / 100);
+        const estimatedPay = member?.wage ? Math.round(diffHours * member.wage) : null;
+
+        return (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+            onClick={() => setShowCheckOutConfirm(false)}>
+            <div style={{ background:"var(--surface)", borderRadius:"24px 24px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:480, borderTop:"1px solid var(--border)" }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ width:40, height:4, background:"var(--border)", borderRadius:2, margin:"0 auto 16px" }} />
+
+              <p style={{ fontSize:17, fontWeight:800, color:"var(--text)", marginBottom:4, display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:20 }}>🔴</span> 오늘 근무를 마칠까요?
+              </p>
+              <p style={{ fontSize:12, color:"var(--text-muted)", marginBottom:18, lineHeight:1.5 }}>
+                퇴근 처리 후에는 출퇴근 시간이 기록되고 사장님에게 알림이 발송됩니다.
+              </p>
+
+              <div style={{ background:"var(--surface2)", borderRadius:16, padding:"14px 16px", marginBottom:20, display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span style={{ fontSize:12, color:"var(--text-muted)" }}>출근 시각</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{checkInTime || "-"}</span>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span style={{ fontSize:12, color:"var(--text-muted)" }}>퇴근 시각 (현재)</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:"#ef4444" }}>{timeStr}</span>
+                </div>
+                <div style={{ borderTop:"1px dashed var(--border)", paddingTop:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>오늘 총 근무시간</span>
+                  <span style={{ fontSize:15, fontWeight:900, color:"#7c3aed" }}>{diffHours}시간</span>
+                </div>
+                {estimatedPay != null && estimatedPay > 0 && (
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(124,58,237,0.08)", padding:"8px 12px", borderRadius:10, marginTop:2 }}>
+                    <span style={{ fontSize:12, fontWeight:700, color:"#7c3aed" }}>오늘 예상 정산액</span>
+                    <span style={{ fontSize:14, fontWeight:900, color:"#7c3aed" }}>{estimatedPay.toLocaleString()}원</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={() => setShowCheckOutConfirm(false)}
+                  style={{ flex:1, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:14, padding:14, color:"var(--text-muted)", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                  취소
+                </button>
+                <button onClick={() => { setShowCheckOutConfirm(false); handleCheckOut(); }} disabled={processing}
+                  style={{ flex:1.5, background:"var(--danger)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:800, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  {processing ? "처리 중..." : (<><i className="ti ti-logout" aria-hidden="true" /> 퇴근 확정하기</>)}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {showCheckOutSuccess && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:600, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
+          onClick={() => setShowCheckOutSuccess(false)}>
+          <div style={{ background:"var(--surface)", borderRadius:24, padding:"28px 24px 24px", width:"100%", maxWidth:380, textAlign:"center", border:"1px solid var(--border)", boxShadow:"var(--shadow-elevate)" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ width:64, height:64, borderRadius:"50%", background:"linear-gradient(135deg,#10b981,#059669)", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:32, color:"#fff", boxShadow:"0 6px 20px rgba(16,185,129,0.3)" }}>
+              👏
+            </div>
+
+            <h3 style={{ fontSize:18, fontWeight:900, color:"var(--text)", margin:"0 0 6px" }}>
+              오늘 하루도 수고하셨습니다!
+            </h3>
+            <p style={{ fontSize:13, color:"var(--text-muted)", margin:"0 0 20px", lineHeight:1.5 }}>
+              무사히 퇴근 처리가 완료되었습니다.<br/>조심히 퇴근하시고 편안한 시간 되세요!
+            </p>
+
+            {checkOutSuccessData && (
+              <div style={{ background:"var(--surface2)", borderRadius:16, padding:"14px 16px", marginBottom:20, textAlign:"left" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                  <span style={{ fontSize:12, color:"var(--text-muted)" }}>총 근무시간</span>
+                  <span style={{ fontSize:13, fontWeight:800, color:"var(--text)" }}>{checkOutSuccessData.diffHours}시간</span>
+                </div>
+                {checkOutSuccessData.estimatedPay != null && checkOutSuccessData.estimatedPay > 0 && (
+                  <div style={{ display:"flex", justifyContent:"space-between" }}>
+                    <span style={{ fontSize:12, color:"var(--text-muted)" }}>오늘 예상 일급</span>
+                    <span style={{ fontSize:13, fontWeight:800, color:"#10b981" }}>{checkOutSuccessData.estimatedPay.toLocaleString()}원</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button onClick={() => setShowCheckOutSuccess(false)}
+              style={{ width:"100%", background:"var(--primary)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:800, cursor:"pointer" }}>
+              확인
+            </button>
           </div>
         </div>
       )}
@@ -1332,7 +1452,7 @@ function MyTeamPageContent() {
 
     const ids = data.map((m: any) => m.id);
     const { data: att } = ids.length > 0
-      ? await supabase.from("attendance").select("team_member_id, status, work_date").in("team_member_id", ids).gte("work_date", monthStart)
+      ? await supabase.from("attendance").select("team_member_id, status, work_date, check_in, check_out, actual_hours").in("team_member_id", ids).gte("work_date", monthStart)
       : { data: [] };
 
     const enriched = data.map((m: any) => {
@@ -1369,6 +1489,7 @@ function MyTeamPageContent() {
 
       const contractStatus = m.contract_status === "active" ? "done"
         : m.contract_status === "pending" ? "pending" : "none";
+      const todayAtt = att?.find((a: any) => a.team_member_id === m.id && a.work_date === todayStr);
       return {
         ...m,
         wage,
@@ -1376,6 +1497,7 @@ function MyTeamPageContent() {
         work_days,
         work_hours,
         worker: (m as any).users,
+        todayAtt,
         thisMonth: att?.filter((a: any) => a.team_member_id === m.id && (a.status==="normal"||a.status==="late")).length || 0,
         late: att?.filter((a: any) => a.team_member_id === m.id && a.status==="late").length || 0,
         contractStatus,
@@ -2027,27 +2149,136 @@ function MyTeamPageContent() {
                   </div>
                 </button>
 
-                {/* 통계 그리드 — 펼쳤을 때 매장 카드 내부와 동일한 스타일(라벨/값 그리드)을 접힌 상태에도 그대로 사용 */}
-                {myStores.length > 0 && (
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
-                    {[
-                      { label:"매장", value: myStores.length, icon:"ti-building-store" },
-                      { label:"직원", value: teamEmployeeCount, icon:"ti-users" },
-                      { label:"오늘 출근", value: `${teamTodayCount}/${teamScheduledCount}`, icon:"ti-calendar-check" },
-                      { label:"계약 확인", value: teamPendingCount, alert: teamPendingCount > 0, icon:"ti-file-text" },
-                    ].map((s, idx) => (
-                      <div key={s.label} style={{
-                        background: s.alert ? "rgba(239,68,68,0.06)" : "transparent",
-                        borderLeft: idx > 0 ? "1px solid var(--border)" : "none",
-                        padding:"10px 4px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
-                      }}>
-                        <i className={`ti ${s.icon}`} style={{ fontSize:14, color: s.alert ? "var(--danger)" : "var(--text-muted)" }} aria-hidden="true" />
-                        <p style={{ fontSize:9, color:"var(--text-muted)", margin:0 }}>{s.label}</p>
-                        <p style={{ fontSize:16, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
+                {/* 🟢/⚠️ 1초 안심 상태 대시보드 배너 (접혀있을 때도 전 매장 상태 즉시 파악) */}
+                {myStores.length > 0 && (() => {
+                  const todayKo = KOREAN_DAY_BY_INDEX[new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay()];
+                  const allMembers = Object.values(membersByStore).flat();
+                  const scheduledToday = allMembers.filter((m: any) => isWorkingOnDay(m.work_days, todayKo));
+
+                  const lates = scheduledToday.filter((m: any) => m.todayAtt?.status === "late");
+                  const absents = scheduledToday.filter((m: any) => m.todayAtt?.status === "absent");
+                  const uncheckedIn = scheduledToday.filter((m: any) => !m.todayAtt?.check_in && m.todayAtt?.status !== "absent");
+                  const pendingContracts = allMembers.filter((m: any) => m.contractStatus !== "done");
+
+                  const hasIssues = lates.length > 0 || absents.length > 0 || uncheckedIn.length > 0 || pendingContracts.length > 0;
+                  const checkedInCount = scheduledToday.filter((m: any) => !!m.todayAtt?.check_in).length;
+
+                  return (
+                    <div style={{ marginBottom: 14 }}>
+                      {!hasIssues ? (
+                        <div style={{
+                          background: "linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(5,150,105,0.08) 100%)",
+                          border: "1.5px solid rgba(16,185,129,0.35)",
+                          borderRadius: 16,
+                          padding: "14px 16px",
+                          marginBottom: 10,
+                          boxShadow: "0 4px 12px rgba(16,185,129,0.1)"
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 20 }}>🟢</span>
+                              <div>
+                                <p style={{ fontSize: 14, fontWeight: 900, color: "#10b981", margin: 0, letterSpacing: "-0.2px" }}>
+                                  오늘 모든 매장 이상 없음!
+                                </p>
+                                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>
+                                  출근 {checkedInCount}/{scheduledToday.length}명 · 지각/결근/계약미확인 0건
+                                </p>
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 10, background: "#10b98125", color: "#10b981", padding: "4px 8px", borderRadius: 8, fontWeight: 800 }}>
+                              안심 가동 중
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{
+                          background: "linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(245,158,11,0.08) 100%)",
+                          border: "1.5px solid rgba(239,68,68,0.3)",
+                          borderRadius: 16,
+                          padding: "14px 16px",
+                          marginBottom: 10,
+                          boxShadow: "0 4px 12px rgba(239,68,68,0.08)"
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 20 }}>⚠️</span>
+                              <div>
+                                <p style={{ fontSize: 14, fontWeight: 900, color: "#ef4444", margin: 0, letterSpacing: "-0.2px" }}>
+                                  오늘 확인/조치가 필요한 항목이 있어요
+                                </p>
+                                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>
+                                  {lates.length > 0 && `지각 ${lates.length}건 `}
+                                  {absents.length > 0 && `결근 ${absents.length}건 `}
+                                  {uncheckedIn.length > 0 && `출근대기 ${uncheckedIn.length}건 `}
+                                  {pendingContracts.length > 0 && `계약확인 ${pendingContracts.length}건`}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setTeamOpen(true)}
+                              style={{
+                                background: "#ef4444",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: 10,
+                                padding: "6px 12px",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap"
+                              }}
+                            >
+                              확인하기 →
+                            </button>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                            {lates.map((m: any) => (
+                              <span key={`late_${m.id}`} style={{ fontSize: 10, background: "#f59e0b20", color: "#d97706", border: "1px solid #f59e0b40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                                ⏰ {m.worker?.nickname || "팀원"} (지각)
+                              </span>
+                            ))}
+                            {uncheckedIn.map((m: any) => (
+                              <span key={`unc_${m.id}`} style={{ fontSize: 10, background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                                ⏳ {m.worker?.nickname || "팀원"} (미출근)
+                              </span>
+                            ))}
+                            {absents.map((m: any) => (
+                              <span key={`abs_${m.id}`} style={{ fontSize: 10, background: "#ef444420", color: "#ef4444", border: "1px solid #ef444440", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                                ❌ {m.worker?.nickname || "팀원"} (결근)
+                              </span>
+                            ))}
+                            {pendingContracts.length > 0 && (
+                              <span style={{ fontSize: 10, background: "#7c3aed20", color: "#7c3aed", border: "1px solid #7c3aed40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                                📄 미확인 계약서 {pendingContracts.length}건
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)" }}>
+                        {[
+                          { label:"매장", value: myStores.length, icon:"ti-building-store" },
+                          { label:"직원", value: teamEmployeeCount, icon:"ti-users" },
+                          { label:"오늘 출근", value: `${teamTodayCount}/${teamScheduledCount}`, icon:"ti-calendar-check" },
+                          { label:"계약 확인", value: teamPendingCount, alert: teamPendingCount > 0, icon:"ti-file-text" },
+                        ].map((s, idx) => (
+                          <div key={s.label} style={{
+                            background: s.alert ? "rgba(239,68,68,0.06)" : "transparent",
+                            borderLeft: idx > 0 ? "1px solid var(--border)" : "none",
+                            padding:"10px 4px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                          }}>
+                            <i className={`ti ${s.icon}`} style={{ fontSize:14, color: s.alert ? "var(--danger)" : "var(--text-muted)" }} aria-hidden="true" />
+                            <p style={{ fontSize:9, color:"var(--text-muted)", margin:0 }}>{s.label}</p>
+                            <p style={{ fontSize:16, fontWeight:800, color: s.alert ? "var(--danger)" : "var(--text)", margin:0 }}>{s.value}</p>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  );
+                })()}
 
                 {teamOpen && (<>
 
@@ -2180,7 +2411,7 @@ function MyTeamPageContent() {
                   ];
                   const inactiveCount = sorted.length - 1;
 
-                  // 색상환에서 확실히 떨어진 8색 그라데이션 — 빨강/파랑/초록/보라/주황/청록/핑크/올리브, 스택 위치(i) 기준 순환
+                  // 색상환에서 확실히 떨어진 8색 그라데이션 — 각 매장의 고유 인덱스에 고정 할당
                   const CARD_GRADIENTS = [
                     "linear-gradient(135deg,#991b1b 0%,#dc2626 100%)",
                     "linear-gradient(135deg,#1e40af 0%,#2563eb 100%)",
@@ -2191,6 +2422,12 @@ function MyTeamPageContent() {
                     "linear-gradient(135deg,#9d174d 0%,#db2777 100%)",
                     "linear-gradient(135deg,#3f6212 0%,#65a30d 100%)",
                   ];
+
+                  const getStoreGradient = (store: any) => {
+                    const origIdx = myStores.findIndex((s: any) => s.id === store.id);
+                    const safeIdx = origIdx >= 0 ? origIdx : 0;
+                    return CARD_GRADIENTS[safeIdx % CARD_GRADIENTS.length];
+                  };
 
                   return (
                     <div>
@@ -2210,7 +2447,7 @@ function MyTeamPageContent() {
                                 borderRadius:16,
                                 cursor:"pointer",
                                 zIndex: inactiveCount - i,
-                                background: CARD_GRADIENTS[i % CARD_GRADIENTS.length],
+                                background: getStoreGradient(store),
                                 boxShadow:"0 4px 16px rgba(0,0,0,0.5)",
                               }}>
                               {/* 한 줄만 보이는 헤더 */}
@@ -2229,10 +2466,10 @@ function MyTeamPageContent() {
                         })}
                       </div>
 
-                      {/* 활성 카드 — 맨 아래, 전체 표시 */}
-                      <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 8px 32px rgba(124,58,237,0.35)" }}>
-                        {/* 활성 카드 헤더 — 브랜드 그라데이션 */}
-                        <div style={{ background:"linear-gradient(135deg,#7c3aed 0%,#a855f7 55%,#ec4899 100%)", height: PEEK, display:"flex", alignItems:"center", gap:10, padding:"0 14px" }}>
+                      {/* 활성 카드 — 맨 아래, 선택된 매장의 고유 그라데이션 색상 유지하며 전체 표시 */}
+                      <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 8px 32px rgba(0,0,0,0.3)" }}>
+                        {/* 활성 카드 헤더 — 선택된 매장 고유 그라데이션 */}
+                        <div style={{ background: getStoreGradient(activeStore), height: PEEK, display:"flex", alignItems:"center", gap:10, padding:"0 14px" }}>
                           <i className={`ti ${BIZ_ICON[activeStore.business_type]||"ti-building-store"}`} style={{ fontSize:20, flexShrink:0, color:"#fff" }} aria-hidden="true" />
                           <div style={{ flex:1, minWidth:0 }}>
                             <p style={{ fontSize:14, fontWeight:800, color:"#fff", margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeStore.business_name}</p>
@@ -2240,7 +2477,7 @@ function MyTeamPageContent() {
                           </div>
                           <button onClick={() => { setEditingStore(activeStore); setStoreModalOpen(true); }}
                             style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, padding:"5px 10px", color:"rgba(255,255,255,0.9)", fontSize:11, cursor:"pointer", flexShrink:0, whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:4 }}>
-                            <i className="ti ti-pencil" aria-hidden="true" /> 매장 정보 수정
+                            <i className="ti ti-pencil" aria-hidden="true" /> 수정
                           </button>
                           <button onClick={() => openDeleteModal(activeStore)}
                             style={{ background:"rgba(239,68,68,0.25)", border:"none", borderRadius:"50%", width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", color:"rgba(255,255,255,0.8)", fontSize:13, cursor:"pointer", flexShrink:0 }}>
@@ -2265,6 +2502,133 @@ function MyTeamPageContent() {
                             </div>
                           ))}
                         </div>
+
+                        {/* ⚡ 오늘 출근 현황 리얼타임 카드 */}
+                        {(() => {
+                          const todayKo = KOREAN_DAY_BY_INDEX[new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay()];
+                          const todayScheduledMembers = activeMembers.filter((m: any) => isWorkingOnDay(m.work_days, todayKo));
+                          if (todayScheduledMembers.length === 0) return null;
+
+                          return (
+                            <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "14px 16px" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                                  <i className="ti ti-clock-play" style={{ color: "#7c3aed" }} aria-hidden="true" /> 오늘 근무자 현황 ({todayScheduledMembers.length}명)
+                                </span>
+                                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{todayKo}요일</span>
+                              </div>
+
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                {todayScheduledMembers.map((m: any) => {
+                                  const name = m.worker?.nickname || "팀원";
+                                  const attRec = m.todayAtt;
+                                  const isCheckedIn = !!attRec?.check_in;
+                                  const isCheckedOut = !!attRec?.check_out;
+                                  const status = attRec?.status;
+
+                                  let badgeBg = "#f59e0b18";
+                                  let badgeColor = "#f59e0b";
+                                  let badgeText = "⏳ 미출근";
+                                  let timeText = m.work_hours || "시간 미정";
+
+                                  if (status === "absent") {
+                                    badgeBg = "#ef444418";
+                                    badgeColor = "#ef4444";
+                                    badgeText = "❌ 결근";
+                                  } else if (isCheckedIn && !isCheckedOut) {
+                                    if (status === "late") {
+                                      badgeBg = "#f59e0b20";
+                                      badgeColor = "#d97706";
+                                      badgeText = "⏰ 근무 중 (지각)";
+                                    } else {
+                                      badgeBg = "#10b98120";
+                                      badgeColor = "#10b981";
+                                      badgeText = "✅ 근무 중";
+                                    }
+                                    timeText = `${new Date(attRec.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })} 출근`;
+                                  } else if (isCheckedIn && isCheckedOut) {
+                                    badgeBg = "var(--surface2)";
+                                    badgeColor = "var(--text-muted)";
+                                    badgeText = "🔴 퇴근 완료";
+                                    timeText = `${attRec.actual_hours || 0}시간 근무`;
+                                  }
+
+                                  return (
+                                    <div key={m.id} style={{ background: "var(--surface2)", borderRadius: 12, padding: "10px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#7c3aed20", color: "#7c3aed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>
+                                          {name.slice(0, 1)}
+                                        </div>
+                                        <div>
+                                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{name}</span>
+                                            <span style={{ fontSize: 10, background: badgeBg, color: badgeColor, padding: "2px 6px", borderRadius: 6, fontWeight: 700 }}>
+                                              {badgeText}
+                                            </span>
+                                          </div>
+                                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{timeText}</span>
+                                        </div>
+                                      </div>
+
+                                      {!isCheckedIn && status !== "absent" && (
+                                        <button
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const todayStr = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
+                                            const now = new Date();
+                                            const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+                                            const h = String(kst.getUTCHours()).padStart(2, "0");
+                                            const min = String(kst.getUTCMinutes()).padStart(2, "0");
+                                            const checkInTime = `${todayStr}T${h}:${min}:00+09:00`;
+
+                                            const { error } = await supabase.from("attendance").upsert({
+                                              team_member_id: m.id,
+                                              employer_id: m.employer_id,
+                                              worker_id: m.worker_id,
+                                              work_date: todayStr,
+                                              status: "normal",
+                                              check_in: checkInTime,
+                                              actual_hours: 0,
+                                            }, { onConflict: "team_member_id,work_date" });
+
+                                            if (!error) {
+                                              showToast(`${name}님의 출근을 승인했습니다!`);
+                                              sendPushNotification({
+                                                userId: m.worker_id,
+                                                title: "✅ 출근 승인 완료",
+                                                body: `사장님이 오늘 출근을 승인했습니다. 퇴근 시 앱에서 퇴근 버튼을 눌러주세요!`,
+                                                url: "/myteam",
+                                                tag: "attendance"
+                                              });
+                                              if (user) loadTeam(user.id);
+                                            } else {
+                                              showToast("출근 승인 오류: " + error.message, "error");
+                                            }
+                                          }}
+                                          style={{
+                                            background: "#10b981",
+                                            color: "#fff",
+                                            border: "none",
+                                            borderRadius: 8,
+                                            padding: "6px 12px",
+                                            fontSize: 11,
+                                            fontWeight: 700,
+                                            cursor: "pointer",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4
+                                          }}
+                                        >
+                                          <i className="ti ti-check" aria-hidden="true" /> 출근 승인
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* 📅 요일별 근무 시간표 타임라인 */}
                         <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "14px 16px" }}>

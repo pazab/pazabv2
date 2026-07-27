@@ -243,10 +243,11 @@ export default function BottomNav() {
   };
 
   if (isHiddenPath || !isLoggedIn) return null;
-  // DESIGN_PLAN.md P4 확정형: [홈][대타⚡중앙][채팅][MY] 4탭 — 탐색·피드는 ⋮ 메뉴로 강등
+  // 5탭 구조: [피드] [대타] [홈🏠 (중앙 포인트)] [채팅] [MY]
   const tabs = [
-    { icon: "ti-home", label: "홈", path: "/myteam", active: pathname === "/" || pathname.startsWith("/myteam") || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
-    { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta"), center: true, badge: daetaUnread },
+    { icon: "ti-news", label: "피드", path: "/feed", active: pathname.startsWith("/feed") },
+    { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta"), isDaeta: true, badge: daetaUnread },
+    { icon: "ti-home", label: "홈", path: "/myteam", active: pathname === "/" || pathname.startsWith("/myteam") || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/"), center: true },
     { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat"), badge: unreadCount },
     { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];
@@ -300,24 +301,56 @@ export default function BottomNav() {
         <div style={{ width: "100%", maxWidth: 480 }}>
           <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", padding: "8px 4px calc(8px + env(safe-area-inset-bottom))" }}>
             {tabs.map(tab => {
-              const isDaeta = (tab as any).center;
-              // 대타만 색으로 구분(전략상 1순위 기능) — 크기·형태는 다른 탭과 동일하게 통일
+              const isDaeta = (tab as any).isDaeta;
+              const isCenter = (tab as any).center;
               const activeColor = isDaeta ? "#fb923c" : "#a78bfa";
               const barColor = isDaeta ? "#fb923c" : "var(--primary)";
+
+              if (isCenter) {
+                return (
+                  <button key={tab.label} onClick={() => handleTabClick(tab.path)}
+                    style={{
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                      background: "none", border: "none", cursor: "pointer",
+                      padding: "0 6px 4px", position: "relative", flex: 1, marginTop: -14,
+                    }}>
+                    <div style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: "50%",
+                      background: tab.active
+                        ? "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)"
+                        : "linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(109,40,217,0.1) 100%)",
+                      border: tab.active ? "2px solid rgba(255,255,255,0.4)" : "1.5px solid rgba(139,92,246,0.3)",
+                      boxShadow: tab.active ? "0 6px 18px rgba(139,92,246,0.45)" : "0 4px 12px rgba(0,0,0,0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.25s ease",
+                    }}>
+                      <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#ffffff" : "#c4b5fd" }} aria-hidden="true" />
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 800, color: tab.active ? "var(--primary, #8b5cf6)" : "var(--text-muted)", transition: "color 0.2s" }}>
+                      {tab.label}
+                    </span>
+                  </button>
+                );
+              }
+
               return (
                 <button key={tab.label} onClick={() => handleTabClick(tab.path)}
-                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "8px 14px 6px", position: "relative", flex: 1, transition: "opacity 0.15s" }}>
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "8px 10px 6px", position: "relative", flex: 1, transition: "opacity 0.15s" }}>
                   {/* 상단 액티브 인디케이터 바 */}
                   <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: tab.active ? 20 : 0, height: 2, borderRadius: 2, background: barColor, transition: "width 0.25s ease" }} />
                   <div style={{ position: "relative" }}>
-                    <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? activeColor : isDaeta ? "#fb923c99" : "var(--text-muted)", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
+                    <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? activeColor : isDaeta ? "#fb923c" : "var(--text-muted)", display: "block", transition: "color 0.2s" }} aria-hidden="true" />
                     {(tab as any).badge > 0 && (
                       <span style={{ position: "absolute", top: -3, right: -8, background: "var(--danger)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 10, minWidth: 16, textAlign: "center", border: "1.5px solid var(--nav-bg)" }}>
                         {(tab as any).badge > 99 ? "99+" : (tab as any).badge}
                       </span>
                     )}
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: tab.active ? 700 : 500, color: tab.active ? activeColor : isDaeta ? "#fb923c99" : "var(--text-muted)", transition: "color 0.2s" }}>{tab.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: tab.active ? 800 : 500, color: tab.active ? activeColor : isDaeta ? "#fb923c" : "var(--text-muted)", transition: "color 0.2s" }}>{tab.label}</span>
                 </button>
               );
             })}
