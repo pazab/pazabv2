@@ -11,7 +11,7 @@ export default function AdminTrustPage() {
 
   useEffect(() => { init(); }, []);
 
-  const ADMIN_EMAIL = "hellopazab@gmail.com";
+  const ADMIN_EMAIL = "pazab@kakao.com";
 
   const init = async () => {
     const { data: { session } } = await supabase.auth.getSession();

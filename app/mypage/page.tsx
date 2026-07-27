@@ -358,8 +358,8 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  const visibleCalls = expanded ? sorted : sorted.slice(0, 3);
-  const hasMore = sorted.length > 3;
+  const visibleCalls = expanded ? sorted : sorted.slice(0, 1);
+  const hasMore = sorted.length > 1;
 
   const getStatusInfo = (lc: any) => {
     const ps = lc.progress_status || lc.status;
@@ -411,8 +411,13 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
               <button onClick={() => onNavigate(lc)}
                 style={{ width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                 <div>
-                  <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px", color: "var(--text)" }}>
-                    {isWorkerRole ? "🏪" : "⚡"} {name}
+                  <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px", color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>{isWorkerRole ? "🏪" : "⚡"} {name}</span>
+                    {lc.daeta_posting_id && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", background: "#f59e0b1a", padding: "2px 6px", borderRadius: 20, whiteSpace: "nowrap" }}>
+                        🚨 대타에서 시작
+                      </span>
+                    )}
                   </p>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
                     궁합 {lc.match_score}점 · {new Date(lc.created_at).toLocaleDateString("ko-KR")} · 탭하면 상세 보기
@@ -1123,42 +1128,45 @@ function MyPageContent() {
           </div>
         </div>
 
-        {/* 내 공개 프로필 바로가기 덱 */}
-        <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "14px 16px", marginBottom: 14 }}>
-          <p style={{ fontSize: 12, fontWeight: 900, color: "var(--text-muted)", margin: "0 0 10px", letterSpacing: "0.5px" }}>
-            내 공개 프로필 카드 미리보기
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <button
-              onClick={() => router.push(`/worker/${user.id}`)}
-              style={{
-                background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(139,92,246,0.08) 100%)",
-                border: "1px solid var(--primary-border)",
-                borderRadius: 14,
-                padding: "12px",
-                textAlign: "left",
-                cursor: "pointer"
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 900, color: "var(--purple-text)", marginBottom: 2 }}>파잡 커리어</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>경력 및 신뢰도 이력</div>
-            </button>
+        {/* 내 공개 프로필 바로가기 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+          <button
+            onClick={() => router.push(`/worker/${user.id}`)}
+            style={{
+              background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(139,92,246,0.08) 100%)",
+              border: "1px solid var(--primary-border)",
+              borderRadius: 16,
+              padding: "14px",
+              textAlign: "left",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              cursor: "pointer"
+            }}
+          >
+            <span style={{ fontSize: 22 }}>💼</span>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>파잡 커리어</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>경력 및 신뢰도 이력</p>
+          </button>
 
-            <button
-              onClick={() => router.push(`/profile/${user.id}`)}
-              style={{
-                background: "linear-gradient(135deg, rgba(236,72,153,0.15) 0%, rgba(244,114,182,0.08) 100%)",
-                border: "1px solid var(--chip-pink-border)",
-                borderRadius: 14,
-                padding: "12px",
-                textAlign: "left",
-                cursor: "pointer"
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 900, color: "var(--pink-text)", marginBottom: 2 }}>소셜 프로필</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>피드 및 활동 뱃지</div>
-            </button>
-          </div>
+          <button
+            onClick={() => router.push(`/profile/${user.id}`)}
+            style={{
+              background: "linear-gradient(135deg, rgba(236,72,153,0.15) 0%, rgba(244,114,182,0.08) 100%)",
+              border: "1px solid var(--chip-pink-border)",
+              borderRadius: 16,
+              padding: "14px",
+              textAlign: "left",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              cursor: "pointer"
+            }}
+          >
+            <span style={{ fontSize: 22 }}>👤</span>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--pink-text)" }}>소셜 프로필</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>피드 및 활동 뱃지</p>
+          </button>
         </div>
 
         {/* 팀·소속 바로가기 */}

@@ -1,7 +1,18 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-26 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-28 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
+
+**방향성 재점검(STRATEGY.md §11) + 성장 지표 어드민 신설 + admin 계정 이관 + MY 페이지 정리 (2026-07-28)**
+- **STRATEGY.md §11 신규 — 대화를 통해 정리한 방향성 재확정**: (11.1) "대타"는 사람 자격이 아니라 상황(응급 시프트) 정의이고 Tier1/Tier2는 별개 축인 신뢰 레이어라는 점 명시, `allow_new` opt-in 게이트가 이미 이 원칙을 구현 중임을 확인. (11.2) 신규 기능·마케팅 판단 우선순위를 "사장님이 등록/초대한 기존 직원 > 대타(Tier2)로 유입된 신규 > 완전 콜드 신규 가입자"로 명문화. (11.3) 하단 네비 피드 탭 위치 — 2026-07-13 강등 결정이 2026-07-27 5탭 개편에서 근거 기록 없이 되돌아간 것을 확인했으나, 실제로는 소셜 프로필(`/profile/[userId]`) 기능이 의미를 가지려면 피드 접근 동선이 필요하다는 근거 있는 판단이었음을 확인 → **피드 탭 유지로 재확정**(단, 밀도 낮은 지역 빈 피드 리스크는 계속 관찰, 필요시 기본 필터를 팔로잉/내활동으로 좁히는 안 검토). (11.4) §2 핵심 성장지표("사장님 1명 가입 → 직원 N명 Tier1 편입")를 실제로 재는 곳이 없다는 계측 공백 확인, 다음 최우선 작업으로 지정.
+- **§4 승격조건에 구현 갭 경고 추가**: `lib/daetaTier.ts`가 사장님 평가 없이 매칭 성사 여부만으로 Tier1 승격시키는 문제 — "검증됨"이 잡보드 자기주장 수준과 다르지 않게 되는 리스크. 미착수, 다음 작업 후보로 기록.
+- **`/admin/growth-stats` 신규** (`app/admin/growth-stats/page.tsx`, `app/api/admin/growth-stats/route.ts`): §11.4 계측 공백을 메우는 첫 페이지. 최근 7일 신규 등록/초대 팀원 수, 현재 대타가능(`available_now`) 켠 인원, 대타 SOS 발생/성사 건수·성사율을 서비스롤 집계로 표시. 기존 `/admin/ai-stats`와 동일한 클라이언트 이메일 게이트 패턴 사용.
+- **admin 계정 전체 이관 (`hellopazab@gmail.com` → `pazab@kakao.com`)**: v2 실사용 메인 계정(카카오)이 admin 권한도 갖도록 `app/admin/ai-stats/page.tsx`, `app/admin/tax-rates/page.tsx`, `app/admin/trust/page.tsx`, `app/admin/growth-stats/page.tsx`, `app/api/admin/growth-stats/route.ts`의 `ADMIN_EMAIL` 상수 전부 교체. `CLAUDE.md` 테스트 계정 목록도 갱신(`hellopazab@gmail.com`은 구 admin으로 표기만 남김). 약관/개인정보/VAPID push 연락처의 `hellopazab@gmail.com`은 권한 체크가 아니라 법적 고지·기술 규격용이라 그대로 유지.
+- **MY 페이지(`app/mypage/page.tsx`) 정리**:
+  - "지원 현황"/"채용 제안" 카드에 `daeta_posting_id` 유무로 `🚨 대타에서 시작` 배지 추가 — 대타 SOS에서 전환된 매칭과 일반 지원을 구분 가능하게.
+  - "파잡 커리어"/"소셜 프로필" 버튼에 아이콘(💼/👤) 추가하고 "내 팀·소속"/"팀원 초대"와 동일한 카드 레이아웃(아이콘 위→굵은 제목→회색 부제)으로 통일, 감싸고 있던 "내 공개 프로필 카드 미리보기" 래퍼 박스 제거하고 4개 버튼 크기·그리드를 완전히 통일.
+  - `LoveCallSection` 접힌 상태 기본 노출 건수를 3건 → 1건으로 축소(정렬 로직은 그대로: 진행중 우선, 동순위는 최신순).
+- 전 항목 `npx tsc --noEmit` 신규 에러 0건 확인(기존 무관 에러 `app/explore/page.tsx`, `app/job/[id]/page.tsx` 2개 파일은 그대로 둠).
 
 **근태(출퇴근) 시스템 버그 다수 수정 + 팀원 개인정보 조회/수정 기능 신규, 매장 스택카드 디자인 확정 (2026-07-26 2차)**
 - **근태 중복 레코드 버그 — "오늘 출근 3/2"의 원인**: `attendance(team_member_id, work_date)`에 유니크 제약이 없는 상태로 알바생의 `handleCheckIn()`이 매번 plain INSERT를 해서, 크론이 만든 결근 행 위에 또 새 행이 쌓이는 중복이 발생. 홈 화면 "오늘 출근 X/Y" 배지의 분자(X)가 분모(Y)보다 커지는 형태로 드러남. `handleCheckIn()`을 upsert(`onConflict: team_member_id,work_date`)로 전환하고, `supabase/patch_attendance_unique.sql` 작성해 기존 중복 정리 + 유니크 제약 추가(사용자가 Supabase SQL Editor에서 직접 실행, 완료 확인함).

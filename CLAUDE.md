@@ -81,5 +81,5 @@ npm run build
 ```
 ftc2sun@gmail.com    — employer, 파스쿠찌 탕정역점
 aabbuju@gmail.com    — both, 초대 수락 테스트 완료
-pazab@kakao.com      — both, 탕정면 매곡리
-hellopazab@gmail.com — admin, /admin/tax-rates 및 /admin/ai-stats 전용 권한
+pazab@kakao.com      — both, 탕정면 매곡리, v2 메인 사용 계정 + admin(2026-07-28부터, hellopazab@gmail.com에서 이관) — /admin/tax-rates·/admin/ai-stats·/admin/trust·/admin/growth-stats 전용 권한
+hellopazab@gmail.com — (구) admin, 권한 pazab@kakao.com으로 이관됨

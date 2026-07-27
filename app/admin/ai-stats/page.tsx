@@ -33,7 +33,7 @@ function calcSummary(logs: any[]) {
   };
 }
 
-const ADMIN_EMAIL = "hellopazab@gmail.com";
+const ADMIN_EMAIL = "pazab@kakao.com";
 
 export default function AiStatsPage() {
   const router = useRouter();

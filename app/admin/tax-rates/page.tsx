@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { invalidateTaxRatesCache } from "@/lib/taxRates";
 
-const ADMIN_EMAIL = "hellopazab@gmail.com";
+const ADMIN_EMAIL = "pazab@kakao.com";
 
 interface TaxRateRow {
   id?: string;
@@ -262,7 +262,7 @@ export default function AdminTaxRatesPage() {
       )}
 
       <p style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", marginTop: 8 }}>
-        hellopazab@gmail.com 전용 관리 페이지
+        pazab@kakao.com 전용 관리 페이지
       </p>
     </main>
   );
