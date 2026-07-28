@@ -13,14 +13,6 @@ interface Message {
   isRecommend?: boolean;
 }
 
-const THEMES: Record<string, { from: string; to: string }> = {
-  purple: { from: "#7c3aed", to: "#ec4899" },
-  blue: { from: "#0ea5e9", to: "#6366f1" },
-  green: { from: "#10b981", to: "#0ea5e9" },
-  pink: { from: "#ec4899", to: "#f43f5e" },
-  gold: { from: "#f59e0b", to: "#ef4444" },
-};
-
 export default function PazPage() {
   return (
     <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
@@ -33,15 +25,12 @@ function PazContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
-  const [pazName, setPazName] = useState("PAZ");
-  const [editingName, setEditingName] = useState(false);
-  const [tempName, setTempName] = useState("");
+  const pazName = "PAZ";
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{text: string, action: string} | null>(null);
   const [recording, setRecording] = useState(false);
-  const [avatar, setAvatar] = useState("🤖");
   const [themeFrom, setThemeFrom] = useState("#7c3aed");
   const [themeTo, setThemeTo] = useState("#ec4899");
   const [autoSpeak, setAutoSpeak] = useState(false);
@@ -326,17 +315,10 @@ function PazContent() {
 
   async function loadProfile(userId: string) {
     const { data } = await supabase.from("users")
-      .select("nickname, paz_name, paz_knowledge, paz_avatar, paz_theme, paz_photo_url, worker_result, employer_result, user_type")
+      .select("nickname, worker_result, employer_result, user_type")
       .eq("id", userId).maybeSingle();
     if (data) {
-      const name = data.paz_name || "PAZ";
-      setPazName(name);
-      setAvatar(data.paz_avatar || "🤖");
-      setPhotoUrl(data.paz_photo_url || null);
-      setUsePhoto(!!data.paz_photo_url);
-      const t = THEMES[data.paz_theme || "purple"] || THEMES.purple;
-      setThemeFrom(t.from);
-      setThemeTo(t.to);
+      const name = pazName;
 
       // 최근 대화 이력 불러오기 (최근 100개)
       const { data: history } = await supabase
@@ -458,17 +440,6 @@ function PazContent() {
     }
   }
 
-  async function savePazName(name: string) {
-    if (!user) return;
-    await supabase.from("users").update({ paz_name: name }).eq("id", user.id);
-    setPazName(name);
-    setEditingName(false);
-    setMessages(prev => [{
-      role: "assistant",
-      content: `이제부터 ${name}(으)로 불러주세요! 잘 부탁드려요 😊`,
-    }, ...prev.slice(1)]);
-  }
-
   async function sendMessage(text: string, isVoice = false) {
     if (!text.trim() || loading) return;
     const userMsg: Message = { role: "user", content: text, isVoice, createdAt: new Date().toISOString() };
@@ -493,9 +464,9 @@ function PazContent() {
     }
 
     try {
-      // 사용자 성향 + 장기기억 로드
+      // 사용자 성향 로드
       const { data: profile } = await supabase.from("users")
-        .select("nickname, worker_result, employer_result, user_type, worker_bot_knowledge, employer_bot_knowledge, paz_knowledge")
+        .select("nickname, worker_result, employer_result, user_type, worker_bot_knowledge, employer_bot_knowledge")
         .eq("id", user.id).maybeSingle();
 
       // 유사 기억 검색 (pgvector)
@@ -564,8 +535,7 @@ function PazContent() {
 - 역할: ${profile?.user_type === "employer" ? "사장님(자영업자)" : profile?.user_type === "worker" ? "알바생/구직자" : "사장님+구직자"}
 ${profile?.worker_result ? `- 성향(구직자): ${JSON.stringify(profile.worker_result).slice(0, 200)}` : ""}
 ${profile?.employer_result ? `- 성향(사장님): ${JSON.stringify(profile.employer_result).slice(0, 200)}` : ""}
-${profile?.employer_bot_knowledge ? `- 매장/사업 정보: ${profile.employer_bot_knowledge.slice(0, 300)}` : ""}
-${profile?.paz_knowledge ? `- 대화 요약 (장기기억): ${profile.paz_knowledge}` : ""}${similarMemories}
+${profile?.employer_bot_knowledge ? `- 매장/사업 정보: ${profile.employer_bot_knowledge.slice(0, 300)}` : ""}${similarMemories}
 ${dbContext ? `\n실시간 현황:${dbContext}` : ""}
 
 역할:
@@ -625,48 +595,6 @@ ${dbContext ? `\n실시간 현황:${dbContext}` : ""}
         }, 1500);
       }
 
-      // 주간 리포트 체크 (7일마다)
-      const { data: userInfo } = await supabase.from("users").select("paz_last_report_at").eq("id", user.id).maybeSingle();
-      const lastReport = userInfo?.paz_last_report_at ? new Date(userInfo.paz_last_report_at) : null;
-      const daysSinceReport = lastReport ? (new Date().getTime() - lastReport.getTime()) / (1000 * 60 * 60 * 24) : 999;
-
-      if (daysSinceReport >= 7) {
-        const { data: weekChats } = await supabase.from("paz_chats").select("emotion, content, role").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
-        if (weekChats && weekChats.length >= 5) {
-          const emotions = weekChats.filter((c: { emotion: string | null }) => c.emotion).map((c: { emotion: string | null }) => c.emotion as string);
-          const emotionCount: Record<string, number> = {};
-          emotions.forEach((e: string) => { emotionCount[e] = (emotionCount[e] || 0) + 1; });
-          const topEmotion = Object.entries(emotionCount).sort((a,b) => b[1]-a[1])[0]?.[0] || "중립";
-          const negativeCount = (emotionCount["부정"] || 0) + (emotionCount["스트레스"] || 0) + (emotionCount["불안"] || 0);
-          const positiveCount = (emotionCount["긍정"] || 0) + (emotionCount["만족"] || 0) + (emotionCount["기대"] || 0);
-
-          const reportMsg = `📊 이번 주 감정 리포트\n\n주로 느낀 감정: ${topEmotion}\n긍정적 순간: ${positiveCount}회 / 부정적 순간: ${negativeCount}회\n\n${negativeCount > positiveCount ? "요즘 힘드신 게 있으신 것 같아요. 언제든 이야기해요 💙" : "이번 주도 잘 지내고 계시네요! 앞으로도 응원할게요 🎉"}`;
-
-          setTimeout(async () => {
-            setMessages(prev => [...prev, { role: "assistant", content: reportMsg, createdAt: new Date().toISOString() }]);
-            await supabase.from("paz_chats").insert({ user_id: user.id, role: "assistant", content: reportMsg });
-            await supabase.from("users").update({ paz_last_report_at: new Date().toISOString() }).eq("id", user.id);
-          }, 2000);
-        }
-      }
-
-      // 20개마다 요약 → 장기기억
-      const { count } = await supabase.from("paz_chats").select("*", { count: "exact", head: true }).eq("user_id", user.id);
-      if (count && count % 20 === 0) {
-        const { data: recent } = await supabase.from("paz_chats").select("role, content").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20);
-        if (recent) {
-          const summaryRes = await fetch("/api/paz-chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              messages: [{ role: "user", content: `다음 대화를 3~5문장으로 요약해줘. 사용자의 주요 고민, 상황, 성향이 드러나도록:\n\n${recent.reverse().map((m: { role: string; content: string }) => `${m.role}: ${m.content}`).join("\n")}` }],
-              systemPrompt: "대화 요약 전문가. 핵심만 간결하게.",
-            }),
-          });
-          const summaryData = await summaryRes.json();
-          await supabase.from("users").update({ paz_knowledge: summaryData.reply }).eq("id", user.id);
-        }
-      }
     } catch (e) {
       setMessages(prev => [...prev, { role: "assistant", content: "잠시 오류가 발생했어요. 다시 시도해주세요 🙏" }]);
     }
@@ -674,9 +602,6 @@ ${dbContext ? `\n실시간 현황:${dbContext}` : ""}
   }
 
   // Web Speech API 실시간 음성인식
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [usePhoto, setUsePhoto] = useState(false);
-
   function speak(text: string, index?: number) {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
@@ -794,12 +719,6 @@ ${dbContext ? `\n실시간 현황:${dbContext}` : ""}
           style={{ background: autoSpeak ? "linear-gradient(135deg, #8b5cf6, #ec4899)" : "var(--surface2)", border: "none", borderRadius: 20, padding: "5px 10px", fontSize: 11, fontWeight: 700, color: autoSpeak ? "#fff" : "var(--text-muted)", cursor: "pointer", transition: "all 0.15s", display: "flex", alignItems: "center", gap: 4 }}>
           <i className="ti ti-microphone" style={{ fontSize: 13 }} aria-hidden="true" />
           <span>{autoSpeak ? "ON" : "OFF"}</span>
-        </button>
-
-        {/* 설정 버튼 */}
-        <button onClick={() => router.push("/paz/settings")}
-          style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}>
-          <i className="ti ti-settings" style={{ fontSize: 18, display: "block" }} aria-hidden="true" />
         </button>
       </div>
 

@@ -40,39 +40,6 @@ function MatchScoreSection({ score }: { score: number }) {
   );
 }
 
-function HexacoSection({ hexacoData }: { hexacoData: Record<string, number> }) {
-  const LABELS = [
-    { key: "honesty", label: "정직성", emoji: "🤝", desc: "약속 이행" },
-    { key: "emotionality", label: "정서성", emoji: "💭", desc: "스트레스 대처" },
-    { key: "extraversion", label: "외향성", emoji: "⚡", desc: "소통 스타일" },
-    { key: "agreeableness", label: "원만성", emoji: "🕊️", desc: "갈등 해결" },
-    { key: "conscientiousness", label: "성실성", emoji: "📋", desc: "규칙·책임감" },
-    { key: "openness", label: "개방성", emoji: "🌟", desc: "유연성" },
-  ];
-  return (
-    <div>
-      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 12px", fontWeight: 600 }}>🧠 HEXACO 분석</p>
-      {LABELS.map(item => {
-        const val = Number(hexacoData[item.key] || 3);
-        const color = val >= 4.5 ? "#86efac" : val >= 3.5 ? "#8b5cf6" : val >= 2.5 ? "#fbbf24" : "#f87171";
-        return (
-          <div key={item.key} style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
-              <span style={{ color: "var(--text-muted)", fontWeight: 600 }}>
-                {item.emoji} {item.label} <span style={{ opacity: 0.6 }}>{item.desc}</span>
-              </span>
-              <span style={{ color, fontWeight: 700 }}>{val.toFixed(1)}</span>
-            </div>
-            <div style={{ background: "var(--progress-track)", borderRadius: 4, height: 6, overflow: "hidden" }}>
-              <div style={{ background: `linear-gradient(90deg, ${color}60, ${color})`, height: "100%", borderRadius: 4, width: `${(val / 5) * 100}%`, transition: "width 0.8s ease" }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function WorkerDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -96,11 +63,8 @@ export default function WorkerDetailPage() {
   const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [teamCompat, setTeamCompat] = useState<Record<string, unknown> | null>(null);
-  const [isLiked, setIsLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
-  const [feeds, setFeeds] = useState<Record<string, unknown>[]>([]);
   const [workerTier, setWorkerTier] = useState<DaetaTier | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
@@ -186,19 +150,6 @@ export default function WorkerDetailPage() {
     const data = (profile ?? { user_id: id }) as Record<string, unknown>;
     setWorkerUser(user as Record<string, unknown>);
     setWorker(data);
-    setLikeCount(Number(data.like_count || 0));
-
-    try {
-      const { data: feedData } = await supabase
-        .from("feed_posts")
-        .select("*")
-        .eq("user_id", id)
-        .order("created_at", { ascending: false })
-        .limit(2);
-      setFeeds(feedData || []);
-    } catch (e) {
-      console.error("피드 로드 오류:", e);
-    }
 
     if (uid) {
       if (uid === id || role === "admin") setIsOwner(true);
@@ -212,10 +163,6 @@ export default function WorkerDetailPage() {
         setEmployerProfiles(empProfiles as { id: string; business_name: string }[]);
         setEmployerProfileId(empProfiles[0].id);
       }
-
-      const { data: likeData } = await supabase.from("job_likes")
-        .select("id").eq("user_id", uid).eq("target_id", id).eq("target_type", "worker").maybeSingle();
-      setIsLiked(!!likeData);
 
       if (uid !== id) {
         try {
@@ -245,14 +192,6 @@ export default function WorkerDetailPage() {
       }
     }
     setLoading(false);
-  };
-
-  const handleLike = async () => {
-    if (!userId) { router.push("/login"); return; }
-    const action = isLiked ? "unlike" : "like";
-    setIsLiked(!isLiked);
-    setLikeCount(prev => prev + (isLiked ? -1 : 1));
-    await fetch("/api/likes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, targetId: id, targetType: "worker", action }) });
   };
 
   const handleLoveCall = async () => {
@@ -358,7 +297,8 @@ export default function WorkerDetailPage() {
   const w = worker || {};
   const name = String(workerUser.nickname || "알바생");
   const typeInfo = WORKER_TYPE_INFO[String(w.worker_type || "")];
-  const hexacoData = ((workerUser as Record<string, unknown>).worker_result as Record<string, unknown> | null)?.hexaco as Record<string, number> | null;
+  const workerResult = (workerUser as Record<string, unknown>).worker_result as Record<string, unknown> | null;
+  const noShowSafe = workerResult?.noShowRisk === "낮음";
   const credentials = Array.isArray(w.credentials) ? w.credentials as { name: string; is_mandatory_by_law?: boolean; is_preset?: boolean }[] : [];
   const desiredTypes = w.category_ids && Array.isArray(w.custom_categories) && w.custom_categories.length > 0
     ? w.custom_categories as string[]
@@ -429,7 +369,8 @@ export default function WorkerDetailPage() {
                 <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", width: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 50 }}>
                   {isOwner ? (
                     <>
-                      <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>✏️ 수정하기</button>
+                      <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&start=media&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>📸 사진만 바꾸기</button>
+                      <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>📝 구직 조건 전체 수정</button>
                       <button onClick={() => { setShowMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🗑️ 삭제하기</button>
                     </>
                   ) : (
@@ -446,7 +387,7 @@ export default function WorkerDetailPage() {
         {/* 히어로 하단 */}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-            {workerTier && <TierBadge tier={workerTier} />}
+            {workerTier && <TierBadge tier={workerTier} noShowSafe={noShowSafe} />}
             {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "var(--success)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
             {desiredTypes.length > 0 && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>{desiredTypes[0]}</span>}
             <span style={{ fontSize: 10, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", padding: "3px 8px", borderRadius: 8 }}>{grade.emoji} {grade.name}</span>
@@ -510,69 +451,54 @@ export default function WorkerDetailPage() {
           </div>
         )}
 
-        {/* 최근 활동 (Mini Feed) */}
-        {feeds.length > 0 && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>📸 최근 활동</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {feeds.map((feed: Record<string, unknown>) => {
-                const mediaUrls = feed.media_urls as string[] | null;
-                const imgUrl = Array.isArray(mediaUrls) && mediaUrls.length > 0 ? mediaUrls[0] : null;
-                return (
-                  <div key={String(feed.id)} onClick={() => router.push("/feed")} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 16, padding: 12, display: "flex", gap: 12, cursor: "pointer" }}>
-                    {imgUrl && (
-                      <div style={{ width: 64, height: 64, borderRadius: 10, background: `url(${imgUrl}) center/cover`, flexShrink: 0 }} />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                      <p style={{ fontSize: 13, color: "var(--text)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.5 }}>
-                        {String(feed.content || "")}
-                      </p>
-                      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>
-                        💬 댓글 {Number(feed.comment_count || 0)} · ❤️ {Number(feed.like_count || 0)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {/* 궁합 */}
         {matchScore != null && <MatchScoreSection score={matchScore} />}
 
         {/* 알바생 성향 */}
-        {!!w.worker_type && typeInfo && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>⚡ 알바생 성향</p>
-            <div style={{ background: `${typeInfo.color}12`, border: `1px solid ${typeInfo.color}30`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <span style={{ fontSize: 30 }}>{typeInfo.emoji}</span>
-                <div>
-                  <p style={{ fontSize: 16, fontWeight: 800, margin: "0 0 2px", color: typeInfo.color }}>{String(w.worker_type)}</p>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{typeInfo.tagline}</p>
+        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>⚡ 알바생 성향</p>
+          {!!w.worker_type && typeInfo ? (
+            <>
+              <div style={{ background: `${typeInfo.color}12`, border: `1px solid ${typeInfo.color}30`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 30 }}>{typeInfo.emoji}</span>
+                  <div>
+                    <p style={{ fontSize: 16, fontWeight: 800, margin: "0 0 2px", color: typeInfo.color }}>{String(w.worker_type)}</p>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{typeInfo.tagline}</p>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                  {typeInfo.traits.map((t: string) => <span key={t} style={{ fontSize: 11, background: "var(--progress-track)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 20 }}>{t}</span>)}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <p style={{ fontSize: 12, color: "var(--success)", margin: 0 }}>✓ 잘 맞아요: {typeInfo.good}</p>
+                  <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>· 이런 환경: {typeInfo.bad}</p>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                {typeInfo.traits.map((t: string) => <span key={t} style={{ fontSize: 11, background: "var(--progress-track)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 20 }}>{t}</span>)}
+              {!existingMatch && (
+                <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>📌</span>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>채용 제안하면 찰떡 사장님 유형이 공개돼요</p>
+                </div>
+              )}
+            </>
+          ) : (
+            isOwner && (
+              <div style={{ padding: "14px 16px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>⚡ 아직 성향 검사를 안 하셨어요</p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>2분이면 끝나요 · 매칭률이 올라가요</p>
+                </div>
+                <button onClick={() => router.push("/personality")} style={{ flexShrink: 0, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  검사하기 →
+                </button>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <p style={{ fontSize: 12, color: "var(--success)", margin: 0 }}>✓ 잘 맞아요: {typeInfo.good}</p>
-                <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>· 이런 환경: {typeInfo.bad}</p>
-              </div>
-            </div>
-            {hexacoData && <HexacoSection hexacoData={hexacoData} />}
-            {!existingMatch && (
-              <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                <span>📌</span>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>채용 제안하면 찰떡 사장님 유형이 공개돼요</p>
-              </div>
-            )}
-            <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              🤖 AI 봇에게 물어보기
-            </button>
-          </div>
-        )}
+            )
+          )}
+          <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            🤖 AI 봇에게 물어보기
+          </button>
+        </div>
 
         {/* 팀 궁합 */}
         {teamCompat && !isOwner && (
@@ -583,10 +509,6 @@ export default function WorkerDetailPage() {
       {/* 하단 버튼 */}
       <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "var(--nav-bg)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--nav-border)", zIndex: 40, transition: "bottom 0.3s ease" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex", gap: 10 }}>
-          <button onClick={handleLike} style={{ display: "flex", alignItems: "center", gap: 5, background: isLiked ? "var(--danger-bg)" : "var(--card-inner)", border: `1px solid ${isLiked ? "var(--danger-border)" : "var(--card-inner-border)"}`, borderRadius: 14, padding: "0 16px", height: 52, color: isLiked ? "var(--danger)" : "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}>
-            {isLiked ? "❤" : "♡"}
-            <span style={{ fontSize: 12 }}>{likeCount}</span>
-          </button>
           {isOwner ? null : isReceived && status === "pending" ? (
             <div style={{ display: "flex", gap: 8, flex: 1 }}>
               <button onClick={() => handleRespondDirect("reject")} disabled={sending}

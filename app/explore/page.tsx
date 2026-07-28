@@ -776,7 +776,7 @@ function ExploreContent() {
                     if (storeId) { router.push(`/store/${storeId}`); setBottomSheet(null); }
                   } else {
                     const uid = String(bottomSheet.user_id || bottomSheet.id || "");
-                    if (uid) { router.push(`/profile/${uid}`); setBottomSheet(null); }
+                    if (uid) { router.push(`/worker/${uid}`); setBottomSheet(null); }
                   }
                 }}
                  className="transition-all hover:opacity-80 active:scale-98 duration-150"

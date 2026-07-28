@@ -1281,20 +1281,20 @@ function MyPageContent() {
                           respondingId={respondingId} 
                           onRespond={handleRespond} 
                           onCancel={handleCancel} 
-                          onNavigate={(lc: any) => router.push(`/profile/${lc.employer_id}`)} 
-                          onDelete={handleDelete} 
-                          router={router} 
+                          onNavigate={(lc: any) => router.push(lc.counterpart?.job_id ? `/job/${lc.counterpart.job_id}` : `/store/${lc.counterpart?.id}`)}
+                          onDelete={handleDelete}
+                          router={router}
                         />
                       )}
                       {wSent.length > 0 && (
-                        <LoveCallSection 
-                          title="📤 보낸 지원" 
-                          calls={wSent} 
-                          showRespond={false} 
-                          respondingId={respondingId} 
-                          onRespond={handleRespond} 
-                          onCancel={handleCancel} 
-                          onNavigate={(lc: any) => router.push(`/profile/${lc.employer_id}`)} 
+                        <LoveCallSection
+                          title="📤 보낸 지원"
+                          calls={wSent}
+                          showRespond={false}
+                          respondingId={respondingId}
+                          onRespond={handleRespond}
+                          onCancel={handleCancel}
+                          onNavigate={(lc: any) => router.push(lc.counterpart?.job_id ? `/job/${lc.counterpart.job_id}` : `/store/${lc.counterpart?.id}`)}
                           onDelete={handleDelete} 
                           router={router} 
                         />
@@ -1436,8 +1436,8 @@ function MyPageContent() {
                   </div>
                 ) : (
                   <>
-                    {eReceived.length > 0 && <LoveCallSection title="📥 받은 지원" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
-                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 채용 제안" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/profile/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                    {eReceived.length > 0 && <LoveCallSection title="📥 받은 지원" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/worker/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
+                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 채용 제안" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/worker/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
                   </>
                 )}
               </div>

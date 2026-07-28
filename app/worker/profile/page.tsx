@@ -192,9 +192,9 @@ function WorkerProfileContent() {
     const currProfileId = currentParams.get("profileId") || "";
     const currReturnTo = currentParams.get("return") || "explore";
     const currSectionParam = currentParams.get("section") || "";
+    const currStart = currentParams.get("start") || "";
 
-    const decodedReturn = currReturnTo ? decodeURIComponent(currReturnTo) : "";
-    if (currIsNew || (decodedReturn.startsWith("/") && !decodedReturn.includes("mypage"))) {
+    if (currIsNew) {
       // 신규 등록 시 users 기본 정보 자동 채움
       const { data: userData } = await supabase.from("users")
         .select("region, nickname, bio, profile_image").eq("id", session.user.id).maybeSingle();
@@ -267,6 +267,14 @@ function WorkerProfileContent() {
       if (data.custom_categories?.length) setCustomCategories(data.custom_categories);
       if (!data.category_ids?.length && data.desired_type) {
         setCustomCategories(data.desired_type.split(",").filter(Boolean));
+      }
+
+      // "사진만 바꾸기" 진입: 희망직종/지역이 이미 채워진 기존 프로필일 때만 1단계(필수 입력)를 건너뜀
+      if (currStart === "media") {
+        const regionParts = (data.desired_region || "").split(" ");
+        const hasRegion = !!(regionParts[0] && regionParts[1]);
+        const hasCategory = !!(data.category_ids?.length || data.desired_type);
+        if (hasRegion && hasCategory) setStep(2);
       }
 
       if (!currIsEdit && !currReturnTo.startsWith("%2F") && !currReturnTo.startsWith("/")) {
@@ -387,7 +395,6 @@ function WorkerProfileContent() {
       is_long_term: workType === "장기",
       work_type: workType,
       bio: bio.trim(),
-      worker_type: interviewResult?.personalityType || null,
 
       is_public: isPublic,
       image_url: imageUrls[0] || null,
@@ -395,6 +402,12 @@ function WorkerProfileContent() {
       video_url: videoUrl || null,
       credentials: selectedCreds,
     };
+
+    // 성향검사 결과는 이 기기의 localStorage에 있을 때만 반영 — 없다고 null로 덮어써서
+    // 다른 기기/저장 이력이 없는 브라우저에서 저장할 때 기존 값이 지워지지 않도록 함
+    if (interviewResult?.personalityType) {
+      profileData.worker_type = interviewResult.personalityType;
+    }
 
     if (!existing || isNew) {
       // 새 공고: 항상 현재 세션 유저 소유
@@ -1157,8 +1170,7 @@ function WorkerProfileContent() {
       {cropperOpen && tempImageSrc && (
         <ImageCropModal
           imageSrc={tempImageSrc}
-          aspect={1}
-          isCircle={true}
+          aspect={3 / 2}
           onCrop={handleCropComplete}
           onClose={() => {
             setCropperOpen(false);

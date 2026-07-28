@@ -8,14 +8,6 @@ import { subscribePush } from "@/lib/usePush";
 const PEEK = 18;
 const BTN = 52;
 
-const THEMES: Record<string, { from: string; to: string }> = {
-  purple: { from: "#7c3aed", to: "#ec4899" },
-  blue: { from: "#0ea5e9", to: "#6366f1" },
-  green: { from: "#10b981", to: "#0ea5e9" },
-  pink: { from: "#ec4899", to: "#f43f5e" },
-  gold: { from: "#f59e0b", to: "#ef4444" },
-};
-
 interface Bubble {
   id: number;
   text: string;
@@ -113,14 +105,9 @@ export default function PazFloatingButton() {
 
   async function loadPazSettings(userId: string) {
     const { data } = await supabase.from("users")
-      .select("paz_avatar, paz_photo_url, paz_theme, user_type")
+      .select("user_type")
       .eq("id", userId).maybeSingle();
     if (data) {
-      setPazAvatar(data.paz_avatar || "🤖");
-      setPazPhoto(data.paz_photo_url || null);
-      const t = THEMES[data.paz_theme || "purple"] || THEMES.purple;
-      setThemeFrom(t.from);
-      setThemeTo(t.to);
       // userType 저장
       if (userRef.current) (userRef.current as any)._userType = data.user_type;
     }
@@ -371,8 +358,7 @@ export default function PazFloatingButton() {
       ? { icon: "ti-clipboard-plus", label: "공고 등록", sub: "알바생 구인하기", path: "/employer/register", color: "rgba(236,72,153,0.15)", iconColor: "#f9a8d4" }
       : { icon: "ti-user-circle", label: "내 프로필", sub: "구직 조건 설정", path: "/worker/profile", color: "rgba(236,72,153,0.15)", iconColor: "#f9a8d4" },
     { icon: "ti-message-2", label: "채팅 목록", sub: "매칭된 대화", path: "/chat", color: "rgba(16,185,129,0.15)", iconColor: "#6ee7b7" },
-    { icon: "ti-compass", label: "탐색", sub: isEmployer ? "구직자 찾기" : "공고 찾기", path: "/explore", color: "rgba(14,165,233,0.15)", iconColor: "#7dd3fc" },
-    { icon: "ti-settings", label: "PAZ 설정", sub: "말투·스타일 변경", path: "/paz/settings", color: "rgba(113,113,122,0.15)", iconColor: "#a1a1aa", divider: true },
+    { icon: "ti-compass", label: "탐색", sub: isEmployer ? "구직자 찾기" : "공고 찾기", path: "/explore", color: "rgba(14,165,233,0.15)", iconColor: "#7dd3fc", divider: true },
   ];
 
   return (

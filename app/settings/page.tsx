@@ -98,7 +98,6 @@ export default function SettingsPage() {
         {/* 계정 */}
         <Section title="계정">
           <Row icon="📧" label="이메일" sub={user?.email} />
-          <Row icon="🤖" label="PAZ 설정" sub="아바타, 이름, 테마 변경" onClick={() => router.push("/paz/settings")} right={<span style={{ color: "var(--text-muted)", fontSize: 14 }}>›</span>} />
           <Row icon="🚪" label="로그아웃" onClick={async () => { await supabase.auth.signOut(); router.push("/"); }} right={<span style={{ color: "var(--text-muted)", fontSize: 14 }}>›</span>} />
         </Section>
 

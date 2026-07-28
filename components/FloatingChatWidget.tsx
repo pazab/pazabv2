@@ -140,13 +140,7 @@ export default function FloatingChatWidget() {
         normalRooms = data.data || [];
       }
 
-      // PAZ봇 조회
-      const { data: userProfile } = await supabase
-        .from("users")
-        .select("paz_name, paz_avatar, paz_photo_url")
-        .eq("id", uid)
-        .maybeSingle();
-
+      // PAZ봇 마지막 대화
       const { data: lastPazMsg } = await supabase
         .from("paz_chats")
         .select("content, created_at")
@@ -158,9 +152,9 @@ export default function FloatingChatWidget() {
       const pazRoom: ChatRoom = {
         id: "paz_chat",
         isPaz: true,
-        counterpartName: userProfile?.paz_name || "PAZ",
-        counterpartAvatar: userProfile?.paz_photo_url || null,
-        pazAvatarEmoji: userProfile?.paz_avatar || "🤖",
+        counterpartName: "PAZ",
+        counterpartAvatar: null,
+        pazAvatarEmoji: "🤖",
         last_message: lastPazMsg?.content || "대화를 시작해보세요 🤖",
         last_message_at: lastPazMsg?.created_at || new Date().toISOString(),
         unreadCount: 0,

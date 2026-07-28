@@ -2200,37 +2200,19 @@ function MyTeamPageContent() {
                           marginBottom: 10,
                           boxShadow: "0 4px 12px rgba(239,68,68,0.08)"
                         }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 20 }}>⚠️</span>
-                              <div>
-                                <p style={{ fontSize: 14, fontWeight: 900, color: "#ef4444", margin: 0, letterSpacing: "-0.2px" }}>
-                                  오늘 확인/조치가 필요한 항목이 있어요
-                                </p>
-                                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>
-                                  {lates.length > 0 && `지각 ${lates.length}건 `}
-                                  {absents.length > 0 && `결근 ${absents.length}건 `}
-                                  {uncheckedIn.length > 0 && `출근대기 ${uncheckedIn.length}건 `}
-                                  {pendingContracts.length > 0 && `계약확인 ${pendingContracts.length}건`}
-                                </p>
-                              </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                            <span style={{ fontSize: 20 }}>⚠️</span>
+                            <div>
+                              <p style={{ fontSize: 14, fontWeight: 900, color: "#ef4444", margin: 0, letterSpacing: "-0.2px" }}>
+                                오늘 확인/조치가 필요한 항목이 있어요
+                              </p>
+                              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>
+                                {lates.length > 0 && `지각 ${lates.length}건 `}
+                                {absents.length > 0 && `결근 ${absents.length}건 `}
+                                {uncheckedIn.length > 0 && `출근대기 ${uncheckedIn.length}건 `}
+                                {pendingContracts.length > 0 && `계약확인 ${pendingContracts.length}건`}
+                              </p>
                             </div>
-                            <button
-                              onClick={() => setTeamOpen(true)}
-                              style={{
-                                background: "#ef4444",
-                                color: "#fff",
-                                border: "none",
-                                borderRadius: 10,
-                                padding: "6px 12px",
-                                fontSize: 11,
-                                fontWeight: 800,
-                                cursor: "pointer",
-                                whiteSpace: "nowrap"
-                              }}
-                            >
-                              확인하기 →
-                            </button>
                           </div>
 
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>

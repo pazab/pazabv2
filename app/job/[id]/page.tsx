@@ -121,8 +121,6 @@ export default function JobDetailPage() {
   const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
   const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
   const [teamCompat, setTeamCompat] = useState<Record<string, unknown> | null>(null);
-  const [isLiked, setIsLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
@@ -205,15 +203,13 @@ export default function JobDetailPage() {
     }
     if (data) {
       setJob(data);
+      if (uid && (uid === data.user_id || role === "admin")) setIsOwner(true);
       const jType = String(data.job_type || "regular");
       if (jType !== "urgent") {
         const { data: feeds } = await supabase.from("feed_posts").select("*").eq("employer_profile_id", data.employer_profile_id || data.id).eq("is_deleted", false).order("created_at", { ascending: false }).limit(6);
         setStoreFeeds(feeds || []);
       }
-      setLikeCount(Number(data.like_count || 0));
       if (uid) {
-        const { data: like } = await supabase.from("job_likes").select("id").eq("user_id", uid).eq("target_id", data.id).maybeSingle();
-        setIsLiked(!!like);
         const { data: wps } = await supabase.from("worker_profiles").select("id").eq("user_id", uid).maybeSingle();
         setHasWorkerProfile(!!wps);
         if (uid !== data.user_id) {
@@ -247,14 +243,6 @@ export default function JobDetailPage() {
       }
     }
     setLoading(false);
-  };
-
-  const handleLike = async () => {
-    if (!userId) { router.push("/login"); return; }
-    const action = isLiked ? "unlike" : "like";
-    setIsLiked(!isLiked);
-    setLikeCount(prev => prev + (isLiked ? -1 : 1));
-    await fetch("/api/likes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, targetId: job?.id, targetType: "employer", action }) });
   };
 
   const handleInterest = async () => {
@@ -595,10 +583,6 @@ export default function JobDetailPage() {
       {/* 하단 버튼 */}
       <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "var(--nav-bg)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--border)", zIndex: 40, transition: "bottom 0.3s ease" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex", gap: 10 }}>
-          <button onClick={handleLike} style={{ display: "flex", alignItems: "center", gap: 5, background: isLiked ? "var(--danger-bg)" : "var(--surface2)", border: `1px solid ${isLiked ? "var(--danger-border)" : "var(--border)"}`, borderRadius: 14, padding: "0 16px", height: 52, color: isLiked ? "var(--danger)" : "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, transition: "all 0.15s" }}>
-            {isLiked ? "❤" : "♡"}
-            <span style={{ fontSize: 12 }}>{likeCount}</span>
-          </button>
           {isOwner ? null : isReceived && status === "pending" ? (
             <div style={{ display: "flex", gap: 8, flex: 1 }}>
               <button onClick={() => handleRespondDirect("reject")} disabled={sending}

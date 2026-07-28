@@ -121,10 +121,6 @@ export async function POST(req: NextRequest) {
     let myHexaco = DEFAULT_HEXACO;
     let myRegion = "";
     let myProfile: Record<string, unknown> = {};
-    let myLikes: string[] = [];
-
-    const { data: likesData } = await supabaseAdmin.from("job_likes").select("target_id").eq("user_id", userId).eq("target_type", userType === "worker" ? "employer" : "worker");
-    myLikes = (likesData || []).map((l: { target_id: string }) => l.target_id);
 
     if (userType === "worker") {
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
@@ -197,7 +193,7 @@ export async function POST(req: NextRequest) {
           employer_name: empUser?.nickname || empUser?.real_name,
           trust_score: trustScore,
           match_score: hasMyHexaco ? finalScoreWithNoise : null,
-          is_liked: myLikes.includes(String(job.id)),
+          is_liked: false,
           hexaco_score: hexacoScore,
           condition_score: condScore,
           popularity_score: popScore,
@@ -299,7 +295,7 @@ export async function POST(req: NextRequest) {
             worker_name: wrkUser?.nickname || wrkUser?.real_name,
             trust_score: trustScore,
             match_score: hasMyHexaco ? finalScoreWithNoise : null,
-            is_liked: myLikes.includes(String(worker.user_id)),
+            is_liked: false,
           };
         });
 

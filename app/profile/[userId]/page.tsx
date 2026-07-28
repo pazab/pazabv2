@@ -13,7 +13,6 @@ export default function ProfilePage() {
 
   const [user, setUser] = useState<any>(null);
   const [stores, setStores] = useState<any[]>([]);
-  const [workerProfile, setWorkerProfile] = useState<any>(null);
   const [badges, setBadges] = useState<any[]>([]);
   const [personalPosts, setPersonalPosts] = useState<any[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
@@ -44,15 +43,11 @@ export default function ProfilePage() {
     setUser(userData);
 
     const isEmployer = userData.user_type === "employer" || userData.user_type === "both";
-    const isWorker = userData.user_type === "worker" || userData.user_type === "both";
 
-    const [storesRes, workerRes, badgesRes, postsRes] = await Promise.all([
+    const [storesRes, badgesRes, postsRes] = await Promise.all([
       isEmployer
         ? supabase.from("employer_profiles").select("id, business_name, business_type, region, image_url").eq("user_id", profileId).eq("is_deleted", false)
         : Promise.resolve({ data: [] }),
-      isWorker
-        ? supabase.from("worker_profiles").select("worker_type, desired_region, desired_wage, work_days, bio").eq("user_id", profileId).maybeSingle()
-        : Promise.resolve({ data: null }),
       supabase.from("user_badges").select("badge_key, earned_at").eq("user_id", profileId),
       supabase.from("feed_posts")
         .select("*, feed_likes(user_id)")
@@ -63,7 +58,6 @@ export default function ProfilePage() {
     ]);
 
     setStores((storesRes as any).data || []);
-    setWorkerProfile((workerRes as any).data || null);
     setBadges(getBadgesByRole((badgesRes.data || []), userData.user_type === "employer" ? "employer" : "worker"));
     
     const processedPosts = ((postsRes as any).data || []).map((p: any) => ({
@@ -236,20 +230,6 @@ export default function ProfilePage() {
                   <span style={{ fontSize: 12, color: "var(--text-muted)" }}>→</span>
                 </button>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* 구직 정보 (알바생) */}
-        {isWorker && workerProfile && (
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 16, marginBottom: 14 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>💼 구직 정보</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {workerProfile.worker_type && <div style={{ display: "flex", gap: 8, fontSize: 12 }}><span style={{ color: "var(--text-muted)", minWidth: 60 }}>직종</span><span style={{ color: "var(--text)", fontWeight: 600 }}>{workerProfile.worker_type}</span></div>}
-              {workerProfile.desired_region && <div style={{ display: "flex", gap: 8, fontSize: 12 }}><span style={{ color: "var(--text-muted)", minWidth: 60 }}>희망 지역</span><span style={{ color: "var(--text)", fontWeight: 600 }}>{workerProfile.desired_region}</span></div>}
-              {workerProfile.desired_wage && <div style={{ display: "flex", gap: 8, fontSize: 12 }}><span style={{ color: "var(--text-muted)", minWidth: 60 }}>희망 시급</span><span style={{ color: "var(--text)", fontWeight: 600 }}>{Number(workerProfile.desired_wage).toLocaleString()}원↑</span></div>}
-              {workerProfile.work_days && <div style={{ display: "flex", gap: 8, fontSize: 12 }}><span style={{ color: "var(--text-muted)", minWidth: 60 }}>가능 요일</span><span style={{ color: "var(--text)", fontWeight: 600 }}>{workerProfile.work_days}</span></div>}
-              {workerProfile.bio && <p style={{ fontSize: 12, color: "var(--text-sub)", margin: "6px 0 0", lineHeight: 1.6, borderTop: "1px solid var(--border)", paddingTop: 8 }}>{workerProfile.bio}</p>}
             </div>
           </div>
         )}

@@ -345,6 +345,16 @@ export default function ChatRoomPage() {
     await supabase.from("users").update({ trust_score: newScore, trust_log: newLog }).eq("id", uid);
   };
 
+  // 상대방 프로필로 이동: 워커는 항상 구직카드, 사장님은 특정 매장 맥락이 있으면 매장홈, 없으면 소셜 프로필
+  const goToCounterpartProfile = () => {
+    if (!counterpart?.id) return;
+    if (counterpart.user_type === "employer") {
+      router.push(match?.employer_profile_id ? `/store/${match.employer_profile_id}` : `/profile/${counterpart.id}`);
+    } else {
+      router.push(`/worker/${counterpart.id}`);
+    }
+  };
+
   const loadContract = async () => {
     // contracts에 match_id 없음 → team_members 경유
     const { data: tm } = await supabase.from("team_members")
@@ -673,9 +683,7 @@ export default function ChatRoomPage() {
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
             {/* 아바타 영역: 프로필 페이지 이동 */}
-            <div onClick={() => {
-              if (counterpart?.id) router.push(`/profile/${counterpart.id}`);
-            }} style={{ position: "relative", flexShrink: 0, cursor: "pointer" }}>
+            <div onClick={goToCounterpartProfile} style={{ position: "relative", flexShrink: 0, cursor: "pointer" }}>
               <div style={{ width: 40, height: 40, borderRadius: counterpart?.user_type === "employer" ? "8px" : "50%", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", boxShadow: "0 0 0 2px var(--border)" }}>
                 {counterpartAvatar ? (
                   <img src={counterpartAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -686,13 +694,8 @@ export default function ChatRoomPage() {
               </div>
               <div style={{ position: "absolute", bottom: 0, right: 0, width: 11, height: 11, borderRadius: "50%", background: "var(--success)", border: "2px solid var(--bg)" }} />
             </div>
-            {/* 이름 텍스트 영역: 상세 프로필 이동 */}
-            <div onClick={() => {
-              const profilePath = counterpart?.user_type === "employer"
-                ? `/job/${match?.employer_id}`
-                : `/worker/${match?.worker_id}`;
-              router.push(profilePath);
-            }} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+            {/* 이름 텍스트 영역: 프로필 페이지 이동 (아바타와 동일한 목적지) */}
+            <div onClick={goToCounterpartProfile} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <p style={{ fontSize: 15, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{counterpartName}</p>
                 <span style={{ ...badge.chip, borderRadius: 20, flexShrink: 0 }}>
@@ -1273,9 +1276,7 @@ export default function ChatRoomPage() {
                 /* 상대방 메시지 - 왼쪽 + 아바타 + 닉네임 */
                 <div style={{ display: "flex", gap: 9, marginBottom: 3, alignItems: "flex-end" }}>
                   {/* 아바타 */}
-                  <button onClick={() => {
-                    if (counterpart?.id) router.push(`/profile/${counterpart.id}`);
-                  }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
+                  <button onClick={goToCounterpartProfile} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
                     {counterpartAvatar ? (
                       <img src={counterpartAvatar} alt="avatar"
                         style={{ width: 34, height: 34, borderRadius: counterpart?.user_type === "employer" ? "6px" : "50%", objectFit: "cover", border: "1.5px solid var(--border)" }} />
@@ -1288,7 +1289,7 @@ export default function ChatRoomPage() {
                   </button>
                   <div style={{ maxWidth: "78%" }}>
                     {/* 닉네임 */}
-                    <button onClick={() => router.push(`/profile/${counterpart?.id}`)}
+                    <button onClick={goToCounterpartProfile}
                       style={{ background: "none", border: "none", padding: 0, cursor: "pointer", marginBottom: 5 }}>
                       <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>
                         {counterpartName}

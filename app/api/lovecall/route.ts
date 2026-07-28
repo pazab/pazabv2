@@ -16,27 +16,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
     }
 
-    // 현재 활성 팀원 관계인지 체크 (퇴직 후 재입사 허용)
-    const { data: activeTeam } = await supabase
-      .from("team_members")
-      .select("id")
-      .eq("employer_id", employerId)
-      .eq("worker_id", workerId)
-      .eq("status", "active")
-      .maybeSingle();
+    // 대타(SOS) 지원은 team_members가 매장 구분 없이 사장님 단위라, 다른 매장 소속 팀원도
+    // 명시적으로 team-first 알림 대상이자 지원 대상임 (lib/daetaEscalation.ts notifyTeam 참고).
+    // 정규 채용(jobId/employerProfileId)에서만 "이미 소속된 팀원" 차단을 적용한다.
+    if (!daetaPostingId) {
+      // 현재 활성 팀원 관계인지 체크 (퇴직 후 재입사 허용)
+      const { data: activeTeam } = await supabase
+        .from("team_members")
+        .select("id")
+        .eq("employer_id", employerId)
+        .eq("worker_id", workerId)
+        .eq("status", "active")
+        .maybeSingle();
 
-    if (activeTeam) {
-      return NextResponse.json({ error: "이미 소속된 팀원이에요", success: false }, { status: 409 });
+      if (activeTeam) {
+        return NextResponse.json({ error: "이미 소속된 팀원이에요", success: false }, { status: 409 });
+      }
     }
 
-    // 진행 중인 매칭이 있는지 체크 (pending/accepted/interviewing만)
-    const { data: existing } = await supabase
+    // 진행 중인 매칭이 있는지 체크 (pending/accepted/interviewing만).
+    // jobId/daetaPostingId가 있으면 같은 공고에 대해서만 중복 체크 — 다른 공고/다른 대타 건은 별개로 지원 가능해야 함.
+    let dupQuery = supabase
       .from("matches")
       .select("id, progress_status")
       .eq("employer_id", employerId)
       .eq("worker_id", workerId)
-      .in("progress_status", ["pending", "accepted", "interviewing"])
-      .maybeSingle();
+      .in("progress_status", ["pending", "accepted", "interviewing"]);
+    if (daetaPostingId) {
+      dupQuery = dupQuery.eq("daeta_posting_id", daetaPostingId);
+    } else if (jobId) {
+      dupQuery = dupQuery.eq("job_id", jobId);
+    }
+    const { data: existing } = await dupQuery.maybeSingle();
 
     if (existing) {
       return NextResponse.json({ error: "이미 진행 중인 지원/채용 제안이 있어요", status: existing.progress_status, success: false }, { status: 409 });
