@@ -67,6 +67,8 @@ export default function WorkerDetailPage() {
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [workerTier, setWorkerTier] = useState<DaetaTier | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [hasWorkerProfile, setHasWorkerProfile] = useState(false);
+  const [ownedStores, setOwnedStores] = useState<{ id: string; business_name: string; business_type: string | null; region: string | null; image_url: string | null }[]>([]);
 
   useEffect(() => {
     if (typeof id === "string") {
@@ -150,6 +152,14 @@ export default function WorkerDetailPage() {
     const data = (profile ?? { user_id: id }) as Record<string, unknown>;
     setWorkerUser(user as Record<string, unknown>);
     setWorker(data);
+    setHasWorkerProfile(!!profile);
+
+    const { data: stores } = await supabase.from("employer_profiles")
+      .select("id, business_name, business_type, region, image_url").eq("user_id", id)
+      .or("is_deleted.is.null,is_deleted.eq.false")
+      .not("business_name", "is", null)
+      .order("created_at", { ascending: false });
+    setOwnedStores(stores || []);
 
     if (uid) {
       if (uid === id || role === "admin") setIsOwner(true);
@@ -325,90 +335,113 @@ export default function WorkerDetailPage() {
   const status = sent ? "sent" : String(existingMatch?.progress_status || "");
   const isReceived = existingMatch?.isReceived === true;
 
+  const ownerMenu = (
+    <div style={{ position: "relative" }}>
+      <button onClick={() => setShowMenu(!showMenu)} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⋯</button>
+      {showMenu && (
+        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", width: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 50 }}>
+          {isOwner ? (
+            <>
+              <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&start=gallery&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>🖼️ 구직카드 사진</button>
+              <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>{hasWorkerProfile ? "📝 구직 조건 전체 수정" : "💼 구직 정보 등록하기"}</button>
+              {hasWorkerProfile && <button onClick={() => { setShowMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🗑️ 삭제하기</button>}
+            </>
+          ) : (
+            <>
+              <button onClick={() => { setShowMenu(false); showToast("신고가 접수됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--warning)", borderBottom: "1px solid var(--border)" }}>🚨 신고하기</button>
+              <button onClick={() => { setShowMenu(false); showToast("차단됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🚫 차단하기</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 150, width: "100%", maxWidth: 480, margin: "0 auto" }}>
       <AppHeader title="파잡 커리어" showBack showBellAndMenu={true} />
       {ToastUI}
 
-      {/* 히어로 */}
-      <div style={{ position: "relative", height: hasMedia ? 360 : 280, background: "#000", overflow: "hidden" }}>
-        {hasMedia ? (
-          activeMedia.type === "video" ? (
-            <video src={activeMedia.url} controls muted autoPlay loop playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      {hasWorkerProfile ? (
+        /* 히어로 (구직 정보 있을 때) */
+        <div style={{ position: "relative", height: hasMedia ? 360 : 280, background: "#000", overflow: "hidden" }}>
+          {hasMedia ? (
+            activeMedia.type === "video" ? (
+              <video src={activeMedia.url} controls muted autoPlay loop playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              <div style={{ position: "absolute", inset: 0, background: `url(${activeMedia.url}) center/cover no-repeat` }} />
+            )
           ) : (
-            <div style={{ position: "absolute", inset: 0, background: `url(${activeMedia.url}) center/cover no-repeat` }} />
-          )
-        ) : (
-          <div style={{ position: "absolute", inset: 0, background: "var(--surface2)" }} />
-        )}
+            <div style={{ position: "absolute", inset: 0, background: "var(--surface2)" }} />
+          )}
 
-        <div style={{ position: "absolute", inset: 0, background: hasMedia ? "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.05) 40%, rgba(0,0,0,0.85) 100%)" : "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", inset: 0, background: hasMedia ? "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.05) 40%, rgba(0,0,0,0.85) 100%)" : "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)", pointerEvents: "none" }} />
 
-        {mediaItems.length > 1 && (
-          <>
-            <button onClick={() => setActiveMediaIndex(prev => (prev - 1 + mediaItems.length) % mediaItems.length)}
-              style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, zIndex: 10 }}>
-              ‹
-            </button>
-            <button onClick={() => setActiveMediaIndex(prev => (prev + 1) % mediaItems.length)}
-              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, zIndex: 10 }}>
-              ›
-            </button>
-            <div style={{ position: "absolute", bottom: 16, right: 16, background: "rgba(0,0,0,0.6)", borderRadius: 12, padding: "4px 8px", fontSize: 11, color: "#fff", fontWeight: 600, zIndex: 10 }}>
-              {activeMediaIndex + 1} / {mediaItems.length}
-            </div>
-          </>
-        )}
+          {mediaItems.length > 1 && (
+            <>
+              <button onClick={() => setActiveMediaIndex(prev => (prev - 1 + mediaItems.length) % mediaItems.length)}
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, zIndex: 10 }}>
+                ‹
+              </button>
+              <button onClick={() => setActiveMediaIndex(prev => (prev + 1) % mediaItems.length)}
+                style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, zIndex: 10 }}>
+                ›
+              </button>
+              <div style={{ position: "absolute", bottom: 16, right: 16, background: "rgba(0,0,0,0.6)", borderRadius: 12, padding: "4px 8px", fontSize: 11, color: "#fff", fontWeight: 600, zIndex: 10 }}>
+                {activeMediaIndex + 1} / {mediaItems.length}
+              </div>
+            </>
+          )}
 
-        {/* 히어로 오버레이 컨트롤 */}
-        <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, zIndex: 30 }}>
-          {matchScore != null && <HeroScoreBadge score={matchScore} />}
-          <div style={{ position: "relative" }}>
-              <button onClick={() => setShowMenu(!showMenu)} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⋯</button>
-              {showMenu && (
-                <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", width: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 50 }}>
-                  {isOwner ? (
-                    <>
-                      <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&start=media&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>📸 사진만 바꾸기</button>
-                      <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>📝 구직 조건 전체 수정</button>
-                      <button onClick={() => { setShowMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🗑️ 삭제하기</button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => { setShowMenu(false); showToast("신고가 접수됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--warning)", borderBottom: "1px solid var(--border)" }}>🚨 신고하기</button>
-                      <button onClick={() => { setShowMenu(false); showToast("차단됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🚫 차단하기</button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+          {/* 히어로 오버레이 컨트롤 */}
+          <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, zIndex: 30 }}>
+            {matchScore != null && <HeroScoreBadge score={matchScore} />}
+            {ownerMenu}
           </div>
 
-        {/* 히어로 하단 */}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-            {workerTier && <TierBadge tier={workerTier} noShowSafe={noShowSafe} />}
-            {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "var(--success)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
-            {desiredTypes.length > 0 && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>{desiredTypes[0]}</span>}
-            <span style={{ fontSize: 10, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", padding: "3px 8px", borderRadius: 8 }}>{grade.emoji} {grade.name}</span>
-          </div>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", margin: "0 0 10px" }}>📍 {String(w.desired_region || "지역 협의")}</p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <EntityLink
-              href={`/profile/${id}`}
-              avatarUrl={workerUser.avatar_url as string | null}
-              fallbackEmoji="👤"
-              name={name}
-              label="프로필"
-              variant="hero"
-            />
+          {/* 히어로 하단 */}
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {workerTier && <TierBadge tier={workerTier} noShowSafe={noShowSafe} />}
+              {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "var(--success)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
+              {desiredTypes.length > 0 && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>{desiredTypes[0]}</span>}
+              <span style={{ fontSize: 10, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", padding: "3px 8px", borderRadius: 8 }}>{grade.emoji} {grade.name}</span>
+            </div>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", margin: "0 0 10px" }}>📍 {String(w.desired_region || "지역 협의")}</p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <EntityLink
+                href={`/profile/${id}`}
+                avatarUrl={workerUser.avatar_url as string | null}
+                fallbackEmoji="👤"
+                name={name}
+                label="프로필"
+                variant="hero"
+              />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        /* 컴팩트 헤더 (구직 정보 없을 때 — 정체성만 표시) */
+        <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "20px" }}>
+          <div style={{ width: 68, height: 68, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--border)" }}>
+            {workerUser.avatar_url ? (
+              <img src={workerUser.avatar_url as string} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              <i className="ti ti-user" style={{ fontSize: 28, color: "var(--text-muted)" }} aria-hidden="true" />
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 4px", color: "var(--text)" }}>{name}</h1>
+            <span style={{ fontSize: 11, background: "var(--surface2)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 8, fontWeight: 700 }}>{grade.emoji} {grade.name}</span>
+          </div>
+          {ownerMenu}
+        </div>
+      )}
 
       {/* 본문 */}
       <div style={{ padding: "0 20px" }}>
 
+      {hasWorkerProfile ? (<>
         {/* 핵심 조건 */}
         <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -504,9 +537,47 @@ export default function WorkerDetailPage() {
         {teamCompat && !isOwner && (
           <TeamCompatSection teamCompat={teamCompat} />
         )}
+      </>) : (
+        isOwner && (
+          <div style={{ padding: "20px 0" }}>
+            <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 16, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>💼 구직 정보를 아직 등록 안 하셨어요</p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>등록하면 대타 요청도 받을 수 있어요</p>
+              </div>
+              <button onClick={() => router.push(`/worker/profile?edit=true&return=${encodeURIComponent(`/worker/${id}`)}`)} style={{ flexShrink: 0, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                등록하기 →
+              </button>
+            </div>
+          </div>
+        )
+      )}
+
+        {/* 운영 매장 */}
+        {ownedStores.length > 0 && (
+          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>🏪 운영 매장</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {ownedStores.map(s => (
+                <div key={s.id} onClick={() => router.push(`/store/${s.id}`)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "10px 12px", cursor: "pointer" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, overflow: "hidden", flexShrink: 0, background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+                    {s.image_url ? <img src={s.image_url} alt={s.business_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🏪"}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.business_name}</p>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{s.business_type || ""}{s.region ? ` · ${s.region.split(" ").slice(0, 2).join(" ")}` : ""}</p>
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>→</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 하단 버튼 */}
+      {hasWorkerProfile && (
+      /* 하단 버튼 */
       <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "var(--nav-bg)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--nav-border)", zIndex: 40, transition: "bottom 0.3s ease" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex", gap: 10 }}>
           {isOwner ? null : isReceived && status === "pending" ? (
@@ -560,6 +631,7 @@ export default function WorkerDetailPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* 확인 모달 */}
       {showConfirm && (
@@ -708,6 +780,7 @@ export default function WorkerDetailPage() {
           </div>
         </div>
       )}
+
     </main>
   );
 }

@@ -26,10 +26,10 @@ function WorkerProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isEdit = searchParams.get("edit") === "true";
-  const isNew = searchParams.get("new") === "true";
-  const profileId = searchParams.get("profileId") || ""; // 수정할 공고 id
+  const profileId = searchParams.get("profileId") || ""; // 수정할 공고 id (관리자가 남의 프로필 수정할 때 사용)
   const returnTo = searchParams.get("return") || "explore";
   const sectionParam = searchParams.get("section") || "";
+  const galleryOnly = searchParams.get("start") === "gallery";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -80,6 +80,8 @@ function WorkerProfileContent() {
   const [videoUploading, setVideoUploading] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const [cropperOpen, setCropperOpen] = useState(false);
+  const [existingProfileId, setExistingProfileId] = useState<string | null>(null);
+  const [galleryOnlySaving, setGalleryOnlySaving] = useState(false);
 
   // 자격 요건 마스터 및 보유 리스트 상태
   const [credentialsMaster, setCredentialsMaster] = useState<any[]>([]);
@@ -217,6 +219,7 @@ function WorkerProfileContent() {
       : await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
 
     if (data) {
+      setExistingProfileId(data.id);
       const parts = (data.desired_region || "").split(" ");
       setSido(parts[0] || "");
       setGugun(parts[1] || "");
@@ -269,13 +272,8 @@ function WorkerProfileContent() {
         setCustomCategories(data.desired_type.split(",").filter(Boolean));
       }
 
-      // "사진만 바꾸기" 진입: 희망직종/지역이 이미 채워진 기존 프로필일 때만 1단계(필수 입력)를 건너뜀
-      if (currStart === "media") {
-        const regionParts = (data.desired_region || "").split(" ");
-        const hasRegion = !!(regionParts[0] && regionParts[1]);
-        const hasCategory = !!(data.category_ids?.length || data.desired_type);
-        if (hasRegion && hasCategory) setStep(2);
-      }
+      // "갤러리만 관리" 진입: 1단계(희망직종/지역 필수 입력) 건너뛰고 바로 사진 화면으로
+      if (currStart === "gallery") setStep(2);
 
       if (!currIsEdit && !currReturnTo.startsWith("%2F") && !currReturnTo.startsWith("/")) {
         router.replace(
@@ -285,6 +283,9 @@ function WorkerProfileContent() {
         );
         return;
       }
+    } else if (currStart === "gallery") {
+      // 프로필이 아직 없어도 사진만 먼저 등록할 수 있게 — 1단계 건너뛰고 바로 사진 화면으로
+      setStep(2);
     }
 
     setLoading(false);
@@ -409,19 +410,18 @@ function WorkerProfileContent() {
       profileData.worker_type = interviewResult.personalityType;
     }
 
-    if (!existing || isNew) {
-      // 새 공고: 항상 현재 세션 유저 소유
+    if (!existing) {
+      // 신규: 항상 현재 세션 유저 소유
       profileData.user_id = session.user.id;
     }
-    // 기존 공고 수정: user_id는 건드리지 않음 (소유권 유지)
+    // 기존 프로필 수정: user_id는 건드리지 않음 (소유권 유지)
 
+    // 구직 프로필은 유저당 1개 — 이미 있으면 new=true로 들어와도 항상 그 프로필을 수정
     let saveError;
-    if (existing && !isNew) {
-      // 기존 공고 수정 - id로
+    if (existing) {
       const { error } = await supabase.from("worker_profiles").update(profileData).eq("id", existing.id);
       saveError = error;
     } else {
-      // 새 공고 추가
       const { error } = await supabase.from("worker_profiles").insert({ ...profileData, job_status: "active" });
       saveError = error;
     }
@@ -444,6 +444,25 @@ function WorkerProfileContent() {
       decodedReturn.startsWith("/") ? decodedReturn :
       "/explore?type=worker"
     ), 1500);
+  };
+
+  // 갤러리(구직카드 히어로 사진/영상)만 저장 — 근무조건 등 나머지 필드는 안 건드림, avatar_url도 안 건드림(독립 관리)
+  const handleSaveGalleryOnly = async () => {
+    if (!userId) return;
+    setGalleryOnlySaving(true);
+    const mediaFields = {
+      image_url: imageUrls[0] || null,
+      image_urls: imageUrls,
+      video_url: videoUrl || null,
+    };
+    const { error } = existingProfileId
+      ? await supabase.from("worker_profiles").update(mediaFields).eq("id", existingProfileId)
+      : await supabase.from("worker_profiles").insert({ user_id: userId, ...mediaFields });
+    setGalleryOnlySaving(false);
+    if (error) { setError("저장 중 오류: " + error.message); return; }
+    setSuccess(true);
+    const decodedReturn = returnTo ? decodeURIComponent(returnTo) : "";
+    setTimeout(() => router.replace(decodedReturn.startsWith("/") ? decodedReturn : "/mypage"), 1000);
   };
 
   if (loading) return (
@@ -879,7 +898,56 @@ function WorkerProfileContent() {
               </div>
             )}
 
-            {step === 2 && (
+            {step === 2 && (galleryOnly ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                <div>
+                  <label style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 8 }}>
+                    🖼️ 구직카드 사진 갤러리 <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 400 }}>(사진 최대 10장, 영상 1개, 권장 3:2 비율)</span>
+                  </label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                    {videoUrl && (
+                      <div style={{ position: "relative", width: 90, height: 90, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "#000" }}>
+                        <video src={videoUrl} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(139,92,246,0.9)", color: "#fff", fontSize: 9, padding: "2px 5px", borderRadius: 4, fontWeight: 700 }}>🎥 영상</span>
+                        <button onClick={(e) => { e.preventDefault(); setVideoUrl(null); }}
+                          style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", color: "#f87171", width: 20, height: 20, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, padding: 0 }}>
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                    {imageUrls.map((url, index) => (
+                      <div key={url} style={{ position: "relative", width: 90, height: 90, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--surface2)" }}>
+                        <img src={url} alt={`프로필사진 ${index + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <button onClick={(e) => { e.preventDefault(); setImageUrls(prev => prev.filter((_, i) => i !== index)); }}
+                          style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", color: "#f87171", width: 20, height: 20, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, padding: 0 }}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    {(imageUrls.length < 10 || !videoUrl) && (
+                      <label style={{ cursor: "pointer" }}>
+                        <input type="file" accept="image/*,video/mp4,video/quicktime" style={{ display: "none" }} onChange={handleFileChange} />
+                        <div style={{ width: 90, height: 90, borderRadius: 12, border: "2px dashed var(--border)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--surface2)", gap: 4 }}>
+                          {imageUploading || videoUploading ? (
+                            <span style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>업로드 중...</span>
+                          ) : (
+                            <>
+                              <span style={{ fontSize: 20 }}>+</span>
+                              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>미디어 추가</span>
+                            </>
+                          )}
+                        </div>
+                      </label>
+                    )}
+                  </div>
+                </div>
+                {error && <p style={{ color: "#f87171", fontSize: 13, textAlign: "center" }}>{error}</p>}
+                <button onClick={handleSaveGalleryOnly} disabled={galleryOnlySaving}
+                  style={{ ...btnPrimary, fontSize: 15, opacity: galleryOnlySaving ? 0.7 : 1 }}>
+                  {galleryOnlySaving ? "저장 중..." : "저장하기 ✓"}
+                </button>
+              </div>
+            ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
                 {/* 프로필 미디어 등록 (통합) */}
@@ -1163,7 +1231,7 @@ function WorkerProfileContent() {
                   </button>
                 </div>
               </div>
-            )}
+            ))}
           </>
         )}
       </div>

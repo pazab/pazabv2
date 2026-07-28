@@ -1151,7 +1151,7 @@ function ExploreContent() {
             if (viewMode === "worker") {
               router.push("/employer/register");
             } else {
-              router.push("/worker/profile?edit=true&new=true&return=explore");
+              router.push(hasWorkerProfile ? "/worker/profile?edit=true&return=explore" : "/worker/profile?edit=true&new=true&return=explore");
             }
           }}
           style={{

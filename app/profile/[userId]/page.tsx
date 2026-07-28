@@ -12,7 +12,6 @@ export default function ProfilePage() {
   const profileId = params.userId as string;
 
   const [user, setUser] = useState<any>(null);
-  const [stores, setStores] = useState<any[]>([]);
   const [badges, setBadges] = useState<any[]>([]);
   const [personalPosts, setPersonalPosts] = useState<any[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
@@ -42,12 +41,7 @@ export default function ProfilePage() {
     if (!userData) { setLoading(false); return; }
     setUser(userData);
 
-    const isEmployer = userData.user_type === "employer" || userData.user_type === "both";
-
-    const [storesRes, badgesRes, postsRes] = await Promise.all([
-      isEmployer
-        ? supabase.from("employer_profiles").select("id, business_name, business_type, region, image_url").eq("user_id", profileId).eq("is_deleted", false)
-        : Promise.resolve({ data: [] }),
+    const [badgesRes, postsRes] = await Promise.all([
       supabase.from("user_badges").select("badge_key, earned_at").eq("user_id", profileId),
       supabase.from("feed_posts")
         .select("*, feed_likes(user_id)")
@@ -57,7 +51,6 @@ export default function ProfilePage() {
         .limit(12),
     ]);
 
-    setStores((storesRes as any).data || []);
     setBadges(getBadgesByRole((badgesRes.data || []), userData.user_type === "employer" ? "employer" : "worker"));
     
     const processedPosts = ((postsRes as any).data || []).map((p: any) => ({
@@ -209,28 +202,6 @@ export default function ProfilePage() {
                 <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{BADGE_DEFS[selectedBadge].desc}</p>
               </div>
             )}
-          </div>
-        )}
-
-        {/* 운영 중인 매장 (사장님) */}
-        {isEmployer && stores.length > 0 && (
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 16, marginBottom: 14 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>🏪 운영 중인 매장</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {stores.map(s => (
-                <button key={s.id} onClick={() => router.push(`/store/${s.id}`)}
-                  style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 12px", cursor: "pointer", width: "100%", textAlign: "left" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "linear-gradient(135deg,#ec4899,#be185d)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
-                    {s.image_url ? <img src={s.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🏪"}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.business_name}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{s.business_type || ""} {s.region ? `· ${s.region.split(" ").slice(0, 2).join(" ")}` : ""}</p>
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>→</span>
-                </button>
-              ))}
-            </div>
           </div>
         )}
 

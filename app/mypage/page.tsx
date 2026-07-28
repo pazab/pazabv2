@@ -1219,9 +1219,9 @@ function MyPageContent() {
                     <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: "0 0 2px" }}>내 구직 활동</p>
                     <p style={{ fontSize: 18, fontWeight: 900, color: "#fff", margin: 0 }}>⚡ 알바생</p>
                   </div>
-                  <button onClick={() => router.push("/worker/profile?edit=true&return=mypage&new=true")}
+                  <button onClick={() => router.push(myWorkerProfile ? "/worker/profile?edit=true&return=mypage" : "/worker/profile?edit=true&return=mypage&new=true")}
                     style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 12, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    + 구직 공고
+                    {myWorkerProfile ? "구직 정보 수정" : "+ 구직 정보"}
                   </button>
                 </div>
                 {/* 지원 현황 배지 버튼 */}
