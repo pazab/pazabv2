@@ -175,6 +175,35 @@ export async function promoteProfile(
 }
 
 // ============================================================
+// 3-1. addRole — 이미 활동 중인 계정에 반대 역할 추가 ('both' 승격 단일 소스)
+//    초대 수락/마이팀 역할추가/대타 SOS/성향분석 4개 호출부 공용
+//    프로필 row는 만들지 않음 — 실제 매장/알바 프로필 등록은 각자의 명시적 플로우로
+// ============================================================
+export async function addRole(
+  supabase: SupabaseClient,
+  userId: string,
+  newRole: UserRole
+): Promise<UserRole | 'both'> {
+  const { data } = await supabase
+    .from('users')
+    .select('user_type')
+    .eq('id', userId)
+    .single()
+
+  const current = data?.user_type as UserRole | 'both' | undefined
+  const next: UserRole | 'both' = !current || current === newRole ? newRole : 'both'
+
+  if (next !== current) {
+    await supabase.from('users').update({
+      user_type: next,
+      updated_at: new Date().toISOString(),
+    }).eq('id', userId)
+  }
+
+  return next
+}
+
+// ============================================================
 // 헬퍼
 // ============================================================
 function availabilityToDays(av?: string): string[] {

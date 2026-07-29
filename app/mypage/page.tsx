@@ -11,6 +11,8 @@ import { Suspense } from "react";
 import { BADGE_DEFS, GRADE_DEFS, getGrade, getBadgesByRole } from "@/lib/trustScore";
 import { cardStyle, cardGradientStyle, cardInnerStyle, btnPrimary, btnSecondary, btnAccent, btnGhost, btnDanger, modalOverlay, modalSheet, modalCenter, toggleTrack, toggleThumb } from "@/lib/styles";
 import { JobCard } from "@/components/JobCard";
+import { useActiveRole } from "@/lib/useActiveRole";
+import RoleToggleButton from "@/components/RoleToggleButton";
 
 const glassStyle: React.CSSProperties = {
   background: "var(--surface2)",
@@ -58,7 +60,7 @@ const isVideoUrl = (url: string) => {
   return ext ? ["mp4", "webm", "ogg", "mov", "avi", "mkv", "quicktime"].includes(ext) : false;
 };
 
-function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: string; trustScore: number; userType?: "worker" | "employer" | "both" }) {
+function UserGradeBadge({ userId, trustScore, mode }: { userId: string; trustScore: number; mode: "worker" | "employer" }) {
   const [allBadges, setAllBadges] = useState<any[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
 
@@ -71,8 +73,8 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
       });
   }, [userId]);
 
-  const showWorker = userType === "worker" || userType === "both";
-  const showEmployer = userType === "employer" || userType === "both";
+  const showWorker = mode === "worker";
+  const showEmployer = mode === "employer";
 
   const workerBadges = getBadgesByRole(allBadges, "worker");
   const employerBadges = getBadgesByRole(allBadges, "employer");
@@ -96,13 +98,11 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
       </div>
 
       {showWorker && (
-        <div style={{ borderBottom: showEmployer ? "1px dashed var(--border)" : "none", paddingBottom: showEmployer ? 14 : 0 }}>
+        <div>
           {/* 알바생 타이틀 */}
-          {userType === "both" && (
-            <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
-              <span>⚡</span> 알바생 신뢰등급
-            </p>
-          )}
+          <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+            <span>⚡</span> 알바생 신뢰등급
+          </p>
           {/* 등급 */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 20 }}>{grade.emoji}</span>
@@ -131,11 +131,9 @@ function UserGradeBadge({ userId, trustScore, userType = "worker" }: { userId: s
       {showEmployer && (
         <div>
           {/* 사장님 타이틀 */}
-          {userType === "both" && (
-            <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
-              <span>🏪</span> 사장님 신뢰등급
-            </p>
-          )}
+          <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+            <span>🏪</span> 사장님 신뢰등급
+          </p>
           {/* 등급 */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 20 }}>{grade.emoji}</span>
@@ -563,6 +561,7 @@ function MyPageContent() {
   }, [toastParam]);
 
   const [user, setUser] = useState<UserProfile | null>(null);
+  const { activeRole, setActiveRole, isBoth } = useActiveRole(user?.user_type);
   const [userId, setUserId] = useState<string | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1062,10 +1061,12 @@ function MyPageContent() {
   const grade = GRADE_INFO[user.grade || "bronze"];
   const mainResult = advancedResult || basicResult;
   const hasAny = !!(basicResult || advancedResult);
+  const mode: "worker" | "employer" = isBoth ? activeRole : (user.user_type === "employer" ? "employer" : "worker");
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 120 }}>
-      <AppHeader title="마이페이지" showSettings />
+      <AppHeader title="마이페이지" showSettings
+        rightActions={isBoth ? <RoleToggleButton activeRole={activeRole} onChange={setActiveRole} /> : undefined} />
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px" }}>
         <div style={{ padding: "0 0px" }}>
@@ -1124,7 +1125,7 @@ function MyPageContent() {
           </div>
           <div style={{ ...cardInnerStyle, background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 16, padding: "14px 16px", marginBottom: 12 }}>
             {/* 등급 + 뱃지 */}
-            <UserGradeBadge userId={user.id} trustScore={user.trust_score} userType={user.user_type} />
+            <UserGradeBadge userId={user.id} trustScore={user.trust_score} mode={mode} />
           </div>
         </div>
 
@@ -1169,20 +1170,22 @@ function MyPageContent() {
           </button>
         </div>
 
-        {/* 팀·소속 바로가기 */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+        {/* 팀·소속 바로가기 — 팀원 초대는 사장님 모드에서만 (초대 자체가 매장 보유 전제) */}
+        <div style={{ display: "grid", gridTemplateColumns: mode === "employer" ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 12 }}>
           <button onClick={() => router.push("/myteam")}
             style={{ background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
             <span style={{ fontSize: 22 }}>👥</span>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>내 팀 · 소속</p>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>소속 매장 및 팀원 관리</p>
           </button>
-          <button onClick={() => setInviteOpen(true)}
-            style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
-            <span style={{ fontSize: 22 }}>🎫</span>
-            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--pink-text)" }}>팀원 초대</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
-          </button>
+          {mode === "employer" && (
+            <button onClick={() => setInviteOpen(true)}
+              style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+              <span style={{ fontSize: 22 }}>🎫</span>
+              <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--pink-text)" }}>팀원 초대</p>
+              <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
+            </button>
+          )}
         </div>
 
         {/* 전체 채팅 보관함 바로가기 */}
@@ -1205,8 +1208,8 @@ function MyPageContent() {
           </div>
         </button>
 
-        {/* ── 알바생 섹션 ── */}
-        {(() => {
+        {/* ── 알바생 섹션 (알바생 모드일 때만) ── */}
+        {mode === "worker" && (() => {
           const wReceived = loveCalls.filter(lc => lc.myRole === "worker" && !lc.isSent);
           const wSent = loveCalls.filter(lc => lc.myRole === "worker" && lc.isSent);
           const wTotal = wReceived.length + wSent.length;
@@ -1307,8 +1310,8 @@ function MyPageContent() {
           );
         })()}
 
-        {/* ── 사장님 섹션 ── */}
-        {(() => {
+        {/* ── 사장님 섹션 (사장님 모드일 때만) ── */}
+        {mode === "employer" && (() => {
           const eReceived = loveCalls.filter(lc => lc.myRole === "employer" && !lc.isSent);
           const eSent = loveCalls.filter(lc => lc.myRole === "employer" && lc.isSent);
           const eTotal = eReceived.length + eSent.length;

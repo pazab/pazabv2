@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { markVerified } from '@/lib/verification'
-import { promoteProfile } from '@/lib/onboarding'
+import { promoteProfile, addRole } from '@/lib/onboarding'
 
 interface InviteInfo {
   id: string
@@ -159,23 +159,15 @@ export default function InviteAcceptPage() {
       // 3. worker 역할 확정 + 프로필 생성
       const { data: userData } = await supabase
         .from('users')
-        .select('onboarded, user_type')
+        .select('onboarded')
         .eq('id', user.id)
         .single()
 
-      const currentType = userData?.user_type;
-      const newType = currentType === 'employer' ? 'both'
-        : currentType === 'both' ? 'both'
-        : 'worker';
-
       if (!userData?.onboarded) {
         await promoteProfile(supabase, user.id, 'worker')
-        await supabase.from('users').update({
-          onboarded: true,
-          user_type: newType,
-        }).eq('id', user.id)
+        await supabase.from('users').update({ onboarded: true }).eq('id', user.id)
       } else {
-        await supabase.from('users').update({ user_type: newType }).eq('id', user.id)
+        await addRole(supabase, user.id, 'worker')
       }
 
       // 초대로 가입/소속 되었으므로 구직 탐색에서 즉시 제외 및 상태를 hired로 처리

@@ -13,6 +13,9 @@ import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX } from "@/lib/utils"
 import { sendPushNotification } from "@/lib/usePush";
 import { cardStyle, cardInnerStyle, cardGradientStyle, btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
+import { addRole } from "@/lib/onboarding";
+import { useActiveRole, ACTIVE_ROLE_KEY } from "@/lib/useActiveRole";
+import RoleToggleButton from "@/components/RoleToggleButton";
 
 // 거리 계산 헬퍼 함수 (Haversine 공식)
 function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -791,7 +794,7 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
         </div>
       ) : (
         <>
-          {(expandPayslips ? payslips : payslips.slice(0, 2)).map(p => (
+          {(expandPayslips ? payslips : payslips.slice(0, 1)).map(p => (
             <div key={p.id} style={{ background:"var(--surface2)", borderRadius:12, padding:12, border:"1px solid var(--border)" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
                 <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{p.year}년 {p.month}월</span>
@@ -815,7 +818,7 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
               </button>
             </div>
           ))}
-          {payslips.length > 2 && (
+          {payslips.length > 1 && (
             <button
               type="button"
               onClick={() => setExpandPayslips(!expandPayslips)}
@@ -837,7 +840,7 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
                 outline: "none"
               }}
             >
-              <span>{expandPayslips ? "명세서 접기" : `명세서 더보기 (외 ${payslips.length - 2}건)`}</span>
+              <span>{expandPayslips ? "명세서 접기" : `명세서 더보기 (외 ${payslips.length - 1}건)`}</span>
               <i className={`ti ${expandPayslips ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
             </button>
           )}
@@ -859,6 +862,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
   const [contracts, setContracts] = useState<any[]>([]);
   const [expandRecentAtt, setExpandRecentAtt] = useState(false);
   const [expandContracts, setExpandContracts] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
 
   useEffect(() => {
     const now = new Date();
@@ -873,7 +877,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
       getTaxRates(y)
     ]).then(([attRes, rates]) => {
       const att = attRes.data || [];
-      setRecentAtt(att.slice(0, 10));
+      setRecentAtt(att.slice(0, 31));
       const contractHours = m.work_hours ? parseFloat(m.work_hours) : 8;
       const workedDays = att.filter((a:any) => ["normal", "late", "early_leave"].includes(a.status)).length;
       const totalActualHours = att.filter((a:any) => a.status !== "absent" && a.status !== "off")
@@ -1073,8 +1077,25 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         )}
       </div>
 
+      {/* ── 서류함: 근태·계약서·명세서 묶음, 기본 접힘 ── */}
+      <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+        <button onClick={() => setDocsOpen(v => !v)}
+          style={{ width:"100%", background:"none", border:"none", padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <span style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <i className="ti ti-folder" style={{ fontSize:16, color:"var(--text-muted)" }} aria-hidden="true" />
+            <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>서류함</span>
+            <span style={{ fontSize:11, color:"var(--text-muted)" }}>근태·계약서·명세서</span>
+          </span>
+          <div style={{ display:"flex", alignItems:"center", gap:6, color: docsOpen ? "#f87171" : "var(--primary, #8b5cf6)", fontSize:12, fontWeight:800 }}>
+            <span>{docsOpen ? "접기" : "펼치기"}</span>
+            <i className={`ti ${docsOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize:16 }} aria-hidden="true" />
+          </div>
+        </button>
+      {docsOpen && (
+      <div style={{ padding:"0 16px 16px", display:"flex", flexDirection:"column", gap:12 }}>
+
       {/* 최근 근무 */}
-      <div style={{ ...cardStyle, padding:"14px 16px" }}>
+      <div style={{ ...cardInnerStyle, padding:"14px 16px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
           <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:0 }}>최근 근무 기록</p>
           <span style={{ fontSize:11, color:"var(--text-muted)" }}>이번달</span>
@@ -1083,8 +1104,11 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
           <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", margin:0 }}>이번달 근무 기록이 없어요</p>
         ) : (
           <>
-            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {(expandRecentAtt ? recentAtt : recentAtt.slice(0, 3)).map((a:any) => {
+            <div style={{
+              display:"flex", flexDirection:"column", gap:6,
+              ...(expandRecentAtt ? { maxHeight: 280, overflowY: "auto" as const, paddingRight: 2 } : {}),
+            }}>
+              {(expandRecentAtt ? recentAtt : recentAtt.slice(0, 1)).map((a:any) => {
                 const cin = a.check_in ? new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
                 const cout = a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-";
                 return (
@@ -1101,7 +1125,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                 );
               })}
             </div>
-            {recentAtt.length > 3 && (
+            {recentAtt.length > 1 && (
               <button
                 type="button"
                 onClick={() => setExpandRecentAtt(!expandRecentAtt)}
@@ -1123,7 +1147,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                   outline: "none"
                 }}
               >
-                <span>{expandRecentAtt ? "접기" : `근태 더보기 (외 ${recentAtt.length - 3}건)`}</span>
+                <span>{expandRecentAtt ? "접기" : `근태 더보기 (외 ${recentAtt.length - 1}건)`}</span>
                 <i className={`ti ${expandRecentAtt ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
               </button>
             )}
@@ -1131,7 +1155,7 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         )}
       </div>
       {/* 계약서 */}
-      <div style={{ ...cardStyle, padding:"14px 16px" }}>
+      <div style={{ ...cardInnerStyle, padding:"14px 16px" }}>
         <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-file-text" aria-hidden="true" /> 근로계약서</p>
         {contracts.length === 0 ? (
           <p style={{ fontSize:12, color:"var(--text-muted)", textAlign:"center", padding:"12px 0", margin:0 }}>아직 계약서가 없어요</p>
@@ -1207,9 +1231,13 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
       </div>
 
       {/* 급여 명세서 */}
-      <div style={{ ...cardStyle, padding:"14px 16px" }}>
+      <div style={{ ...cardInnerStyle, padding:"14px 16px" }}>
         <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-report-money" aria-hidden="true" /> 급여 명세서</p>
         <WorkerPayslipTab teamMemberId={m.id} workerId={userId} employerId={m.employer_id} router={router} />
+      </div>
+
+      </div>
+      )}
       </div>
     </div>
   );
@@ -1233,6 +1261,8 @@ function MyTeamPageContent() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [userType, setUserType] = useState<string>("");
+  const { activeRole, setActiveRole, isBoth } = useActiveRole(userType);
+  const loadedModesRef = useRef<Set<"employer" | "worker">>(new Set());
   const [employerResult, setEmployerResult] = useState<any>(null);
   const [attRefreshKey, setAttRefreshKey] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -1281,17 +1311,19 @@ function MyTeamPageContent() {
       supabase.auth.getUser().then(({ data }: { data: any }) => {
         if (!data.user) return;
         const ut = userTypeRef.current;
-        if (ut === "employer" || ut === "both") loadTeam(data.user.id);
-        if (ut === "worker" || ut === "both") loadMyWork(data.user.id);
+        const m = ut === "both" ? (window.localStorage.getItem(ACTIVE_ROLE_KEY) || "worker") : ut;
+        if (m === "employer") loadTeam(data.user.id);
+        if (m === "worker") loadMyWork(data.user.id);
       });
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
-  // Realtime 구독: team_members 변경 감지 시 사장님/알바생 화면 데이터 갱신
+  // Realtime 구독: team_members 변경 감지 시 현재 활성 모드 화면만 갱신 (비활성 모드는 구독 안 함)
   useEffect(() => {
     if (!user || !userType) return;
+    const mode = isBoth ? activeRole : (userType === "employer" ? "employer" : "worker");
 
     const channel = supabase
       .channel(`team-members-realtime-${user.id}-${Date.now()}`)
@@ -1299,13 +1331,10 @@ function MyTeamPageContent() {
         "postgres_changes",
         { event: "*", schema: "public", table: "team_members" },
         (payload: any) => {
-          const isEmployerMode = userType === "employer" || userType === "both";
-          const isWorkerMode = userType === "worker" || userType === "both";
-
-          if (isEmployerMode && (payload.new?.employer_id === user.id || payload.old?.employer_id === user.id)) {
+          if (mode === "employer" && (payload.new?.employer_id === user.id || payload.old?.employer_id === user.id)) {
             loadTeam(user.id);
           }
-          if (isWorkerMode && (payload.new?.worker_id === user.id || payload.old?.worker_id === user.id)) {
+          if (mode === "worker" && (payload.new?.worker_id === user.id || payload.old?.worker_id === user.id)) {
             loadMyWork(user.id);
           }
         }
@@ -1315,7 +1344,20 @@ function MyTeamPageContent() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, userType]);
+  }, [user?.id, userType, isBoth, activeRole]);
+
+  // both 계정이 모드를 전환할 때, 아직 로드 안 한 쪽 데이터를 최초 1회만 지연 로드
+  useEffect(() => {
+    if (!isBoth || !user?.id) return;
+    if (loadedModesRef.current.has(activeRole)) return;
+    loadedModesRef.current.add(activeRole);
+    if (activeRole === "employer") {
+      loadTeam(user.id).then((res: any[] | undefined) => setTeamOpen(!(res && res.length > 0)));
+    } else {
+      loadMyWork(user.id).then((res: any[] | undefined) => setWorkOpen(!(res && res.length > 0)));
+      loadPastWorks(user.id);
+    }
+  }, [activeRole, isBoth, user?.id]);
 
   async function loadUserType(uid: string) {
     const { data } = await supabase.from("users")
@@ -1327,30 +1369,28 @@ function MyTeamPageContent() {
     if (data?.employer_result) setEmployerResult(data.employer_result);
     if (data) setUser((p: any) => ({ ...p, ...data }));
 
+    // both 계정은 활성 모드 하나만 즉시 로드 — 반대 모드는 전환 시점에 지연 로드(위 useEffect)
+    const initialMode: "employer" | "worker" = ut === "employer" ? "employer"
+      : ut === "worker" ? "worker"
+      : (typeof window !== "undefined" && window.localStorage.getItem(ACTIVE_ROLE_KEY) === "employer") ? "employer"
+      : "worker";
+    loadedModesRef.current.add(initialMode);
+
     let loadedStores: any[] = [];
     let loadedWork: any[] = [];
 
-    const promises: Promise<any>[] = [];
-    if (ut === "employer" || ut === "both") {
-      promises.push(loadTeam(uid).then(res => { loadedStores = res || []; }));
+    if (initialMode === "employer") {
+      loadedStores = (await loadTeam(uid)) || [];
+    } else {
+      loadedWork = (await loadMyWork(uid)) || [];
+      await loadPastWorks(uid);
     }
-    if (ut === "worker" || ut === "both") {
-      promises.push(loadMyWork(uid).then(res => { loadedWork = res || []; }));
-      promises.push(loadPastWorks(uid));
-    }
-
-    await Promise.all(promises);
 
     const hasStores = loadedStores.length > 0;
     const hasWork = loadedWork.length > 0;
 
-    // 디폴트 접힘/펼침 로직
-    // both 계정: 데이터 있는 섹션은 접어서 "오늘의 요약" 카드만 먼저 보여줌(둘 다 항상 노출, 숨기지 않음).
-    // 데이터 없는 섹션은 펼쳐서 온보딩 CTA(매장 등록/공고 탐색)가 바로 보이게 함.
-    if (ut === "both") {
-      setTeamOpen(!hasStores);
-      setWorkOpen(!hasWork);
-    } else if (!hasStores && !hasWork) {
+    // 디폴트 접힘/펼침: 데이터 있으면 접어서 요약만, 없으면 펼쳐서 온보딩 CTA 노출
+    if (!hasStores && !hasWork) {
       setTeamOpen(true);
       setWorkOpen(true);
     } else {
@@ -1533,22 +1573,19 @@ function MyTeamPageContent() {
 
   async function upgradeToBoth(targetType: "worker" | "employer") {
     if (!user) return;
-    const { error } = await supabase
-      .from("users")
-      .update({ user_type: "both" })
-      .eq("id", user.id);
-    
-    if (error) {
-      showToast("역할 추가 오류: " + error.message, "error");
-      return;
-    }
-    
-    setUserType("both");
-    userTypeRef.current = "both";
+    const next = await addRole(supabase, user.id, targetType);
+    setUserType(next);
+    userTypeRef.current = next;
+    setActiveRole(targetType);
     showToast(targetType === "worker" ? "🙋‍♂️ 알바생 역할이 추가되었습니다!" : "💼 사장님 역할이 추가되었습니다!");
-    
-    await loadTeam(user.id);
-    await loadMyWork(user.id);
+
+    loadedModesRef.current.add(targetType);
+    if (targetType === "worker") {
+      await loadMyWork(user.id);
+      await loadPastWorks(user.id);
+    } else {
+      await loadTeam(user.id);
+    }
   }
 
   async function handleResign(member: any, name: string) {
@@ -1831,8 +1868,7 @@ function MyTeamPageContent() {
     return mapped;
   }
 
-  const isEmployer = userType === "employer" || userType === "both";
-  const isWorker = userType === "worker" || userType === "both";
+  const mode: "employer" | "worker" = isBoth ? activeRole : (userType === "employer" ? "employer" : "worker");
 
   // 접힌 헤더 한 줄 요약용 (오늘의 요약 카드를 따로 두지 않고 헤더 서브텍스트에 압축)
   const teamEmployeeCount = Object.values(membersByStore).flat().length;
@@ -1966,7 +2002,8 @@ function MyTeamPageContent() {
           </div>
         </div>
       )}
-      <AppHeader title="홈" showBellAndMenu />
+      <AppHeader title="홈" showBellAndMenu
+        rightActions={isBoth ? <RoleToggleButton activeRole={activeRole} onChange={setActiveRole} /> : undefined} />
       <div style={{ maxWidth:480, margin:"0 auto", padding:"12px 16px 0" }}>
         {loading ? (
           <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>로딩 중...</div>
@@ -1974,7 +2011,7 @@ function MyTeamPageContent() {
           <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
 
             {/* ── 대타 SOS 퀵 액션 (DESIGN_PLAN.md P4: 홈에서 펑크 즉시 대응) ── */}
-            {isEmployer ? (
+            {mode === "employer" ? (
               <button onClick={() => router.push("/daeta")}
                 style={{ width:"100%", padding:"16px 18px", background:"var(--gradient-hero)", border:"none", borderRadius:18, cursor:"pointer", display:"flex", alignItems:"center", gap:12, boxShadow:"var(--shadow-elevate)" }}>
                 <div style={{ width:40, height:40, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}><i className="ti ti-bolt" style={{ color:"#fff" }} aria-hidden="true" /></div>
@@ -1984,7 +2021,7 @@ function MyTeamPageContent() {
                 </div>
                 <span style={{ color:"#fff", fontSize:18, fontWeight:900 }}>→</span>
               </button>
-            ) : isWorker && (
+            ) : (
               <button onClick={() => router.push("/daeta")}
                 style={{ width:"100%", padding:"14px 18px", background:"rgba(34,197,94,0.08)", border:"1px solid rgba(34,197,94,0.35)", borderRadius:18, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
                 <i className="ti ti-circle-filled" style={{ fontSize:20, flexShrink:0, color:"var(--success)" }} aria-hidden="true" />
@@ -1997,7 +2034,7 @@ function MyTeamPageContent() {
             )}
 
             {/* ── 내 소속 (worker / both) ── */}
-            {isWorker && (
+            {mode === "worker" && (
               <section>
                 <button onClick={() => setWorkOpen(v => !v)}
                   style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -2056,7 +2093,7 @@ function MyTeamPageContent() {
             )}
 
             {/* ── 이전 근무 이력 (worker / both) ── */}
-            {isWorker && pastWorks.length > 0 && (
+            {mode === "worker" && pastWorks.length > 0 && (
               <section style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: 12 }}>
                   <p style={{ fontSize:15, fontWeight:800, color:"var(--text)", margin:0, display:"flex", alignItems:"center", gap:6 }}><i className="ti ti-history" aria-hidden="true" /> 이전 근무 이력 (경력)</p>
@@ -2102,7 +2139,7 @@ function MyTeamPageContent() {
               </section>
             )}
 
-            {isWorker && !isEmployer && (
+            {!isBoth && mode === "worker" && (
               <div style={{
                 ...cardStyle,
                 padding: "16px",
@@ -2132,7 +2169,7 @@ function MyTeamPageContent() {
             )}
 
             {/* ── 내 팀 (employer / both) ── */}
-            {isEmployer && (
+            {mode === "employer" && (
               <section>
                 <button onClick={() => setTeamOpen(v => !v)}
                   style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>

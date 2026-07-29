@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { addRole } from "@/lib/onboarding";
 
 export default function PersonalityPage() {
   const router = useRouter();
@@ -34,11 +35,11 @@ export default function PersonalityPage() {
     const er = erLocal ? JSON.parse(erLocal) : userData?.employer_result;
     let finalUserData = userData;
     if (userData?.user_type === "worker" && er) {
-      await supabase.from("users").update({ user_type: "both" }).eq("id", session.user.id);
-      finalUserData = { ...userData, user_type: "both" };
+      const next = await addRole(supabase, session.user.id, "employer");
+      finalUserData = { ...userData, user_type: next };
     } else if (userData?.user_type === "employer" && wr) {
-      await supabase.from("users").update({ user_type: "both" }).eq("id", session.user.id);
-      finalUserData = { ...userData, user_type: "both" };
+      const next = await addRole(supabase, session.user.id, "worker");
+      finalUserData = { ...userData, user_type: next };
     }
     setUser(finalUserData);
     setWorkerResult(wr || null);
@@ -236,8 +237,8 @@ export default function PersonalityPage() {
               {isWorker ? "🏪 사장님으로도 활동하고 싶으신가요?" : "⚡ 알바생으로도 활동하고 싶으신가요?"}
             </p>
             <button onClick={async () => {
-              await supabase.from("users").update({ user_type: "both" }).eq("id", user.id);
-              setUser((prev: any) => ({ ...prev, user_type: "both" }));
+              const next = await addRole(supabase, user.id, isWorker ? "employer" : "worker");
+              setUser((prev: any) => ({ ...prev, user_type: next }));
             }} style={{ background: "none", border: "1px solid rgba(255,255,255,0.15)", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, padding: "8px 16px", borderRadius: 20, cursor: "pointer" }}>
               {isWorker ? "🏪 사장님 역할 추가하기" : "⚡ 알바생 역할 추가하기"}
             </button>

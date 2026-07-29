@@ -11,6 +11,7 @@ import DaetaWorkerHome from "@/components/daeta/DaetaWorkerHome";
 import TierBadge from "@/components/TierBadge";
 import { getWorkerTiers, DaetaTier } from "@/lib/daetaTier";
 import { useToast } from "@/lib/useToast";
+import { addRole } from "@/lib/onboarding";
 
 const FALLBACK_BASE = { lat: 37.5665, lng: 126.9780 };
 
@@ -142,8 +143,8 @@ export default function DaetaPage() {
     
     if (!isEmployer || userType !== "both") {
       setIsEmployer(true);
-      setUserType("both");
-      await supabase.from("users").update({ user_type: "both" }).eq("id", currentUserId);
+      const next = await addRole(supabase, currentUserId, "employer");
+      setUserType(next);
     }
     
     if (!activePosting) {

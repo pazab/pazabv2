@@ -3,6 +3,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
+import { ACTIVE_ROLE_KEY } from "@/lib/useActiveRole";
 
 function PayslipListContent() {
   const router = useRouter();
@@ -35,10 +36,13 @@ function PayslipListContent() {
 
     if (tmId) {
       query = query.eq("team_member_id", tmId);
-    } else if (ut === "worker") {
-      query = query.eq("worker_id", workerId || uid);
     } else {
-      query = query.eq("employer_id", uid);
+      const effectiveMode = ut === "both"
+        ? ((typeof window !== "undefined" && window.localStorage.getItem(ACTIVE_ROLE_KEY)) || "worker")
+        : ut;
+      query = effectiveMode === "worker"
+        ? query.eq("worker_id", workerId || uid)
+        : query.eq("employer_id", uid);
     }
 
     const { data } = await query;

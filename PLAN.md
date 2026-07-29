@@ -1,7 +1,18 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-29 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-07-30 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
+
+**"both"(사장님+알바 동시) 계정 단일모드 UX 정리 + 마이팀/마이페이지 정보 밀도 축소 (2026-07-30)**
+- **배경**: v3급 전면 재설계를 고민하다가, 실제로 코드를 꼬이게 만드는 원인이 "사장님/알바 동시 계정(`user_type: 'both'`)"이었다는 결론 — 스키마(`employer_profiles`/`team_members`)는 이미 깔끔히 분리돼 있어 안 건드림, 문제는 UI 레이어. 상세 판단 근거는 [STRATEGY.md](STRATEGY.md) §12 참조.
+- **"both" 승격 로직 단일화**: `lib/onboarding.ts`에 `addRole()` 신설(현재 `user_type` 읽어서 승격 여부만 계산, 프로필 row는 자동 생성하지 않음 — 성향분석·대타콜 같은 부수 플로우가 빈 매장/구직 row를 만들지 않도록). 흩어져 있던 4개 호출부(`app/i/[code]/page.tsx` 초대수락, `app/myteam/page.tsx` upgradeToBoth, `app/daeta/page.tsx` handleCall, `app/personality/page.tsx` 자동/수동 승격 2곳) 전부 교체.
+- **활성 모드 훅 + 헤더 토글**: `lib/useActiveRole.ts`(localStorage 전역 키 `pazab_active_role`, 스키마 변경 없음, non-both 계정은 아예 관여 안 함). 처음엔 화면 상단에 큰 세그먼트 탭(`components/RoleSwitcher.tsx`)으로 만들었다가 "자주 안 쓰는 기능이 간판처럼 자리 차지" 피드백으로 폐기, `components/RoleToggleButton.tsx`(헤더 우측 소형 버튼, 모드별 그라디언트 색 구분 — 알바생 보라/사장님 핑크, 텍스트 라벨 포함)로 교체해 `AppHeader`의 `rightActions`에 배치.
+- **`app/myteam/page.tsx` 리팩터**: `isEmployer`/`isWorker` 두 독립 bool(both일 때 둘 다 true라서 팀관리·내근무 섹션이 항상 동시 렌더링되던 원인) → `mode` 단일값으로 통합. `loadUserType`이 활성 모드만 즉시 로드하고 반대 모드는 최초 전환 시점에 지연 로드(캐시)하도록 변경, realtime 구독도 활성 모드만 필터링. non-both 계정은 동작 변화 없이 분기만 단순해짐.
+- **`app/mypage/page.tsx` 정리**: `UserGradeBadge`(신뢰등급), "내 구직 활동"(알바생)/"내 채용 활동"(사장님) 두 섹션, "팀원 초대" 바로가기 버튼 — 전부 활성 모드 기준으로 하나만 노출하도록 게이팅(구조적으로 한쪽은 항상 데이터가 비므로 동시에 필요한 적이 없음을 확인 후 결정).
+- **`app/payslip/list/page.tsx` 버그 수정**: `tmId` 파라미터 없이 both 계정이 진입하면 항상 employer 쪽으로 빠지던 것(`app/mypage/page.tsx`의 "급여명세서 바로가기"가 파라미터 없이 이동) — 활성 모드를 fallback으로 사용하도록 수정.
+- **내 직장 카드(`WorkerMemberScroll`) 정보 밀도 축소**: "최근 근무 기록" 기본 노출 3건→1건, 펼쳤을 때는 전체를 페이지에 풀어놓는 대신 `maxHeight:280px` 내부 스크롤 컨테이너로 담음(월 최대 31건까지 로드). "급여 명세서" 기본 노출 2건→1건. 근태·계약서·명세서 3개 섹션을 "서류함" 하나로 묶어 기본 접힘 신설(각각 개별 카드로 항상 펼쳐진 헤더를 차지하던 것 제거, 안쪽은 `cardInnerStyle`로 중첩).
+- **검토했지만 실행 안 한 것**: 알바생이 매장에 먼저 "소속 신청"하는 역방향 채널 — 기각(이유는 STRATEGY.md §12.2). 초대는 사장님 전용 유지.
+- 전 항목 `npx tsc --noEmit` 신규 에러 0건 확인(기존 무관 에러 `app/explore/page.tsx`, `app/job/[id]/page.tsx` 2개 파일은 그대로 둠). 브라우저 시각 확인은 미실시 — 실제 both 테스트 계정(`pazab@kakao.com`/`aabbuju@gmail.com`)으로 클릭 확인 필요.
 
 **"파잡 커리어"(`/worker/[id]`) 역할 무관 통합 커리어 페이지로 확장 + 구직 갤러리 사진 독립 관리 (2026-07-29 2차)**
 - 전날 계획(아래 "다음 세션 작업" 항목) 실행 완료. `worker_profiles`는 라이브 DB에 unique 제약이 없지만 실사용 전원 1개씩이라 코드 레벨에서 유저당 1개로 확정 유지.
