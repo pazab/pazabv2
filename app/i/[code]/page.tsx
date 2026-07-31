@@ -4,7 +4,7 @@
  * 1탭 카카오 로그인 → team_members 연결 → Tier1 승격
  */
 import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { markVerified } from '@/lib/verification'
 import { promoteProfile, addRole } from '@/lib/onboarding'
@@ -31,7 +31,6 @@ interface InviteInfo {
 }
 
 export default function InviteAcceptPage() {
-  const router = useRouter()
   const params = useParams()
   const code = params.code as string
 
@@ -123,10 +122,16 @@ export default function InviteAcceptPage() {
         }).eq('id', invite.team_member_id)
       } else {
         // 신형: 닉네임 검색 초대 — 직접 insert
-        // 이미 활성 상태인 팀원만 재사용 — 퇴직(left) 레코드는 재활성화 금지, 새로 INSERT
-        const { data: existing } = await supabase.from('team_members')
+        // 이 매장(employer_profile_id)에 이미 활성 상태인 팀원만 재사용 — 퇴직(left) 레코드는 재활성화 금지, 새로 INSERT
+        // (employer_profile_id까지 봐야 함 — 안 그러면 같은 사장님의 다른 매장 초대를 수락할 때
+        //  기존 매장 소속 레코드를 새 매장으로 덮어써버리는 버그가 생김)
+        let existingQuery = supabase.from('team_members')
           .select('id').eq('employer_id', invite.employer_id).eq('worker_id', user.id)
-          .eq('status', 'active').limit(1)
+          .eq('status', 'active')
+        existingQuery = invite.employer_profile_id
+          ? existingQuery.eq('employer_profile_id', invite.employer_profile_id)
+          : existingQuery.is('employer_profile_id', null)
+        const { data: existing } = await existingQuery.limit(1)
         if (!existing || existing.length === 0) {
           await supabase.from('team_members').insert({
             employer_id: invite.employer_id,
@@ -151,10 +156,13 @@ export default function InviteAcceptPage() {
         }
       }
 
-      // 2. invite_codes 사용 처리
-      await supabase.from('invite_codes').update({
-        used_at: new Date().toISOString(),
-      }).eq('code', code)
+      // 2. invite_codes 사용 처리 — RLS(invite_codes_update_employer)가 알바생 쪽 업데이트를
+      //    막아서 서버 라우트(서비스 롤)로 대신 처리
+      await fetch('/api/invite/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      }).catch(() => {})
 
       // 3. worker 역할 확정 + 프로필 생성
       const { data: userData } = await supabase
@@ -182,8 +190,9 @@ export default function InviteAcceptPage() {
 
       setDone(true)
 
-      // 5. myteam으로 이동
-      setTimeout(() => router.replace('/myteam'), 1500)
+      // 5. myteam으로 이동 — router.replace는 클라이언트 캐시 때문에 "받은 초대장" 배너 등이
+      //    수락 전 상태 그대로 남아있는 경우가 있어서, 확실히 새로 불러오도록 풀 리로드로 이동
+      setTimeout(() => { window.location.href = '/myteam' }, 1500)
     } catch (e) {
       console.error(e)
       setError('수락 처리 중 오류가 발생했어요. 다시 시도해주세요.')

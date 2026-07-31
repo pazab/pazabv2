@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import InviteBottomSheet from "@/components/InviteBottomSheet";
 import StoreRegisterModal from "@/components/StoreRegisterModal";
-import DateWheelPicker from "@/components/DateWheelPicker";
 import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
 import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX } from "@/lib/utils";
@@ -105,6 +104,10 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
   const hasStoreCoords = storeLat != null && storeLng != null;
   const isInRange = !hasStoreCoords || (distance !== null && distance <= 200);
 
+  // 오늘이 이 팀원의 정규 근무요일인지 (대타/추가근무면 아래 시간대 제한을 아예 적용하지 않음 — 요일이 다르면 저장된 근무시간 자체가 오늘 것이 아니라서)
+  const todayKo = KOREAN_DAY_BY_INDEX[new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay()];
+  const isScheduledToday = isWorkingOnDay(member?.work_days, todayKo);
+
   // 근무 종료 시각이 지났는데 아직 출근을 안 눌렀으면 셀프 출근을 막고 사장님 수정으로 유도
   // (지난 근무를 뒤늦게 셀프 체크인하면 시간이 꼬여서 "오늘 출근" 집계가 어긋나던 문제)
   const shiftRange = parseShiftRange(member?.work_hours);
@@ -112,11 +115,11 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
     const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
     return kst.getUTCHours() * 60 + kst.getUTCMinutes();
   })();
-  const pastShiftEnd = !!(shiftRange && shiftRange.endMins > shiftRange.startMins && nowMinsKst > shiftRange.endMins);
+  const pastShiftEnd = !!(isScheduledToday && shiftRange && shiftRange.endMins > shiftRange.startMins && nowMinsKst > shiftRange.endMins);
 
-  // 오늘이 이 팀원의 정규 근무요일이 아니면(대타/추가근무 등) 원터치로 바로 출근되지 않고 한 번 확인받음
-  const todayKo = KOREAN_DAY_BY_INDEX[new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay()];
-  const isScheduledToday = isWorkingOnDay(member?.work_days, todayKo);
+  // 출근 10분 전 알림(크론)이 나가는 시점과 맞춰서, 그 전엔 셀프 체크인도 막음 (너무 이른 출근 찍기 방지)
+  const beforeShiftStart = !!(isScheduledToday && shiftRange && nowMinsKst < shiftRange.startMins - 10);
+  const shiftStartLabel = shiftRange ? `${String(Math.floor(shiftRange.startMins / 60)).padStart(2, "0")}:${String(shiftRange.startMins % 60).padStart(2, "0")}` : null;
 
   async function handleCheckIn() {
     if (!isInRange) {
@@ -328,15 +331,50 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
 
   return (
     <div style={{ marginBottom:12 }}>
-      {!checkedIn && pastShiftEnd && (
+      {!checkedIn && pastShiftEnd && (() => {
+        const RESOLVED_LABEL: Record<string, string> = { normal: "정상 출근", late: "지각 출근", early_leave: "조퇴", off: "휴무" };
+        const resolvedStatus = todayAtt?.status && todayAtt.status !== "absent" ? RESOLVED_LABEL[todayAtt.status] : null;
+        const isAbsent = todayAtt?.status === "absent";
+        return (
+          <div style={{
+            background: isAbsent ? "rgba(239,68,68,0.08)" : resolvedStatus ? "rgba(16,185,129,0.08)" : "var(--surface2)",
+            border: isAbsent ? "1px solid rgba(239,68,68,0.3)" : resolvedStatus ? "1px solid rgba(16,185,129,0.3)" : "none",
+            borderRadius:14, padding:"12px 14px", textAlign:"center",
+          }}>
+            {isAbsent ? (
+              <>
+                <p style={{ fontSize:13, color:"var(--danger)", margin:0, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  <i className="ti ti-x" aria-hidden="true" /> 결근으로 자동 처리됐어요
+                </p>
+                <p style={{ fontSize:11, color:"var(--text-muted)", margin:"4px 0 0" }}>사장님께도 알림이 갔어요. 실제로 근무하셨다면 사장님께 정정을 요청해 주세요</p>
+              </>
+            ) : resolvedStatus ? (
+              <>
+                <p style={{ fontSize:13, color:"#10b981", margin:0, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  <i className="ti ti-circle-check" aria-hidden="true" /> {resolvedStatus}으로 처리됐어요
+                </p>
+                <p style={{ fontSize:11, color:"var(--text-muted)", margin:"4px 0 0" }}>사장님이 근태를 직접 기록해 주셨어요</p>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize:13, color:"var(--text-muted)", margin:0, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  <i className="ti ti-clock-off" aria-hidden="true" /> 오늘 근무 시간이 지났어요
+                </p>
+                <p style={{ fontSize:11, color:"var(--text-muted)", margin:"4px 0 0" }}>출근 기록이 필요하면 사장님께 확인 요청해 주세요</p>
+              </>
+            )}
+          </div>
+        );
+      })()}
+      {!checkedIn && !pastShiftEnd && beforeShiftStart && (
         <div style={{ background:"var(--surface2)", borderRadius:14, padding:"12px 14px", textAlign:"center" }}>
           <p style={{ fontSize:13, color:"var(--text-muted)", margin:0, fontWeight:600, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-            <i className="ti ti-clock-off" aria-hidden="true" /> 오늘 근무 시간이 지났어요
+            <i className="ti ti-clock" aria-hidden="true" /> 출근 10분 전부터 체크인할 수 있어요
           </p>
-          <p style={{ fontSize:11, color:"var(--text-muted)", margin:"4px 0 0" }}>출근 기록이 필요하면 사장님께 확인 요청해 주세요</p>
+          <p style={{ fontSize:11, color:"var(--text-muted)", margin:"4px 0 0" }}>예정 출근 시각 {shiftStartLabel} · 알림도 이때부터 가요</p>
         </div>
       )}
-      {!checkedIn && !pastShiftEnd && (
+      {!checkedIn && !pastShiftEnd && !beforeShiftStart && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <button onClick={() => { if (!isScheduledToday) { setShowOffScheduleConfirm(true); } else { handleCheckIn(); } }} disabled={processing || !isInRange || gpsLoading}
             style={{
@@ -789,7 +827,7 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
       {payslips.length === 0 ? (
         <div style={{ textAlign:"center", padding:"24px 0" }}>
-          <p style={{ fontSize:13, color:"var(--text-muted)" }}>발행된 급여 명세서가 없어요</p>
+          <p style={{ fontSize:13, color:"var(--text-muted)" }}>발행된 임금 명세서가 없어요</p>
           <p style={{ fontSize:11, color:"var(--text-muted)", marginTop:4 }}>사장님이 명세서를 발행하면 여기서 확인할 수 있어요</p>
         </div>
       ) : (
@@ -800,11 +838,17 @@ function WorkerPayslipTab({ workerId, employerId, router, teamMemberId }: { work
                 <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{p.year}년 {p.month}월</span>
                 <div style={{ display:"flex", gap:4 }}>
                   {p.status === "confirmed" || p.confirmed_at ? (
-                    <span style={{ fontSize:11, background:"rgba(16,185,129,0.15)", color:"#10b981", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>확인됨</span>
+                    <span style={{ fontSize:11, background:"rgba(16,185,129,0.2)", border:"1px solid rgba(16,185,129,0.4)", color:"#10b981", borderRadius:20, padding:"3px 9px", fontWeight:800, display:"flex", alignItems:"center", gap:4 }}>
+                      <i className="ti ti-circle-check" style={{ fontSize:11 }} aria-hidden="true" /> 확인됨
+                    </span>
                   ) : p.status === "correction_requested" ? (
-                    <span style={{ fontSize:11, background:"rgba(239,68,68,0.15)", color:"#ef4444", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>수정요청됨</span>
+                    <span style={{ fontSize:12, background:"rgba(239,68,68,0.25)", border:"1px solid rgba(239,68,68,0.5)", color:"#ef4444", borderRadius:20, padding:"4px 10px", fontWeight:800, display:"flex", alignItems:"center", gap:4 }}>
+                      <i className="ti ti-alert-triangle" style={{ fontSize:12 }} aria-hidden="true" /> 수정요청됨
+                    </span>
                   ) : (
-                    <span style={{ fontSize:11, background:"rgba(245,158,11,0.15)", color:"#f59e0b", borderRadius:6, padding:"2px 6px", fontWeight:700 }}>확인대기</span>
+                    <span style={{ fontSize:12, background:"rgba(245,158,11,0.25)", border:"1px solid rgba(245,158,11,0.5)", color:"#f59e0b", borderRadius:20, padding:"4px 10px", fontWeight:800, display:"flex", alignItems:"center", gap:4 }}>
+                      <i className="ti ti-clock-hour-4" style={{ fontSize:12 }} aria-hidden="true" /> 확인대기
+                    </span>
                   )}
                 </div>
               </div>
@@ -854,15 +898,17 @@ const STATUS_ICON: Record<string,string> = { normal:"ti-circle-check", late:"ti-
 const STATUS_LABEL: Record<string,string> = { normal:"출근", late:"지각", early_leave:"조퇴", absent:"결근", off:"휴무" };
 const STATUS_COLOR: Record<string,string> = { normal:"#10b981", late:"#f59e0b", early_leave:"#f59e0b", absent:"#ef4444", off:"#6b7280" };
 
-function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: string; router: any; onRefresh?: () => void }) {
+function WorkerMemberScroll({ m, userId, router, onRefresh, forceOpenDocs }: { m: any; userId: string; router: any; onRefresh?: () => void; forceOpenDocs?: boolean }) {
   const [recentAtt, setRecentAtt] = useState<any[]>([]);
   const [monthStats, setMonthStats] = useState({ days: 0, hours: 0, estPay: 0, netPay: 0 });
-  const [editHireDate, setEditHireDate] = useState(false);
-  const [hireDateInput, setHireDateInput] = useState(m.hire_date || "");
   const [contracts, setContracts] = useState<any[]>([]);
   const [expandRecentAtt, setExpandRecentAtt] = useState(false);
   const [expandContracts, setExpandContracts] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
+
+  useEffect(() => {
+    if (forceOpenDocs) setDocsOpen(true);
+  }, [forceOpenDocs]);
 
   useEffect(() => {
     const now = new Date();
@@ -1024,26 +1070,13 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
             ))}
           </div>
         </div>
-        {/* 입사일 */}
+        {/* 입사일 — 근속기간 계산 기준이 되는 공식 기록이라 알바생 본인은 수정 불가, 사장님만 수정 가능 */}
         <div style={{ padding:"10px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", borderBottom:"1px solid var(--border)" }}>
           <span style={{ fontSize:12, color:"var(--text-muted)" }}>입사일</span>
-          <button onClick={() => setEditHireDate(true)} style={{ fontSize:12, fontWeight:600, color: m.hire_date ? "var(--text)" : "#f59e0b", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
-            {hireDateInput || "미설정"} <span style={{ fontSize:10, color:"#7c3aed" }}>수정</span>
-          </button>
+          <span style={{ fontSize:12, fontWeight:600, color: m.hire_date ? "var(--text)" : "#f59e0b" }}>
+            {m.hire_date || "미설정"}
+          </span>
         </div>
-        {editHireDate && (
-          <DateWheelPicker
-            value={hireDateInput || new Date().toISOString().split("T")[0]}
-            onChange={v => setHireDateInput(v)}
-            onClose={() => setEditHireDate(false)}
-            onConfirm={async v => {
-              setHireDateInput(v);
-              await supabase.from("team_members").update({ hire_date: v }).eq("id", m.id);
-              setEditHireDate(false);
-              onRefresh?.();
-            }}
-          />
-        )}
         {/* 채팅 */}
         <button onClick={() => router.push(`/chat?employer=${m.employer_id}`)}
           style={{ width:"100%", background:"none", border:"none", padding:"12px 18px", fontSize:13, color:"var(--text-muted)", cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:8 }}>
@@ -1171,9 +1204,13 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
                     <span style={{ fontSize:12, fontWeight:700, color:"var(--text)" }}>
                       {isActive ? "현재 계약" : "이전 계약"}
                     </span>
-                    <span style={{ fontSize:10, borderRadius:6, padding:"2px 7px", fontWeight:700,
-                      background: isSigned ? "#10b98120" : isPending ? "#f59e0b20" : "var(--surface)",
+                    <span style={{
+                      fontSize: isPending ? 12 : 10, borderRadius:20, padding: isPending ? "4px 10px" : "2px 7px", fontWeight:800,
+                      display:"flex", alignItems:"center", gap:4,
+                      background: isSigned ? "rgba(16,185,129,0.2)" : isPending ? "rgba(245,158,11,0.25)" : "var(--surface)",
+                      border: isSigned ? "1px solid rgba(16,185,129,0.4)" : isPending ? "1px solid rgba(245,158,11,0.5)" : "1px solid var(--border)",
                       color: isSigned ? "#10b981" : isPending ? "#f59e0b" : "var(--text-muted)" }}>
+                      {isPending && <i className="ti ti-clock-hour-4" style={{ fontSize:12 }} aria-hidden="true" />}
                       {isSigned ? "서명완료" : isPending ? "서명대기" : "미서명"}
                     </span>
                   </div>
@@ -1230,9 +1267,9 @@ function WorkerMemberScroll({ m, userId, router, onRefresh }: { m: any; userId: 
         )}
       </div>
 
-      {/* 급여 명세서 */}
+      {/* 임금 명세서 */}
       <div style={{ ...cardInnerStyle, padding:"14px 16px" }}>
-        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-report-money" aria-hidden="true" /> 급여 명세서</p>
+        <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-report-money" aria-hidden="true" /> 임금 명세서</p>
         <WorkerPayslipTab teamMemberId={m.id} workerId={userId} employerId={m.employer_id} router={router} />
       </div>
 
@@ -1281,7 +1318,7 @@ function MyTeamPageContent() {
   const [toastMsg, setToastMsg] = useState("");
   const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
-  const [resignTarget, setResignTarget] = useState<{ member: any; name: string; hasWorkedThisMonth: boolean } | null>(null);
+  const [resignTarget, setResignTarget] = useState<{ member: any; name: string; hasWorkedThisMonth: boolean; hasPayslipThisMonth: boolean; uncoveredWorkDays: number } | null>(null);
   const [selectedTimetableDay, setSelectedTimetableDay] = useState<string>(() => {
     const days = ["일", "월", "화", "수", "목", "금", "토"];
     return days[new Date().getDay()];
@@ -1289,8 +1326,21 @@ function MyTeamPageContent() {
 
   // 알바생 데이터
   const [current, setCurrent] = useState<any[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<{ code: string; bizName: string }[]>([]);
   const [pastWorks, setPastWorks] = useState<any[]>([]);
   const [workOpen, setWorkOpen] = useState(true);
+  const [pastWorkOpen, setPastWorkOpen] = useState(false);
+  const [highlightMemberId, setHighlightMemberId] = useState<string | null>(null);
+  const memberRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!highlightMemberId || !workOpen) return;
+    const t = setTimeout(() => {
+      memberRefs.current[highlightMemberId]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setHighlightMemberId(null);
+    }, 150);
+    return () => clearTimeout(t);
+  }, [highlightMemberId, workOpen]);
 
   const hasStore = myStores.length > 0;
   const hasEmployee = hasStore && (myStores.some(s => s.activeJob !== null) || Object.values(membersByStore).flat().length > 0);
@@ -1356,8 +1406,24 @@ function MyTeamPageContent() {
     } else {
       loadMyWork(user.id).then((res: any[] | undefined) => setWorkOpen(!(res && res.length > 0)));
       loadPastWorks(user.id);
+      loadPendingInvites(user.id);
     }
   }, [activeRole, isBoth, user?.id]);
+
+  // 초대 수락은 /i/[code]로 나갔다가 돌아오는 흐름이라, 탭이 다시 보일 때 배너를 새로고침
+  // (돌아와도 페이지가 리마운트 안 되면 수락 전 상태 그대로 남아있는 문제)
+  useEffect(() => {
+    if (!user?.id) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadPendingInvites(user.id);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [user?.id]);
 
   async function loadUserType(uid: string) {
     const { data } = await supabase.from("users")
@@ -1384,6 +1450,7 @@ function MyTeamPageContent() {
     } else {
       loadedWork = (await loadMyWork(uid)) || [];
       await loadPastWorks(uid);
+      await loadPendingInvites(uid);
     }
 
     const hasStores = loadedStores.length > 0;
@@ -1583,13 +1650,14 @@ function MyTeamPageContent() {
     if (targetType === "worker") {
       await loadMyWork(user.id);
       await loadPastWorks(user.id);
+      await loadPendingInvites(user.id);
     } else {
       await loadTeam(user.id);
     }
   }
 
   async function handleResign(member: any, name: string) {
-    // 1. 퇴사일 기준 당월(KST) 급여 명세서 발행 여부 확인
+    // 1. 퇴사일 기준 당월(KST) 임금 명세서 발행 여부 확인
     const now = new Date();
     const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const currentYear = kst.getUTCFullYear();
@@ -1610,7 +1678,7 @@ function MyTeamPageContent() {
     const hasWorkedThisMonth = attRows && attRows.length > 0;
 
     if (hasWorkedThisMonth) {
-      // 실제 근무 이력이 있는 달 → 급여 명세서 발행 필수
+      // 실제 근무 이력이 있는 달 → 임금 명세서 발행 필수
       const { data: slips, error: slipsErr } = await supabase
         .from("payslips")
         .select("id")
@@ -1625,11 +1693,11 @@ function MyTeamPageContent() {
       }
 
       if (!slips || slips.length === 0) {
-        alert(`⚠️ 퇴사 처리 불가\n\n${name}님의 이번 달(${currentYear}년 ${currentMonth}월) 근무 기록이 있습니다.\n급여 명세서를 먼저 발행한 후 퇴사 처리해 주세요.`);
+        alert(`⚠️ 퇴사 처리 불가\n\n${name}님의 이번 달(${currentYear}년 ${currentMonth}월) 근무 기록이 있습니다.\n임금 명세서를 먼저 발행한 후 퇴사 처리해 주세요.`);
         return;
       }
     }
-    // 당월 출근 기록이 없으면 급여 명세서 없이 퇴사 처리 허용
+    // 당월 출근 기록이 없으면 임금 명세서 없이 퇴사 처리 허용
 
     // 2. 퇴사 처리 진행
     const { error } = await supabase
@@ -1705,6 +1773,16 @@ function MyTeamPageContent() {
       }
     }
 
+    // 확인 대기 중인 임금 명세서 (발행됐지만 알바생이 아직 확인 안 함)
+    const { data: pendingSlips } = tmIds.length > 0
+      ? await supabase.from("payslips")
+          .select("team_member_id")
+          .in("team_member_id", tmIds)
+          .is("confirmed_at", null)
+          .neq("status", "confirmed")
+      : { data: [] };
+    const payslipPendingSet = new Set((pendingSlips || []).map((p: any) => p.team_member_id));
+
     const profileIds = [...new Set((activeData||[]).map((d: any) => d.employer_profile_id).filter(Boolean))];
     const empIdFallbacks = [...new Set((activeData||[]).filter((d: any) => !d.employer_profile_id).map((d: any) => d.employer_id))];
     const profiles: any[] = [];
@@ -1767,6 +1845,7 @@ function MyTeamPageContent() {
         employer: d.users,
         profile: profiles.find((p: any) => d.employer_profile_id ? p.id === d.employer_profile_id : p.user_id === d.employer_id),
         contractStatus,
+        payslipPending: payslipPendingSet.has(d.id),
       };
     });
     setCurrent(mapped);
@@ -1868,6 +1947,35 @@ function MyTeamPageContent() {
     return mapped;
   }
 
+  // 받은 초대장 중 아직 수락 안 한 것 — 알림만으로는 놓치기 쉬워서 홈에도 노출
+  async function loadPendingInvites(uid: string) {
+    const { data: notifs } = await supabase
+      .from("notifications")
+      .select("id, data, created_at")
+      .eq("user_id", uid)
+      .eq("type", "invite")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    const codes = [...new Set(
+      (notifs || [])
+        .map((n: any) => (n.data?.url as string | undefined)?.match(/\/i\/([A-Za-z0-9-]+)/)?.[1])
+        .filter((c: any): c is string => !!c)
+    )];
+
+    if (codes.length === 0) { setPendingInvites([]); return; }
+
+    const { data: invites } = await supabase
+      .from("invite_codes")
+      .select("code, biz_name, used_at, expires_at")
+      .in("code", codes)
+      .is("used_at", null);
+
+    const nowIso = new Date().toISOString();
+    const valid = (invites || []).filter((iv: any) => !iv.expires_at || iv.expires_at > nowIso);
+    setPendingInvites(valid.map((iv: any) => ({ code: iv.code, bizName: iv.biz_name || "매장" })));
+  }
+
   const mode: "employer" | "worker" = isBoth ? activeRole : (userType === "employer" ? "employer" : "worker");
 
   // 접힌 헤더 한 줄 요약용 (오늘의 요약 카드를 따로 두지 않고 헤더 서브텍스트에 압축)
@@ -1876,12 +1984,35 @@ function MyTeamPageContent() {
   const teamScheduledCount = myStores.reduce((sum, s) => sum + (statsByStore[s.id]?.scheduled || 0), 0);
   const teamPendingCount = myStores.reduce((sum, s) => sum + (statsByStore[s.id]?.pending || 0), 0);
   const workPendingCount = current.filter((m: any) => m.contractStatus !== "done").length;
+  const workPayslipPendingCount = current.filter((m: any) => m.payslipPending).length;
+
+  // 상태 배너(지각/결근/미출근/계약확인) 클릭 시 해당 매장을 활성화하고 팀원 행으로 스크롤 이동
+  const [highlightTeamMemberId, setHighlightTeamMemberId] = useState<string | null>(null);
+  const teamMemberRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!highlightTeamMemberId || !teamOpen) return;
+    const t = setTimeout(() => {
+      teamMemberRowRefs.current[highlightTeamMemberId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightTeamMemberId(null);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [highlightTeamMemberId, teamOpen, activeStoreId]);
+
+  const jumpToTeamMember = (memberId: string) => {
+    const storeId = Object.entries(membersByStore).find(([, arr]) => (arr as any[]).some((x: any) => x.id === memberId))?.[0];
+    if (!storeId) return;
+    setTeamOpen(true);
+    setActiveStoreId(storeId);
+    sessionStorage.setItem("myteam_activeStoreId", storeId);
+    setHighlightTeamMemberId(memberId);
+  };
 
   const contractBadge = (status: string) => ({
-    none: { label:"계약서미작성", color:"#ef4444", bg:"#ef444415" },
-    pending: { label:"서명대기", color:"#f59e0b", bg:"#f59e0b15" },
-    done: { label:"정상계약 완료", color:"#10b981", bg:"#10b98115" },
-  }[status] || { label:"미작성", color:"#ef4444", bg:"#ef444415" });
+    none: { label:"계약서미작성", color:"#ef4444", bg:"rgba(239,68,68,0.25)", border:"1px solid rgba(239,68,68,0.5)", icon:"ti-alert-triangle" },
+    pending: { label:"서명대기", color:"#f59e0b", bg:"rgba(245,158,11,0.25)", border:"1px solid rgba(245,158,11,0.5)", icon:"ti-clock-hour-4" },
+    done: { label:"정상계약 완료", color:"#10b981", bg:"rgba(16,185,129,0.2)", border:"1px solid rgba(16,185,129,0.4)", icon:"ti-circle-check" },
+  }[status] || { label:"미작성", color:"#ef4444", bg:"rgba(239,68,68,0.25)", border:"1px solid rgba(239,68,68,0.5)", icon:"ti-alert-triangle" });
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:160 }}>
@@ -1953,30 +2084,50 @@ function MyTeamPageContent() {
             </p>
 
             {/* 이번 달 급여 정산 상태 안내 */}
-            <div style={{ borderRadius:10, padding:"10px 14px", marginBottom:14, border:`1px solid ${resignTarget.hasWorkedThisMonth ? "rgba(245,158,11,0.4)" : "rgba(16,185,129,0.3)"}`, background: resignTarget.hasWorkedThisMonth ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.08)" }}>
-              {resignTarget.hasWorkedThisMonth ? (
-                <>
-                  <p style={{ fontSize:12, fontWeight:700, color:"#f59e0b", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-alert-triangle" aria-hidden="true" /> 이번 달 근무 기록이 있습니다</p>
-                  <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
-                    퇴사 처리 전에 <strong>이번 달 급여 명세서를 먼저 발행</strong>해 주세요.<br/>급여 미정산 상태로는 퇴사 처리가 되지 않습니다.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p style={{ fontSize:12, fontWeight:700, color:"#10b981", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 이번 달 출근 기록 없음 — 즉시 퇴사 처리 가능</p>
-                  <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
-                    이번 달 실제 출근 내역이 없어 급여 명세서 없이 퇴사 처리할 수 있습니다.
-                  </p>
-                </>
-              )}
-            </div>
+            {resignTarget.hasWorkedThisMonth && !resignTarget.hasPayslipThisMonth ? (
+              <div style={{ borderRadius:10, padding:"10px 14px", marginBottom:14, border:"1px solid rgba(245,158,11,0.4)", background:"rgba(245,158,11,0.08)" }}>
+                <p style={{ fontSize:12, fontWeight:700, color:"#f59e0b", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-alert-triangle" aria-hidden="true" /> 이번 달 근무 기록이 있습니다</p>
+                <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 10px", lineHeight:1.5 }}>
+                  퇴사 처리 전에 <strong>이번 달 임금 명세서를 먼저 발행</strong>해 주세요.<br/>급여 미정산 상태로는 퇴사 처리가 되지 않습니다.
+                </p>
+                <button onClick={() => { const id = resignTarget.member.id; setResignTarget(null); router.push(`/payslip?tmId=${id}`); }}
+                  style={{ width:"100%", background:"#f59e0b", border:"none", borderRadius:10, padding:"9px", color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                  <i className="ti ti-file-text" aria-hidden="true" /> 임금 명세서 발행하러 가기
+                </button>
+              </div>
+            ) : resignTarget.hasWorkedThisMonth && resignTarget.uncoveredWorkDays > 0 ? (
+              <div style={{ borderRadius:10, padding:"10px 14px", marginBottom:14, border:"1px solid rgba(245,158,11,0.4)", background:"rgba(245,158,11,0.08)" }}>
+                <p style={{ fontSize:12, fontWeight:700, color:"#f59e0b", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-alert-triangle" aria-hidden="true" /> 명세서 발행 이후 근무 기록 {resignTarget.uncoveredWorkDays}건이 반영 안 됐어요</p>
+                <p style={{ fontSize:11, color:"var(--text-muted)", margin:"0 0 10px", lineHeight:1.5 }}>
+                  발행된 명세서 이후에 추가로 근무한 날이 있어요. 그대로 퇴사 처리하면 이 근무분은 급여에서 누락될 수 있습니다. 재발행 후 진행을 권장해요.
+                </p>
+                <button onClick={() => { const id = resignTarget.member.id; setResignTarget(null); router.push(`/payslip?tmId=${id}`); }}
+                  style={{ width:"100%", background:"#f59e0b", border:"none", borderRadius:10, padding:"9px", color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                  <i className="ti ti-file-text" aria-hidden="true" /> 임금 명세서 재발행하러 가기
+                </button>
+              </div>
+            ) : resignTarget.hasWorkedThisMonth ? (
+              <div style={{ borderRadius:10, padding:"10px 14px", marginBottom:14, border:"1px solid rgba(16,185,129,0.3)", background:"rgba(16,185,129,0.08)" }}>
+                <p style={{ fontSize:12, fontWeight:700, color:"#10b981", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 이번 달 임금 명세서 발행 완료 — 퇴사 처리 가능</p>
+                <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
+                  이번 달 근무분이 임금 명세서에 반영됐어요. 퇴사 처리를 진행할 수 있습니다.
+                </p>
+              </div>
+            ) : (
+              <div style={{ borderRadius:10, padding:"10px 14px", marginBottom:14, border:"1px solid rgba(16,185,129,0.3)", background:"rgba(16,185,129,0.08)" }}>
+                <p style={{ fontSize:12, fontWeight:700, color:"#10b981", margin:"0 0 4px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-circle-check" aria-hidden="true" /> 이번 달 출근 기록 없음 — 즉시 퇴사 처리 가능</p>
+                <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
+                  이번 달 실제 출근 내역이 없어 임금 명세서 없이 퇴사 처리할 수 있습니다.
+                </p>
+              </div>
+            )}
 
             <div style={{ background:"var(--surface2)", borderRadius:12, padding:"12px 14px", marginBottom:20, border:"1px solid var(--border)" }}>
               <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 6px", fontWeight:700, display:"flex", alignItems:"center", gap:4 }}>
                 <i className="ti ti-bulb" aria-hidden="true" /> 법적 서류 보존 안내
               </p>
               <p style={{ fontSize:11, color:"var(--text-muted)", margin:0, lineHeight:1.5 }}>
-                • 작성된 <strong>근로계약서</strong>와 <strong>급여명세서/지급내역</strong>은 근로기준법 및 관련 법령에 의거하여 <strong>법적 보존 연한(3년~5년) 동안 안전하게 보존</strong>되며, 퇴사 처리 후에도 필요 시 양측 모두 언제든지 열람할 수 있습니다.
+                • 작성된 <strong>근로계약서</strong>와 <strong>임금명세서/지급내역</strong>은 근로기준법 및 관련 법령에 의거하여 <strong>법적 보존 연한(3년~5년) 동안 안전하게 보존</strong>되며, 퇴사 처리 후에도 필요 시 양측 모두 언제든지 열람할 수 있습니다.
               </p>
               <p style={{ fontSize:11, color:"var(--text-muted)", margin:"8px 0 0", lineHeight:1.5 }}>
                 • 퇴사 완료 시 해당 직원과의 근무 현황 및 1:1 대화방이 종료되며, 직원에게 퇴사 처리 알림이 전송됩니다.
@@ -1994,8 +2145,8 @@ function MyTeamPageContent() {
                 setResignTarget(null);
                 await handleResign(target, name);
               }}
-                disabled={resignTarget.hasWorkedThisMonth}
-                style={{ flex:1, background: resignTarget.hasWorkedThisMonth ? "var(--border)" : "var(--danger)", border:"none", borderRadius:14, padding:14, color: resignTarget.hasWorkedThisMonth ? "var(--text-muted)" : "#fff", fontSize:14, fontWeight:700, cursor: resignTarget.hasWorkedThisMonth ? "not-allowed" : "pointer", opacity: resignTarget.hasWorkedThisMonth ? 0.6 : 1, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                disabled={resignTarget.hasWorkedThisMonth && !resignTarget.hasPayslipThisMonth}
+                style={{ flex:1, background: (resignTarget.hasWorkedThisMonth && !resignTarget.hasPayslipThisMonth) ? "var(--border)" : "var(--danger)", border:"none", borderRadius:14, padding:14, color: (resignTarget.hasWorkedThisMonth && !resignTarget.hasPayslipThisMonth) ? "var(--text-muted)" : "#fff", fontSize:14, fontWeight:700, cursor: (resignTarget.hasWorkedThisMonth && !resignTarget.hasPayslipThisMonth) ? "not-allowed" : "pointer", opacity: (resignTarget.hasWorkedThisMonth && !resignTarget.hasPayslipThisMonth) ? 0.6 : 1, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                 <i className="ti ti-alert-triangle" aria-hidden="true" /> 퇴사 처리 확정
               </button>
             </div>
@@ -2009,6 +2160,31 @@ function MyTeamPageContent() {
           <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>로딩 중...</div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
+
+            {/* ── 받은 초대장 — 알림만으로는 놓치기 쉬워서 홈에도 상시 노출 ── */}
+            {mode === "worker" && pendingInvites.length > 0 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {pendingInvites.map(inv => (
+                  <div key={inv.code} style={{
+                    border:"1.5px solid rgba(245,158,11,0.45)", borderRadius:18, padding:"14px 16px",
+                    background:"linear-gradient(135deg, rgba(245,158,11,0.12), rgba(236,72,153,0.06))",
+                    display:"flex", alignItems:"center", gap:12,
+                  }}>
+                    <div style={{ width:38, height:38, borderRadius:12, background:"rgba(245,158,11,0.18)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      <i className="ti ti-mail-opened" style={{ fontSize:18, color:"#f59e0b" }} aria-hidden="true" />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:13, fontWeight:800, color:"var(--text)", margin:"0 0 2px" }}>{inv.bizName}에서 팀원 초대장이 왔어요</p>
+                      <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>확인/조치가 필요해요 · 수락해야 소속이 연결돼요</p>
+                    </div>
+                    <button onClick={() => router.push(`/i/${inv.code}`)}
+                      style={{ flexShrink:0, background:"#f59e0b", border:"none", borderRadius:10, padding:"9px 14px", color:"#fff", fontSize:12, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap" }}>
+                      확인하기
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* ── 대타 SOS 퀵 액션 (DESIGN_PLAN.md P4: 홈에서 펑크 즉시 대응) ── */}
             {mode === "employer" ? (
@@ -2027,7 +2203,7 @@ function MyTeamPageContent() {
                 <i className="ti ti-circle-filled" style={{ fontSize:20, flexShrink:0, color:"var(--success)" }} aria-hidden="true" />
                 <div style={{ textAlign:"left", flex:1 }}>
                   <div style={{ fontSize:14, fontWeight:800, color:"var(--text)" }}>동네 대타로 바로 벌기</div>
-                  <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>대타 가능을 켜면 동네 SOS를 가장 먼저 받아요</div>
+                  <div style={{ fontSize:11, color:"var(--text-muted)", marginTop:2 }}>눌러서 대타 가능 켜면 동네 SOS를 가장 먼저 받아요</div>
                 </div>
                 <span style={{ color:"#4ade80", fontSize:16, fontWeight:900 }}>→</span>
               </button>
@@ -2051,17 +2227,71 @@ function MyTeamPageContent() {
                   </div>
                 </button>
 
+                {/* 🟢/⚠️ 확인/조치가 필요한 항목 배너 — 우리 매장(사장님)과 동일한 패턴 */}
+                {current.length > 0 && (workPendingCount > 0 || workPayslipPendingCount > 0) && (
+                  <div style={{
+                    background: "linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(245,158,11,0.08) 100%)",
+                    border: "1.5px solid rgba(239,68,68,0.3)",
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                    marginBottom: 10,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 20 }}>⚠️</span>
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 900, color: "#ef4444", margin: 0, letterSpacing: "-0.2px" }}>
+                          확인/조치가 필요한 항목이 있어요
+                        </p>
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>
+                          {workPendingCount > 0 && `계약확인 ${workPendingCount}건 `}
+                          {workPayslipPendingCount > 0 && `명세서확인 ${workPayslipPendingCount}건`}
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                      {current.filter((m: any) => m.contractStatus !== "done").map((m: any) => (
+                        <span key={`c_${m.id}`} onClick={() => { setWorkOpen(true); setHighlightMemberId(m.id); }}
+                          style={{ fontSize: 10, background: "#7c3aed20", color: "#7c3aed", border: "1px solid #7c3aed40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                          📄 {m.profile?.business_name || "매장"} (계약확인)
+                        </span>
+                      ))}
+                      {current.filter((m: any) => m.payslipPending).map((m: any) => (
+                        <span key={`p_${m.id}`} onClick={() => { setWorkOpen(true); setHighlightMemberId(m.id); }}
+                          style={{ fontSize: 10, background: "#10b98120", color: "#10b981", border: "1px solid #10b98140", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                          💰 {m.profile?.business_name || "매장"} (명세서확인)
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* 통계 그리드 — 펼쳤을 때 나오는 매장별 카드 통계와 동일한 스타일 */}
                 {current.length > 0 && (
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)", marginBottom:12 }}>
                     {[
-                      { label:"재직 매장", value: current.length, icon:"ti-briefcase" },
-                      { label:"계약 확인", value: workPendingCount, alert: workPendingCount > 0, icon:"ti-file-text" },
+                      { label:"재직 매장", value: current.length, icon:"ti-briefcase", onClick: () => setWorkOpen(true) },
+                      {
+                        label:"계약 확인", value: workPendingCount, alert: workPendingCount > 0, icon:"ti-file-text",
+                        onClick: workPendingCount > 0 ? () => {
+                          const pending = current.find((m: any) => m.contractStatus !== "done");
+                          setWorkOpen(true);
+                          if (pending) setHighlightMemberId(pending.id);
+                        } : undefined,
+                      },
+                      {
+                        label:"명세서 확인", value: workPayslipPendingCount, alert: workPayslipPendingCount > 0, icon:"ti-receipt",
+                        onClick: workPayslipPendingCount > 0 ? () => {
+                          const pending = current.find((m: any) => m.payslipPending);
+                          setWorkOpen(true);
+                          if (pending) setHighlightMemberId(pending.id);
+                        } : undefined,
+                      },
                     ].map((s, idx) => (
-                      <div key={s.label} style={{
+                      <div key={s.label} onClick={s.onClick} style={{
                         background: s.alert ? "rgba(239,68,68,0.06)" : "transparent",
                         borderLeft: idx > 0 ? "1px solid var(--border)" : "none",
                         padding:"10px 4px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                        cursor: s.onClick ? "pointer" : "default",
                       }}>
                         <i className={`ti ${s.icon}`} style={{ fontSize:14, color: s.alert ? "var(--danger)" : "var(--text-muted)" }} aria-hidden="true" />
                         <p style={{ fontSize:9, color:"var(--text-muted)", margin:0 }}>{s.label}</p>
@@ -2083,8 +2313,11 @@ function MyTeamPageContent() {
                   ) : (
                     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
                       {current.map(m => (
-                        <WorkerMemberScroll key={m.id} m={m} userId={user?.id||""} router={router}
-                          onRefresh={() => setAttRefreshKey(prev => ({ ...prev, [m.id]: (prev[m.id]||0)+1 }))} />
+                        <div key={m.id} ref={el => { memberRefs.current[m.id] = el; }}>
+                          <WorkerMemberScroll m={m} userId={user?.id||""} router={router}
+                            forceOpenDocs={m.id === highlightMemberId}
+                            onRefresh={() => setAttRefreshKey(prev => ({ ...prev, [m.id]: (prev[m.id]||0)+1 }))} />
+                        </div>
                       ))}
                     </div>
                   )
@@ -2092,13 +2325,21 @@ function MyTeamPageContent() {
               </section>
             )}
 
-            {/* ── 이전 근무 이력 (worker / both) ── */}
+            {/* ── 이전 근무 이력 (worker / both) — 현재 근무 중인 곳과 헷갈리지 않게 기본 접힘 ── */}
             {mode === "worker" && pastWorks.length > 0 && (
               <section style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: 12 }}>
-                  <p style={{ fontSize:15, fontWeight:800, color:"var(--text)", margin:0, display:"flex", alignItems:"center", gap:6 }}><i className="ti ti-history" aria-hidden="true" /> 이전 근무 이력 (경력)</p>
-                  <span style={{ fontSize:11, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 8px", fontWeight:700 }}>{pastWorks.length}곳</span>
-                </div>
+                <button onClick={() => setPastWorkOpen(v => !v)}
+                  style={{ width:"100%", background:"none", border:"none", padding:0, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: pastWorkOpen ? 12 : 0 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <p style={{ fontSize:15, fontWeight:800, color:"var(--text)", margin:0, display:"flex", alignItems:"center", gap:6 }}><i className="ti ti-history" aria-hidden="true" /> 이전 근무 이력 (경력)</p>
+                    <span style={{ fontSize:11, background:"rgba(124,58,237,0.15)", color:"#c4b5fd", borderRadius:20, padding:"2px 8px", fontWeight:700 }}>{pastWorks.length}곳</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: pastWorkOpen ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                    <span>{pastWorkOpen ? "접기" : "펼치기"}</span>
+                    <i className={`ti ${pastWorkOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
+                  </div>
+                </button>
+                {pastWorkOpen && (
                 <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
                   {pastWorks.map(m => {
                     const storeName = m.profile?.business_name || m.employer?.nickname || "이전 매장";
@@ -2136,6 +2377,7 @@ function MyTeamPageContent() {
                     );
                   })}
                 </div>
+                )}
               </section>
             )}
 
@@ -2254,22 +2496,22 @@ function MyTeamPageContent() {
 
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                             {lates.map((m: any) => (
-                              <span key={`late_${m.id}`} style={{ fontSize: 10, background: "#f59e0b20", color: "#d97706", border: "1px solid #f59e0b40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                              <span key={`late_${m.id}`} onClick={() => jumpToTeamMember(m.id)} style={{ fontSize: 10, background: "#f59e0b20", color: "#d97706", border: "1px solid #f59e0b40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
                                 ⏰ {m.worker?.nickname || "팀원"} (지각)
                               </span>
                             ))}
                             {uncheckedIn.map((m: any) => (
-                              <span key={`unc_${m.id}`} style={{ fontSize: 10, background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                              <span key={`unc_${m.id}`} onClick={() => jumpToTeamMember(m.id)} style={{ fontSize: 10, background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
                                 ⏳ {m.worker?.nickname || "팀원"} (미출근)
                               </span>
                             ))}
                             {absents.map((m: any) => (
-                              <span key={`abs_${m.id}`} style={{ fontSize: 10, background: "#ef444420", color: "#ef4444", border: "1px solid #ef444440", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                              <span key={`abs_${m.id}`} onClick={() => jumpToTeamMember(m.id)} style={{ fontSize: 10, background: "#ef444420", color: "#ef4444", border: "1px solid #ef444440", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
                                 ❌ {m.worker?.nickname || "팀원"} (결근)
                               </span>
                             ))}
                             {pendingContracts.length > 0 && (
-                              <span style={{ fontSize: 10, background: "#7c3aed20", color: "#7c3aed", border: "1px solid #7c3aed40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                              <span onClick={() => jumpToTeamMember(pendingContracts[0].id)} style={{ fontSize: 10, background: "#7c3aed20", color: "#7c3aed", border: "1px solid #7c3aed40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
                                 📄 미확인 계약서 {pendingContracts.length}건
                               </span>
                             )}
@@ -2282,12 +2524,16 @@ function MyTeamPageContent() {
                           { label:"매장", value: myStores.length, icon:"ti-building-store" },
                           { label:"직원", value: teamEmployeeCount, icon:"ti-users" },
                           { label:"오늘 출근", value: `${teamTodayCount}/${teamScheduledCount}`, icon:"ti-calendar-check" },
-                          { label:"계약 확인", value: teamPendingCount, alert: teamPendingCount > 0, icon:"ti-file-text" },
+                          {
+                            label:"계약 확인", value: teamPendingCount, alert: teamPendingCount > 0, icon:"ti-file-text",
+                            onClick: pendingContracts.length > 0 ? () => jumpToTeamMember(pendingContracts[0].id) : undefined,
+                          },
                         ].map((s, idx) => (
-                          <div key={s.label} style={{
+                          <div key={s.label} onClick={s.onClick} style={{
                             background: s.alert ? "rgba(239,68,68,0.06)" : "transparent",
                             borderLeft: idx > 0 ? "1px solid var(--border)" : "none",
                             padding:"10px 4px", textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                            cursor: s.onClick ? "pointer" : "default",
                           }}>
                             <i className={`ti ${s.icon}`} style={{ fontSize:14, color: s.alert ? "var(--danger)" : "var(--text-muted)" }} aria-hidden="true" />
                             <p style={{ fontSize:9, color:"var(--text-muted)", margin:0 }}>{s.label}</p>
@@ -2830,6 +3076,7 @@ function MyTeamPageContent() {
                             const name = m.worker?.nickname || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
                             return (
                               <div key={m.id}
+                                ref={el => { teamMemberRowRefs.current[m.id] = el; }}
                                 onClick={() => router.push(`/employer/team/${m.id}`)}
                                 className="team-member-row"
                                 style={{
@@ -2875,8 +3122,8 @@ function MyTeamPageContent() {
                                       router.push(`/contract/view?memberId=${m.id}`);
                                     }
                                   }}
-                                    style={{ fontSize:11, borderRadius:5, padding:"2px 6px", background:badge.bg, color:badge.color, cursor:"pointer" }}>
-                                    {badge.label}
+                                    style={{ fontSize:12, borderRadius:20, padding:"4px 10px", fontWeight:800, background:badge.bg, border:badge.border, color:badge.color, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:4 }}>
+                                    <i className={`ti ${badge.icon}`} style={{ fontSize:12 }} aria-hidden="true" /> {badge.label}
                                   </span>
                                 </div>
                                 <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5 }}>
@@ -2901,10 +3148,25 @@ function MyTeamPageContent() {
                                     const mo = kst.getUTCMonth() + 1;
                                     const monthStart = `${y}-${String(mo).padStart(2,"0")}-01`;
                                     const monthEnd = `${y}-${String(mo).padStart(2,"0")}-${String(new Date(y, mo, 0).getDate()).padStart(2,"0")}`;
-                                    const { data: attRows } = await supabase.from("attendance").select("id")
+                                    const { data: attRows } = await supabase.from("attendance").select("work_date")
                                       .eq("team_member_id", m.id).gte("work_date", monthStart).lte("work_date", monthEnd)
-                                      .not("status", "in", '("absent","off")').limit(1);
-                                    setResignTarget({ member: m, name, hasWorkedThisMonth: !!(attRows && attRows.length > 0) });
+                                      .not("status", "in", '("absent","off")');
+                                    const hasWorkedThisMonth = !!(attRows && attRows.length > 0);
+
+                                    let hasPayslipThisMonth = false;
+                                    let uncoveredWorkDays = 0;
+                                    if (hasWorkedThisMonth) {
+                                      const { data: slips } = await supabase.from("payslips")
+                                        .select("attendance_data")
+                                        .eq("team_member_id", m.id).eq("year", y).eq("month", mo)
+                                        .order("issued_at", { ascending: false }).limit(1);
+                                      hasPayslipThisMonth = !!(slips && slips.length > 0);
+                                      if (hasPayslipThisMonth) {
+                                        const coveredDates = new Set((slips![0].attendance_data || []).map((a: any) => a.work_date));
+                                        uncoveredWorkDays = (attRows || []).filter((a: any) => !coveredDates.has(a.work_date)).length;
+                                      }
+                                    }
+                                    setResignTarget({ member: m, name, hasWorkedThisMonth, hasPayslipThisMonth, uncoveredWorkDays });
                                   }} style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:7, padding:"3px 7px", fontSize:10, color:"var(--danger)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
                                     퇴사
                                   </button>

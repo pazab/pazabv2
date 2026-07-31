@@ -46,6 +46,12 @@ function roundToHalfHour(h: number, m: number): string {
   totalMin = ((totalMin % 1440) + 1440) % 1440;
   return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
 }
+function addDaysToDateStr(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().split("T")[0];
+}
 function contractHoursRange(workHours: string | null | undefined): { start: string; end: string } | null {
   if (!workHours) return null;
   const m = workHours.replace(/\s+/g, "").match(/^(\d{1,2}):(\d{2})~(\d{1,2}):(\d{2})$/);
@@ -357,7 +363,7 @@ export default function TeamMemberPage() {
   const [editWorkHours, setEditWorkHours] = useState("");
   const [workSaving, setWorkSaving] = useState(false);
 
-  // 급여 명세서 상태
+  // 임금 명세서 상태
   const [payslips, setPayslips] = useState<any[]>([]);
   const isResigned = member?.status === "left" || member?.status === "resigned";
   const resignDateStr = isResigned && member?.updated_at 
@@ -676,15 +682,20 @@ export default function TeamMemberPage() {
     showToast(newDocs[key] ? "서류 수령 완료로 변경됐어요" : "미제출로 변경됐어요");
   }
 
-  async function saveAttendance() {
+  async function saveAttendance(overrideEnd?: string) {
     if (!member) return;
+    const effectiveEnd = overrideEnd ?? attEnd;
+    // 퇴근시간이 출근시간보다 이르면(자정을 넘긴 새벽 퇴근) 다음날로 처리
+    const crossesMidnight = !!(attStart && effectiveEnd && effectiveEnd < attStart);
+    const checkOutDate = crossesMidnight ? addDaysToDateStr(attDate, 1) : attDate;
     setSaving(true);
     const actualHours = (() => {
       if (["absent", "off"].includes(attStatus)) return 0;
-      if (attStart && attEnd) {
+      if (attStart && effectiveEnd) {
         const [sh, sm] = attStart.split(":").map(Number);
-        const [eh, em] = attEnd.split(":").map(Number);
-        const mins = (eh * 60 + em) - (sh * 60 + sm);
+        const [eh, em] = effectiveEnd.split(":").map(Number);
+        let mins = (eh * 60 + em) - (sh * 60 + sm);
+        if (crossesMidnight) mins += 1440;
         return mins > 0 ? Math.round(mins / 60 * 10) / 10 : null;
       }
       return null;
@@ -698,7 +709,7 @@ export default function TeamMemberPage() {
       status: attStatus,
       memo: attNote,
       check_in: ["absent", "off"].includes(attStatus) ? null : (attStart ? `${attDate}T${attStart}:00+09:00` : null),
-      check_out: ["absent", "off"].includes(attStatus) ? null : (attEnd ? `${attDate}T${attEnd}:00+09:00` : null),
+      check_out: ["absent", "off"].includes(attStatus) ? null : (effectiveEnd ? `${checkOutDate}T${effectiveEnd}:00+09:00` : null),
       actual_hours: actualHours,
     }, { onConflict: "team_member_id,work_date" });
 
@@ -712,7 +723,7 @@ export default function TeamMemberPage() {
       action: "update",
       actor_id: member.employer_id,
       actor_role: "employer",
-      after_data: { status: attStatus, check_in: attStart, check_out: attEnd, actual_hours: actualHours, memo: attNote, work_date: attDate },
+      after_data: { status: attStatus, check_in: attStart, check_out: effectiveEnd, actual_hours: actualHours, memo: attNote, work_date: attDate },
     });
 
     if (attStatus === "absent") {
@@ -734,7 +745,7 @@ export default function TeamMemberPage() {
 
     if (member.match_id) {
       const statusLabel: Record<string, string> = { normal: "출근", late: "지각", early_leave: "조퇴", absent: "결근", off: "휴무" };
-      const timeInfo = attStart ? ` ${attStart}~${attEnd || "-"}` : "";
+      const timeInfo = attStart ? ` ${attStart}~${effectiveEnd || "-"}` : "";
       const hoursInfo = actualHours ? ` (${actualHours}h)` : "";
       await fetch("/api/chat", {
         method: "POST",
@@ -743,17 +754,25 @@ export default function TeamMemberPage() {
           matchId: member.match_id,
           senderId: member.employer_id,
           receiverId: member.worker_id,
-          message: `📋 ${attDate} 근태가 수정됐어요\n상태: ${statusLabel[attStatus] || attStatus}${timeInfo}${hoursInfo}${!attEnd && attStart ? "\n📱 알바생 앱의 퇴근 버튼이 활성화되었습니다." : ""}${attNote ? `\n메모: ${attNote}` : ""}`,
+          message: `📋 ${attDate} 근태가 수정됐어요\n상태: ${statusLabel[attStatus] || attStatus}${timeInfo}${hoursInfo}${!effectiveEnd && attStart ? "\n📱 알바생 앱의 퇴근 버튼이 활성화되었습니다." : ""}${attNote ? `\n메모: ${attNote}` : ""}`,
           messageType: "system",
         }),
       });
     }
 
-    if (!attEnd && attStart && ["normal", "late"].includes(attStatus)) {
+    if (!effectiveEnd && attStart && ["normal", "late"].includes(attStatus)) {
       sendPushNotification({
         userId: member.worker_id,
         title: "✅ 출근 승인 완료",
         body: `사장님이 오늘(${attDate}) 출근을 승인했습니다. 퇴근 시 앱에서 퇴근 버튼을 눌러주세요!`,
+        url: "/myteam",
+        tag: "attendance"
+      });
+    } else if (overrideEnd && attStart && ["normal", "late"].includes(attStatus)) {
+      sendPushNotification({
+        userId: member.worker_id,
+        title: "🔴 퇴근 처리 완료",
+        body: `사장님이 오늘(${attDate}) 근무를 ${overrideEnd}에 마감 처리했습니다.`,
         url: "/myteam",
         tag: "attendance"
       });
@@ -1023,7 +1042,7 @@ export default function TeamMemberPage() {
             <div style={{ width: 1, background: "var(--border)" }} />
             <button onClick={() => {
               if (isResigned) {
-                alert("🔒 퇴직한 팀원은 신규 급여 발행을 할 수 없습니다. (지급 내역 조회는 아래 급여명세서 보관함에서 가능합니다)");
+                alert("🔒 퇴직한 팀원은 신규 급여 발행을 할 수 없습니다. (지급 내역 조회는 아래 임금명세서 보관함에서 가능합니다)");
                 return;
               }
               router.push(`/payslip?tmId=${member.id}`);
@@ -1556,10 +1575,10 @@ export default function TeamMemberPage() {
           <AttendanceLogs memberId={member.id} refreshKey={attLogRefreshKey} />
         </div>
 
-        {/* ── 급여 명세서 아코디언 ── */}
+        {/* ── 임금 명세서 아코디언 ── */}
         <div style={{ borderBottom: "1px solid var(--border)" }}>
           <SectionHeader
-            title="급여 명세서"
+            title="임금 명세서"
             open={payslipOpen}
             onToggle={() => setPayslipOpen(v => !v)}
             badge={payslips.length > 0 ? `${payslips.length}건` : undefined}
@@ -1570,7 +1589,7 @@ export default function TeamMemberPage() {
                 <button
                   onClick={contracts.length === 0 ? undefined : () => router.push(`/payslip?tmId=${member.id}`)}
                   style={{ flex: 1, background: contracts.length === 0 ? "var(--surface2)" : "linear-gradient(135deg,#7c3aed,#ec4899)", border: contracts.length === 0 ? "1px solid var(--border)" : "none", borderRadius: 12, padding: 13, color: contracts.length === 0 ? "var(--text-muted)" : "#fff", fontSize: 14, fontWeight: 700, cursor: contracts.length === 0 ? "default" : "pointer" }}>
-                  {contracts.length === 0 ? "🔒 급여 명세서 발행 (계약서 작성 후 가능)" : "📋 이번달 급여 명세서 발행"}
+                  {contracts.length === 0 ? "🔒 임금 명세서 발행 (계약서 작성 후 가능)" : "📋 이번달 임금 명세서 발행"}
                 </button>
                 {contracts.length > 0 && (
                   <button onClick={() => setSettingsModalOpen(true)}
@@ -1798,7 +1817,7 @@ export default function TeamMemberPage() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {[
                       { emoji: "⚖️", text: "근로기준법상 근로계약서 미교부 시 500만원 이하 벌금" },
-                      { emoji: "💰", text: "계약서 기반으로 급여 명세서 자동 발행 가능" },
+                      { emoji: "💰", text: "계약서 기반으로 임금 명세서 자동 발행 가능" },
                       { emoji: "📅", text: "근무요일·시간이 확정돼야 출근 캘린더 자동 표시" },
                       { emoji: "🔒", text: "분쟁 발생 시 계약서가 유일한 법적 근거" },
                     ].map(({ emoji, text }) => (
@@ -1981,7 +2000,7 @@ export default function TeamMemberPage() {
                   알바생이 출근 버튼을 놓친 경우, 지금 출근만 승인해주면 알바생 앱에서 <b>퇴근 버튼이 즉시 활성화</b>됩니다.
                 </p>
                 <button
-                  onClick={saveAttendance}
+                  onClick={() => saveAttendance()}
                   disabled={saving}
                   style={{
                     width: "100%",
@@ -2006,6 +2025,45 @@ export default function TeamMemberPage() {
                     </>
                   )}
                 </button>
+
+                {attStart && (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0" }}>
+                      <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                      <span style={{ fontSize: 10, color: "var(--text-muted)" }}>또는</span>
+                      <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                    </div>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px", lineHeight: 1.4 }}>
+                      근무 시간이 이미 지났고 알바생 확인 없이 사장님이 바로 마감하고 싶다면:
+                    </p>
+                    <button
+                      onClick={() => {
+                        const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+                        const nowTime = `${String(kst.getUTCHours()).padStart(2, "0")}:${String(kst.getUTCMinutes()).padStart(2, "0")}`;
+                        setAttEnd(nowTime);
+                        saveAttendance(nowTime);
+                      }}
+                      disabled={saving}
+                      style={{
+                        width: "100%",
+                        background: "var(--surface2)",
+                        color: "var(--text)",
+                        border: "1.5px solid var(--border)",
+                        borderRadius: 10,
+                        padding: "10px",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6
+                      }}
+                    >
+                      <i className="ti ti-lock" aria-hidden="true" /> 지금 시각으로 바로 마감 처리
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -2038,30 +2096,21 @@ export default function TeamMemberPage() {
             </div>
 
             {!["absent", "off"].includes(attStatus) && (() => {
-              const timeOptions = Array.from({ length: 48 }, (_, i) => {
-                const h = Math.floor(i / 2);
-                const m = i % 2 === 0 ? "00" : "30";
-                return `${String(h).padStart(2, "0")}:${m}`;
-              });
-              const selectStyle = { flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", color: "var(--text)", fontSize: 14, outline: "none", cursor: "pointer", appearance: "none" as const };
+              const timeInputStyle = { flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", color: "var(--text)", fontSize: 14, outline: "none", cursor: "pointer", colorScheme: "dark" as const };
               return (
                 <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px" }}>근무 시간</p>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px" }}>근무 시간 (자유 입력 — 자정 넘는 새벽 퇴근도 가능)</p>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <select value={attStart} onChange={e => setAttStart(e.target.value)} style={selectStyle}>
-                      <option value="">시작 시간</option>
-                      {timeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <input type="time" value={attStart} onChange={e => setAttStart(e.target.value)} style={timeInputStyle} />
                     <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>~</span>
-                    <select value={attEnd} onChange={e => setAttEnd(e.target.value)} style={selectStyle}>
-                      <option value="">퇴근시간 미입력 (알바생 직접 퇴근)</option>
-                      {timeOptions.filter(t => !attStart || t > attStart).map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <input type="time" value={attEnd} onChange={e => setAttEnd(e.target.value)} style={timeInputStyle} />
                   </div>
+                  {!attEnd && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "6px 0 0" }}>퇴근시간을 비워두면 알바생이 앱에서 직접 퇴근 처리해요</p>}
                   {attStart && attEnd && (() => {
                     const [sh, sm] = attStart.split(":").map(Number);
                     const [eh, em] = attEnd.split(":").map(Number);
-                    const mins = (eh * 60 + em) - (sh * 60 + sm);
+                    let mins = (eh * 60 + em) - (sh * 60 + sm);
+                    if (attEnd < attStart) mins += 1440; // 자정 넘김
                     if (mins <= 0) return null;
                     const hours = Math.round(mins / 60 * 10) / 10;
                     const overtime = Math.max(0, hours - (contractHours || 0));
@@ -2102,7 +2151,7 @@ export default function TeamMemberPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setShowAttModal(false)}
                 style={{ flex: 1, background: "var(--surface2)", border: "none", borderRadius: 12, padding: 14, color: "var(--text-muted)", fontSize: 14, cursor: "pointer" }}>취소</button>
-              <button onClick={saveAttendance} disabled={saving}
+              <button onClick={() => saveAttendance()} disabled={saving}
                 style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 12, padding: 14, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                 {saving ? "저장 중..." : "저장"}
               </button>
@@ -2215,7 +2264,7 @@ export default function TeamMemberPage() {
                 취소
               </button>
               <button onClick={async () => {
-                // 1. 퇴사일 기준 당월(KST) 급여 명세서 발행 여부 확인
+                // 1. 퇴사일 기준 당월(KST) 임금 명세서 발행 여부 확인
                 const now = new Date();
                 const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
                 const currentYear = kst.getUTCFullYear();
@@ -2235,7 +2284,7 @@ export default function TeamMemberPage() {
                 }
 
                 if (!slips || slips.length === 0) {
-                  alert(`⚠️ 퇴직 처리 불가\n\n${workerName}님의 마지막 근무 달(${currentYear}년 ${currentMonth}월) 급여 명세서가 아직 발행되지 않았습니다. 퇴직 처리 전에 급여 명세서를 먼저 발행해 주세요.`);
+                  alert(`⚠️ 퇴직 처리 불가\n\n${workerName}님의 마지막 근무 달(${currentYear}년 ${currentMonth}월) 임금 명세서가 아직 발행되지 않았습니다. 퇴직 처리 전에 임금 명세서를 먼저 발행해 주세요.`);
                   return;
                 }
 
@@ -2577,7 +2626,7 @@ function AutoIssueModalInner({
         {/* 활성화 토글 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
           <div>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>급여명세서 자동 발행 활성화</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>임금명세서 자동 발행 활성화</span>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0" }}>매월 지정일에 명세서를 자동 발행 및 발송합니다.</p>
           </div>
           <button onClick={() => setEnabled(!enabled)} style={{
@@ -2788,7 +2837,7 @@ function AttendanceBatchModal({
 
   // 성공 화면
   if (doneCount !== null) {
-    // 계약 기간 내 월별 목록 계산 (급여 명세서 생성용)
+    // 계약 기간 내 월별 목록 계산 (임금 명세서 생성용)
     const months: { year: number; month: number }[] = [];
     const s = new Date(contractStartDate);
     const eRaw = contractEndDate ? new Date(contractEndDate) : new Date(todayStr);
@@ -2822,7 +2871,7 @@ function AttendanceBatchModal({
 
           {doneCount > 0 && months.length > 0 && (
             <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: 16 }}>
-              <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", margin: "0 0 10px", textAlign: "left" }}>💰 급여 명세서 발행하기</p>
+              <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", margin: "0 0 10px", textAlign: "left" }}>💰 임금 명세서 발행하기</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {months.map(({ year: y, month: m }) => (
                   <button key={`${y}-${m}`}

@@ -55,7 +55,43 @@ export async function GET(req: Request) {
 
   for (const m of members) {
     // work_hours 파싱 (예: "09:00~18:00 (휴게 ...)" 또는 "09:00-18:00")
-    const match = m.work_hours?.match(/\b(\d{2}):(\d{2})\b/);
+    const match = m.work_hours?.match(/\b(\d{1,2}):(\d{2})\b/);
+    const rangeMatch = m.work_hours?.match(/(\d{1,2}):(\d{2})[~-](\d{1,2}):(\d{2})/);
+
+    // 이 직원의 오늘 근태 기록 조회
+    const { data: att } = await supabase
+      .from("attendance")
+      .select("id, status, check_in, check_out")
+      .eq("team_member_id", m.id)
+      .eq("work_date", todayStr)
+      .maybeSingle();
+
+    // 이미 출근했고 아직 퇴근 전이면 → 퇴근 시간 알림(원탭 액션)만 체크
+    if (att?.check_in && !att?.check_out) {
+      if (rangeMatch) {
+        const endH = parseInt(rangeMatch[3]);
+        const endM = parseInt(rangeMatch[4]);
+        const endMins = endH * 60 + endM;
+        const diffFromEnd = nowMins - endMins;
+        if (diffFromEnd >= -2 && diffFromEnd <= 2) {
+          const endTimeStr = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+          await createNotification({
+            userId: m.worker_id,
+            type: "attendance",
+            title: "🔴 퇴근 시간이에요!",
+            body: `오늘 근무 종료 예정 시각(${endTimeStr})입니다. 아래 버튼으로 바로 퇴근 처리하세요.`,
+            url: "/myteam",
+            actions: [{ action: "checkout", title: "🔴 지금 퇴근" }],
+            data: { teamMemberId: m.id, actionType: "checkout" },
+          });
+          results.push({ memberId: m.id, action: "alert_checkout_time" });
+        }
+      }
+      continue;
+    }
+
+    // 이미 결근 처리가 되어 있다면 스킵
+    if (att?.status === "absent") continue;
     if (!match) continue; // 출근 시간 정보 파싱 실패 시 스킵
 
     const startH = parseInt(match[1]);
@@ -64,21 +100,8 @@ export async function GET(req: Request) {
 
     // 분 차이 (현재 시간 - 출근 시간)
     const diffMins = nowMins - startMins;
-
-    // 이 직원의 오늘 근태 기록 조회
-    const { data: att } = await supabase
-      .from("attendance")
-      .select("id, status, check_in")
-      .eq("team_member_id", m.id)
-      .eq("work_date", todayStr)
-      .maybeSingle();
-
-    // 이미 출근한 기록이 있거나 결근 처리가 이미 되어 있다면 스킵
-    if (att && (att.check_in || att.status === "absent")) {
-      continue;
-    }
-
     const timeStr = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+    const checkinAction = [{ action: "checkin", title: "✅ 지금 출근" }];
 
     // 5분 주기 크론에 따라 윈도우(범위)로 체크합니다.
     if (diffMins >= -12 && diffMins <= -8) {
@@ -87,8 +110,10 @@ export async function GET(req: Request) {
         userId: m.worker_id,
         type: "attendance",
         title: "⏰ 출근 10분 전입니다!",
-        body: `오늘 출근 시각은 ${timeStr}입니다. 매장 근처에서 앱을 열어 출근 처리를 해 주세요.`,
-        url: "/myteam"
+        body: `오늘 출근 시각은 ${timeStr}입니다. 매장에 도착하시면 아래 버튼으로 바로 출근 처리하세요.`,
+        url: "/myteam",
+        actions: checkinAction,
+        data: { teamMemberId: m.id, actionType: "checkin" },
       });
       results.push({ memberId: m.id, action: "alert_10m_before" });
     } else if (diffMins >= -2 && diffMins <= 2) {
@@ -97,8 +122,10 @@ export async function GET(req: Request) {
         userId: m.worker_id,
         type: "attendance",
         title: "📢 출근 정시 알림",
-        body: `출근 예정 시각(${timeStr})입니다. GPS가 켜져 있는지 확인하고 매장에 도착하셨다면 앱을 열어주세요.`,
-        url: "/myteam"
+        body: `출근 예정 시각(${timeStr})입니다. 매장에 도착하셨다면 아래 버튼으로 바로 출근 처리하세요.`,
+        url: "/myteam",
+        actions: checkinAction,
+        data: { teamMemberId: m.id, actionType: "checkin" },
       });
       results.push({ memberId: m.id, action: "alert_on_time" });
     } else if (diffMins >= 4 && diffMins <= 7) {
@@ -108,7 +135,9 @@ export async function GET(req: Request) {
         type: "attendance",
         title: "⚠️ 출근 5분 지연 경고",
         body: `출근 시간이 5분 초과되었습니다. 5분 뒤(출근 10분 초과) 지각 처리됩니다. 서둘러 주세요!`,
-        url: "/myteam"
+        url: "/myteam",
+        actions: checkinAction,
+        data: { teamMemberId: m.id, actionType: "checkin" },
       });
       await createNotification({
         userId: m.employer_id,
@@ -132,13 +161,15 @@ export async function GET(req: Request) {
         }, { onConflict: "team_member_id,work_date" });
 
       if (!upsertErr) {
-        // 알바생 알림
+        // 알바생 알림 (자동결근 후에도 지금이라도 출근 처리하면 지각으로 정정됨)
         await createNotification({
           userId: m.worker_id,
           type: "attendance",
           title: "❌ 미출근 결근 처리 안내",
-          body: `오늘 출근 시각(${timeStr})으로부터 20분이 초과되어 자동으로 결근(absent) 처리되었습니다.`,
-          url: "/myteam"
+          body: `오늘 출근 시각(${timeStr})으로부터 20분이 초과되어 자동으로 결근(absent) 처리되었습니다. 지금이라도 출근하셨다면 아래 버튼을 눌러주세요.`,
+          url: "/myteam",
+          actions: checkinAction,
+          data: { teamMemberId: m.id, actionType: "checkin" },
         });
 
         // 사장님 알림

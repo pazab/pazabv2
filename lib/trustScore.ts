@@ -11,7 +11,7 @@ export const BADGE_DEFS: Record<string, { name: string; emoji: string; desc: str
   contract: { name: "계약완료", emoji: "📋", desc: "정식 계약서로 투명하게 일했어요.",     cond: "전자계약 5회 이상", role: "worker" },
   // 사장님 뱃지
   boss_contract:  { name: "계약왕",    emoji: "📋", desc: "계약서를 성실하게 작성하는 사장님이에요.", cond: "계약서 5회 이상 작성", role: "employer" },
-  boss_paymaster: { name: "페이마스터", emoji: "💰", desc: "급여를 제때 정확하게 지급해요.",          cond: "급여 명세서 10회 이상 발행", role: "employer" },
+  boss_paymaster: { name: "페이마스터", emoji: "💰", desc: "급여를 제때 정확하게 지급해요.",          cond: "임금 명세서 10회 이상 발행", role: "employer" },
   boss_promise:   { name: "약속사장",  emoji: "🤝", desc: "면접 약속을 한 번도 어기지 않았어요.",    cond: "면접 노쇼 0회 + 채용 3회 이상", role: "employer" },
   boss_rehire:    { name: "단골사장",  emoji: "🔄", desc: "함께한 알바생을 다시 찾는 사장님이에요.", cond: "같은 알바생 재고용 1회 이상", role: "employer" },
   boss_veteran:   { name: "베테랑사장", emoji: "🏆", desc: "파잡에서 오래 활동한 믿을 수 있는 사장님이에요.", cond: "6개월 이상 운영 + 채용 5회 이상", role: "employer" },

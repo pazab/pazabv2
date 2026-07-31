@@ -458,11 +458,11 @@ export default function EmployerRecordsPage() {
                   )}
                 </div>
 
-                {/* 급여 명세서 */}
+                {/* 임금 명세서 */}
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <p style={{ fontSize: 13, fontWeight: 800, margin: 0 }}>📋 급여 명세서</p>
+                      <p style={{ fontSize: 13, fontWeight: 800, margin: 0 }}>📋 임금 명세서</p>
                       <button onClick={() => setSettingsModalOpen(m)}
                         style={{ background: "none", border: "none", padding: "2px", cursor: "pointer", display: "flex", alignItems: "center", fontSize: 14 }}
                         title="자동 발행 설정">
@@ -478,7 +478,7 @@ export default function EmployerRecordsPage() {
                     <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13, padding: "12px 0" }}>불러오는 중...</p>
                   ) : memberPayslips.length === 0 ? (
                     <div style={{ background: "var(--surface2)", borderRadius: 10, padding: "12px", textAlign: "center" }}>
-                      <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>발행된 급여 명세서 없음</p>
+                      <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>발행된 임금 명세서 없음</p>
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -635,7 +635,7 @@ function AutoIssueModalInner({
         {/* 활성화 토글 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
           <div>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>급여명세서 자동 발행 활성화</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>임금명세서 자동 발행 활성화</span>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0" }}>매월 지정일에 명세서를 자동 발행 및 발송합니다.</p>
           </div>
           <button onClick={() => setEnabled(!enabled)} style={{

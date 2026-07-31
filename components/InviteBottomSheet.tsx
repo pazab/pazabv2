@@ -126,17 +126,18 @@ export default function InviteBottomSheet({ isOpen, onClose, onSuccess, defaultS
     setSending(true);
 
     try {
-      // 1. 이미 활성 팀원인지 체크 (퇴직자는 재초대 가능)
+      // 1. 이 매장에 이미 활성 팀원인지 체크 (퇴직자는 재초대 가능, 같은 사장님의 다른 매장은 별개로 초대 가능)
       const { data: existing } = await supabase
         .from("team_members")
         .select("id, status")
         .eq("employer_id", user.id)
+        .eq("employer_profile_id", selProfile.id)
         .eq("worker_id", selected.id)
         .eq("status", "active")
         .limit(1);
 
       if (existing && existing.length > 0) {
-        showToast(`@${selected.nickname}님은 이미 우리 팀의 팀원입니다.`, "error");
+        showToast(`@${selected.nickname}님은 이미 ${selProfile.business_name}의 팀원입니다.`, "error");
         setSending(false);
         return;
       }

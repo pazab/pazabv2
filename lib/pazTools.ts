@@ -61,7 +61,7 @@ export const PAZ_TOOLS: PazTool[] = [
   },
   {
     name: "issue_payslip",
-    description: "급여 명세서 발행. 팀원 이름/별명 지정 가능, 없으면 전체 발행.",
+    description: "임금 명세서 발행. 팀원 이름/별명 지정 가능, 없으면 전체 발행.",
     input_schema: {
       type: "object",
       properties: {
@@ -271,7 +271,7 @@ export async function executePazTool(
         const lastDay = new Date(year, month, 0).getDate();
         const monthPad = String(month).padStart(2, "0");
 
-        let result = `📄 ${year}년 ${month}월 급여 명세서 발행 결과\n`;
+        let result = `📄 ${year}년 ${month}월 임금 명세서 발행 결과\n`;
 
         for (const m of targets) {
           const { data: att } = await supabase
@@ -307,7 +307,7 @@ export async function executePazTool(
                 match_id: m.match_id,
                 sender_id: input.employer_id,
                 receiver_id: m.worker_id,
-                message: `📄 ${year}년 ${month}월 급여 명세서가 발행됐어요!\n총 ${totalH.toFixed(1)}시간 → ${totalPay.toLocaleString()}원\nMY → 팀소속관리 → 급여 탭에서 확인해주세요.`,
+                message: `📄 ${year}년 ${month}월 임금 명세서가 발행됐어요!\n총 ${totalH.toFixed(1)}시간 → ${totalPay.toLocaleString()}원\nMY → 팀소속관리 → 급여 탭에서 확인해주세요.`,
                 message_type: "system",
                 is_read: false,
               });

@@ -27,7 +27,7 @@ export type NotificationType =
   | "daeta"         // 대타 요청
   | "daeta_accept"  // 대타 수락
   | "attendance"    // 출퇴근 확인
-  | "payslip"       // 급여명세서
+  | "payslip"       // 임금명세서
   | "contract"      // 계약서
   | "feed_new_post" // 팔로우한 매장 새 소식
   | "store_follow"  // 매장 팔로우 알림
@@ -40,6 +40,7 @@ export interface CreateNotificationParams {
   body?: string;
   data?: Record<string, unknown>;
   url?: string;
+  actions?: { action: string; title: string }[];
 }
 
 /**
@@ -78,6 +79,8 @@ export async function createNotification(params: CreateNotificationParams) {
           body: params.body ?? "",
           url: params.url ?? "/notifications",
           tag: params.type,
+          actions: params.actions ?? undefined,
+          data: dataPayload,
         })
       );
     }

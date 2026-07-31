@@ -1198,13 +1198,13 @@ function MyPageContent() {
           </div>
         </button>
 
-        {/* 급여 명세서 바로가기 */}
+        {/* 임금 명세서 바로가기 */}
         <button onClick={() => router.push("/payslip/list")}
           style={{ width: "100%", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 20 }}>
           <span style={{ fontSize: 22 }}>📋</span>
           <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--success)" }}>급여 명세서 보관함</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>발행했거나 수령한 급여 명세서 전체 목록</p>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--success)" }}>임금 명세서 보관함</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>발행했거나 수령한 임금 명세서 전체 목록</p>
           </div>
         </button>
 

@@ -131,7 +131,7 @@ export default function Home() {
             <div style={{ fontSize: 24, marginBottom: 12 }}>📋</div>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>출퇴근 & 급여 자동 정산</h3>
             <p style={{ fontSize: 13, color: "#a1a1aa", lineHeight: 1.5, margin: 0 }}>
-              클릭 한 번으로 출퇴근 기록이 보관되며, 근무 시간에 연동되어 주휴수당 및 세금이 계산된 급여명세서가 자동으로 완성됩니다.
+              클릭 한 번으로 출퇴근 기록이 보관되며, 근무 시간에 연동되어 주휴수당 및 세금이 계산된 임금명세서가 자동으로 완성됩니다.
             </p>
           </div>
         </section>

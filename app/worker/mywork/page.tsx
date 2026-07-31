@@ -324,7 +324,7 @@ export default function MyWorkPage() {
                       </button>
                       <button onClick={() => {
                         if (m.contractStatus === "none") {
-                          alert("⚠️ 발행된 급여명세서 내역이 없습니다.");
+                          alert("⚠️ 발행된 임금명세서 내역이 없습니다.");
                           return;
                         }
                         router.push(`/payslip?id=${m.id}&tab=mywork`);

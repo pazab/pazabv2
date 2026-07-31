@@ -177,7 +177,7 @@ export default function PazFloatingButton() {
       { keywords: ["마이페이지", "내페이지", "my페이지", "프로필"], target: "/mypage", reply: "MY 페이지로 이동할게요! 👤" },
       { keywords: ["설정", "세팅", "setting"], target: "/settings", reply: "설정 열게요! ⚙️" },
       { keywords: ["paz", "파즈", "대화해", "상담", "물어볼", "코치"], target: "/paz", reply: "PAZ 대화방 열게요! 🤖" },
-      { keywords: ["급여", "월급", "명세서", "임금", "페이", "정산"], target: "/payslip/list", reply: "급여 명세서 페이지로 이동할게요! 💰" },
+      { keywords: ["급여", "월급", "명세서", "임금", "페이", "정산"], target: "/payslip/list", reply: "임금 명세서 페이지로 이동할게요! 💰" },
       { keywords: ["팀관리", "팀원", "소속", "직원관리", "팀소속"], target: "/myteam", reply: "팀·소속 관리로 이동할게요! 👥" },
       { keywords: ["초대코드", "직원초대", "초대", "코드발급"], target: "/invite", reply: "직원 초대 코드 페이지로 이동할게요! 🎫" },
       { keywords: ["계약서", "근로계약", "계약"], target: "/contract", reply: "근로계약서 페이지로 이동할게요! 📄" },

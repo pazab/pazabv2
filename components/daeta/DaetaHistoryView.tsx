@@ -73,7 +73,7 @@ export default function DaetaHistoryView({ userId, userType, onBack }: DaetaHist
         };
       }).filter((m: any) => m.daeta_postings !== null);
 
-      // 각 매칭에 대한 급여명세서(payslip) 존재 여부 병합
+      // 각 매칭에 대한 임금명세서(payslip) 존재 여부 병합
       const matchIds = joinedMatches.map((m: any) => m.id);
       let payslips: any[] = [];
       if (matchIds.length > 0) {
@@ -161,7 +161,7 @@ export default function DaetaHistoryView({ userId, userType, onBack }: DaetaHist
           .eq("id", match.daeta_posting_id);
       }
 
-      alert("💸 정산 및 급여명세서 자동 발행이 완료되었습니다!");
+      alert("💸 정산 및 임금명세서 자동 발행이 완료되었습니다!");
       loadDaetaRecords();
     } catch (err: any) {
       console.error(err);
@@ -315,7 +315,7 @@ export default function DaetaHistoryView({ userId, userType, onBack }: DaetaHist
                   {rec.payslip && (
                     <button onClick={() => setSelectedPayslip(rec.payslip)}
                       style={{ flex: 1, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", borderRadius: 12, padding: "10px", color: "#c4b5fd", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                      📊 급여 명세서 확인
+                      📊 임금 명세서 확인
                     </button>
                   )}
                 </div>
@@ -350,11 +350,11 @@ export default function DaetaHistoryView({ userId, userType, onBack }: DaetaHist
         </div>
       )}
 
-      {/* 모달 1: 급여 명세서 모달 */}
+      {/* 모달 1: 임금 명세서 모달 */}
       {selectedPayslip && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: "24px", width: "100%", maxWidth: 360, color: "#fff" }}>
-            <h3 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 16px", textAlign: "center", color: "#c4b5fd" }}>📊 대타 급여 명세서</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 16px", textAlign: "center", color: "#c4b5fd" }}>📊 대타 임금 명세서</h3>
             
             <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13, borderBottom: "1px dashed rgba(255,255,255,0.1)", paddingBottom: 16, marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "rgba(255,255,255,0.5)" }}>발행일</span><span>{selectedPayslip.issued_at?.split("T")[0]}</span></div>

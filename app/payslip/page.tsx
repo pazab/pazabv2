@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
+import PayslipOfficialForm, { PayslipFormData } from "@/components/PayslipOfficialForm";
 
 function PayslipContent() {
   const router = useRouter();
@@ -48,8 +49,19 @@ function PayslipContent() {
   const [employmentIns, setEmploymentIns] = useState(0);
   const [nationalPension, setNationalPension] = useState(0);
   const [contractInsurances, setContractInsurances] = useState<{ insPension: boolean; insHealth: boolean; insEmp: boolean } | null>(null);
+  const [contractData, setContractData] = useState<any>(null);
   const [expandAttendance, setExpandAttendance] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [previewScale, setPreviewScale] = useState(1);
+
+  // 초과근무(연장수당)는 시간외 부풀리기 방지를 위해 사장님이 명시적으로 승인해야만 급여에 포함됨 (기본값: 미승인)
+  const [overtimeApproved, setOvertimeApproved] = useState(false);
+  useEffect(() => {
+    if (existingPayslip && existingPayslip.year === year && existingPayslip.month === month) {
+      setOvertimeApproved((existingPayslip.overtime_pay ?? 0) > 0);
+    }
+  }, [existingPayslip, year, month]);
 
   useEffect(() => {
     (async () => {
@@ -124,6 +136,7 @@ function PayslipContent() {
       m.wage_type = wage_type;
 
       setMember(m);
+      setContractData(contract?.contract_data || null);
       setAttendance(data.attendance_data || []);
       setCalcType(data.health_insurance > 0 || data.national_pension > 0 || (data.income_tax === 0 && data.health_insurance === 0) ? "regular" : "daily");
     }
@@ -168,6 +181,7 @@ function PayslipContent() {
       m.wage = wage;
       m.wage_type = wage_type;
       setMember(m);
+      setContractData(contract?.contract_data || null);
       setCalcType(wage_type === "daily" ? "daily" : "regular");
 
       if (contract?.contract_data) {
@@ -216,8 +230,9 @@ function PayslipContent() {
     }
   }
 
-  const isEmployer = userType === "employer" || userType === "both";
-  const isWorker = userType === "worker" || userType === "both";
+  // "both" 계정은 userType만으로 판단하면 안 됨 — 이 임금 명세서에서 내가 실제로 사장님/알바생 중 어느 쪽인지로 판정
+  const isEmployer = member ? member.employer_id === user?.id : (userType === "employer" || userType === "both");
+  const isWorker = member ? member.worker_id === user?.id : (userType === "worker" || userType === "both");
 
   const wage = member?.wage || 0;
   const wageType = member?.wage_type || "hourly";
@@ -255,19 +270,22 @@ function PayslipContent() {
         }
       })();
 
+  // 승인 전까지는 계산된 값을 화면엔 보여주되(참고용) 실제 지급액엔 반영 안 함
+  const pendingOvertimePay = (() => {
+    if (wageType === "monthly") {
+      const hourlyEquiv = wage / 209;
+      return Math.round(overtimeHours * hourlyEquiv * 1.5);
+    } else if (wageType === "daily") {
+      const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
+      return Math.round(overtimeHours * hourlyEquiv * 1.5);
+    } else {
+      return Math.round(overtimeHours * wage * 1.5);
+    }
+  })();
+
   const overtimePay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
     ? (existingPayslip.overtime_pay ?? 0)
-    : (() => {
-        if (wageType === "monthly") {
-          const hourlyEquiv = wage / 209;
-          return Math.round(overtimeHours * hourlyEquiv * 1.5);
-        } else if (wageType === "daily") {
-          const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
-          return Math.round(overtimeHours * hourlyEquiv * 1.5);
-        } else {
-          return Math.round(overtimeHours * wage * 1.5);
-        }
-      })();
+    : (overtimeApproved ? pendingOvertimePay : 0);
 
   const totalPay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
     ? (existingPayslip.total_pay ?? 0)
@@ -427,19 +445,81 @@ function PayslipContent() {
           matchId: member.match_id,
           senderId: user.id,
           receiverId: member.worker_id,
-          message: `📋 ${year}년 ${month}월 급여 명세서가 발행됐어요!\n\n💰 실수령액: ${netPay.toLocaleString()}원\n(총 지급액: ${totalPay.toLocaleString()}원 · 공제액: ${totalDeductions.toLocaleString()}원)\n⏱ 총 근무: ${totalHours.toFixed(1)}시간 (${workDays.length}일)\n\n명세서를 확인해주세요.`,
+          message: `📋 ${year}년 ${month}월 임금 명세서가 발행됐어요!\n\n💰 실수령액: ${netPay.toLocaleString()}원\n(총 지급액: ${totalPay.toLocaleString()}원 · 공제액: ${totalDeductions.toLocaleString()}원)\n⏱ 총 근무: ${totalHours.toFixed(1)}시간 (${workDays.length}일)\n\n명세서를 확인해주세요.`,
           messageType: "system",
         }),
       }).catch(() => {});
     }
 
-    showToast(`✅ ${year}년 ${month}월 급여 명세서가 발행됐어요!`);
+    showToast(`✅ ${year}년 ${month}월 임금 명세서가 발행됐어요!`);
     router.replace(`/employer/team/${member.id}`);
     setSaving(false);
   }
 
   const statusLabel: Record<string,string> = { normal:"정상", late:"지각", early_leave:"조퇴", absent:"결근", off:"휴무" };
   const statusColor: Record<string,string> = { normal:"#10b981", late:"#f59e0b", early_leave:"#f59e0b", absent:"#ef4444", off:"#6b7280" };
+
+  // 임금명세서 표준 서식용 데이터 구성
+  const payslipFormData: PayslipFormData = {
+    bizName: contractData?.biz || "",
+    bizRegNo: contractData?.bizRegNo || "",
+    bizAddr: [contractData?.bizAddr, contractData?.bizAddrDetail].filter(Boolean).join(" "),
+    ceo: contractData?.ceo || "",
+    workerName: member?.worker?.nickname || contractData?.worker || "",
+    workerBirth: contractData?.workerBirth || "",
+    year, month,
+    payDate: existingPayslip?.issued_at ? new Date(existingPayslip.issued_at).toISOString().split("T")[0] : "",
+    issuedAt: existingPayslip?.issued_at ? new Date(existingPayslip.issued_at).toISOString().split("T")[0] : "",
+    periodStart: `${year}-${String(month).padStart(2, "0")}-01`,
+    periodEnd: `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`,
+    workDays: workDays.length,
+    totalHours,
+    overtimeHours,
+    wage,
+    wageType: wageType as "hourly" | "monthly" | "daily",
+    earnings: [
+      {
+        label: "기본급",
+        amount: basePay,
+        method: wageType === "monthly"
+          ? `월급 일할 계산: ${wage.toLocaleString()}원 × ${workDays.length}/${scheduledDaysInMonth}일`
+          : wageType === "daily"
+          ? `일급: ${wage.toLocaleString()}원 × ${workDays.length}일`
+          : `${(totalHours - overtimeHours).toFixed(1)}h × ${wage.toLocaleString()}원`,
+      },
+      ...(overtimePay > 0 ? [{
+        label: "초과근무수당",
+        amount: overtimePay,
+        method: wageType === "monthly"
+          ? `시급환산 ${Math.round(wage / 209).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5`
+          : wageType === "daily"
+          ? `시급환산 ${Math.round(contractHours > 0 ? wage / contractHours : 0).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5`
+          : `${overtimeHours.toFixed(1)}h × ${wage.toLocaleString()}원 × 1.5`,
+      }] : []),
+    ],
+    totalPay,
+    deductions: calcType === "regular"
+      ? [
+          ...(currentNationalPension > 0 ? [{ label: "국민연금", amount: currentNationalPension, method: `세전급여 × 4.5%` }] : []),
+          ...(currentHealthIns > 0 ? [{ label: "건강보험", amount: currentHealthIns, method: `세전급여 × 3.545%` }] : []),
+          ...(currentEmploymentIns > 0 ? [{ label: "고용보험", amount: currentEmploymentIns, method: `세전급여 × 0.9%` }] : []),
+        ]
+      : [
+          ...(currentIncomeTax > 0 ? [{ label: "소득세", amount: currentIncomeTax, method: "일급 15만원 초과분의 6% × 45%" }] : []),
+          ...(currentLocalTax > 0 ? [{ label: "지방소득세", amount: currentLocalTax, method: "소득세 × 10%" }] : []),
+        ],
+    totalDeductions,
+    netPay,
+  };
+
+  const doPrint = () => window.print();
+  const openPrintPreview = () => {
+    setShowPrintPreview(true);
+    setTimeout(() => {
+      const w = window.innerWidth - 32;
+      setPreviewScale(Math.min(1, w / 794));
+    }, 50);
+  };
 
   if (loading) return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -449,7 +529,16 @@ function PayslipContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
-      <AppHeader title="급여 명세서" showBack />
+      <style>{`
+        @media print {
+          @page { size: A4; margin: 15mm 15mm 12mm; }
+          body * { visibility: hidden; }
+          #official-form-render, #official-form-render * { visibility: visible; }
+          #official-form-render { display: block !important; position: fixed; inset: 0; width: 100%; height: auto; }
+        }
+        #official-form-render { display: none; }
+      `}</style>
+      <AppHeader title="임금 명세서" showBack />
       <div style={{ maxWidth:480, margin:"0 auto", padding:16 }}>
 
         {/* 직원 정보 */}
@@ -540,7 +629,7 @@ function PayslipContent() {
                   : `기본급 (${(totalHours - overtimeHours).toFixed(1)}h × ${wage.toLocaleString()}원)`,
                 value: `${basePay.toLocaleString()}원`
               },
-              ...(overtimeHours > 0 ? [{
+              ...(overtimePay > 0 ? [{
                 label: wageType === "monthly"
                   ? `초과수당 (시급환산 ${Math.round(wage / 209).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5)`
                   : wageType === "daily"
@@ -554,6 +643,26 @@ function PayslipContent() {
                 <span style={{ fontSize:12, color:"#fff", fontWeight:600 }}>{r.value}</span>
               </div>
             ))}
+
+            {/* 초과근무는 시간외 부풀리기 방지를 위해 사장님 승인 전엔 급여에서 제외 */}
+            {!existingPayslip && overtimeHours > 0 && (
+              <div style={{ background:"rgba(0,0,0,0.18)", borderRadius:10, padding:"8px 10px", marginTop: overtimePay > 0 ? 0 : 4 }}>
+                {isEmployer ? (
+                  <label style={{ display:"flex", alignItems:"flex-start", gap:8, cursor:"pointer" }}>
+                    <input type="checkbox" checked={overtimeApproved} onChange={e => setOvertimeApproved(e.target.checked)}
+                      style={{ width:15, height:15, marginTop:1, cursor:"pointer" }} />
+                    <span style={{ fontSize:11, color:"rgba(255,255,255,0.85)", lineHeight:1.5 }}>
+                      ⏱ 실제 출퇴근 기록상 계약 근무시간 초과분 {overtimeHours.toFixed(1)}h ({pendingOvertimePay.toLocaleString()}원)가 있어요.
+                      시간외 부풀리기 방지를 위해 <strong>사장님이 직접 승인</strong>해야 급여에 포함됩니다. 체크 안 하면 초과분은 지급되지 않아요.
+                    </span>
+                  </label>
+                ) : (
+                  <p style={{ fontSize:11, color:"rgba(255,255,255,0.75)", margin:0, lineHeight:1.5 }}>
+                    ⏱ 계약 근무시간 초과분 {overtimeHours.toFixed(1)}h가 있어요. 사장님 승인 후 급여에 포함됩니다.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div style={{ display:"flex", justifyContent:"space-between", borderTop:"1px dashed rgba(255,255,255,0.3)", paddingTop:8 }}>
               <span style={{ fontSize:12, color:"rgba(255,255,255,0.8)", fontWeight:700 }}>총 지급액 (세전)</span>
@@ -613,10 +722,32 @@ function PayslipContent() {
           </div>
         </div>
 
+        {/* 임금명세서 표준 서식 출력 — 발행된 명세서에 한해 노출 */}
+        {existingPayslip && (
+          <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+            <button onClick={openPrintPreview}
+              style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", color:"var(--text)", fontWeight:600, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
+              📄 화면인쇄
+            </button>
+            <button onClick={openPrintPreview}
+              style={{ flex:1.8, background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", color:"#fff", fontWeight:700, padding:"12px 6px", borderRadius:12, fontSize:12, cursor:"pointer" }}>
+              📥 임금명세서 PDF 저장 (표준 서식)
+            </button>
+          </div>
+        )}
+
         {/* 사장님: 공제 항목 직접 수정 설정 */}
         {isEmployer && (
           <div style={{ background:"var(--surface)", borderRadius:14, padding:14, border:"1px solid var(--border)", marginBottom:14 }}>
-            <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>⚙️ 세금 및 공제 직접 수정 (감면/제외 설정)</p>
+            <p style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", margin:"0 0 10px" }}>⚙️ 세금 및 공제 직접 수정</p>
+            <p style={{ fontSize:10, color:"var(--text-muted)", margin:"-6px 0 10px", lineHeight:1.4 }}>
+              ✅ 체크 = 이 항목 공제 적용 · ⬜ 해제 = 면제/제외 (실수령액에 즉시 반영)
+            </p>
+            {calcType === "regular" && totalHours < 60 && (
+              <p style={{ fontSize:10, color:"#f59e0b", background:"#f59e0b12", border:"1px solid #f59e0b30", borderRadius:8, padding:"6px 8px", margin:"0 0 10px", lineHeight:1.4 }}>
+                ℹ️ 이번 달 근무시간이 {totalHours.toFixed(1)}시간(월 60시간 미만)이라 국민연금·건강보험·고용보험은 법적으로 자동 면제 대상이에요. 아래 체크가 꺼져 있는 건 오류가 아니라 정상 처리입니다.
+              </p>
+            )}
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
               {calcType === "regular" ? (
                 <>
@@ -733,25 +864,30 @@ function PayslipContent() {
           {attendance.length === 0 ? (
             <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", padding:"16px 0" }}>근태 기록이 없어요</p>
           ) : (
-            (expandAttendance ? attendance : attendance.slice(0, 3)).map(a => (
-              <div key={a.work_date} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
-                <div>
-                  <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
-                  {a.check_in && (
-                    <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>
-                      {new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}
-                      ~{a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-"}
-                    </span>
-                  )}
+            <div style={{
+              display:"flex", flexDirection:"column",
+              ...(expandAttendance ? { maxHeight: 280, overflowY: "auto" as const, paddingRight: 2 } : {}),
+            }}>
+              {(expandAttendance ? attendance : attendance.slice(0, 1)).map(a => (
+                <div key={a.work_date} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
+                  <div>
+                    <span style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>{a.work_date}</span>
+                    {a.check_in && (
+                      <span style={{ fontSize:11, color:"var(--text-muted)", marginLeft:8 }}>
+                        {new Date(a.check_in).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}
+                        ~{a.check_out ? new Date(a.check_out).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}) : "-"}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                    <span style={{ fontSize:11, color:statusColor[a.status]||"#888" }}>{statusLabel[a.status]||a.status}</span>
+                    {a.actual_hours && <span style={{ fontSize:11, color:"#7c3aed", fontWeight:600 }}>{a.actual_hours}h</span>}
+                  </div>
                 </div>
-                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                  <span style={{ fontSize:11, color:statusColor[a.status]||"#888" }}>{statusLabel[a.status]||a.status}</span>
-                  {a.actual_hours && <span style={{ fontSize:11, color:"#7c3aed", fontWeight:600 }}>{a.actual_hours}h</span>}
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
-          {attendance.length > 3 && (
+          {attendance.length > 1 && (
             <button
               type="button"
               onClick={() => setExpandAttendance(!expandAttendance)}
@@ -773,7 +909,7 @@ function PayslipContent() {
                 outline: "none"
               }}
             >
-              <span>{expandAttendance ? "근태 기록 접기" : `근태 더보기 (외 ${attendance.length - 3}건)`}</span>
+              <span>{expandAttendance ? "근태 기록 접기" : `근태 더보기 (외 ${attendance.length - 1}건)`}</span>
               <i className={`ti ${expandAttendance ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 13, fontWeight: 900 }} aria-hidden="true" />
             </button>
           )}
@@ -797,7 +933,7 @@ function PayslipContent() {
           <>
             <button onClick={issuePayslip} disabled={saving || !wage}
               style={{ width:"100%", background: wage ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "none", border: wage ? "none" : "1px solid var(--border)", borderRadius:14, padding:14, color: wage ? "#fff" : "var(--text-muted)", fontSize:15, fontWeight:700, cursor: wage ? "pointer" : "default" }}>
-              {saving ? "발행 중..." : existingPayslip ? "📋 명세서 재발행" : "📋 급여 명세서 발행"}
+              {saving ? "발행 중..." : existingPayslip ? "📋 명세서 재발행" : "📋 임금 명세서 발행"}
             </button>
             {!wage && <p style={{ fontSize:12, color:"#ef4444", textAlign:"center", marginTop:8 }}>⚠️ 시급 정보가 없어요. 계약서를 먼저 작성해주세요.</p>}
             
@@ -817,7 +953,7 @@ function PayslipContent() {
                     matchId: member.match_id,
                     senderId: user.id,
                     receiverId: member.worker_id,
-                    message: `⏳ [급여명세서 확인 요청]\n아직 ${year}년 ${month}월 급여 명세서 확인이 완료되지 않았습니다. 명세서를 확인하고 서명해 주세요.\n👉 http://localhost:3000/payslip?id=${existingPayslip.id}`,
+                    message: `⏳ [임금명세서 확인 요청]\n아직 ${year}년 ${month}월 임금 명세서 확인이 완료되지 않았습니다. 명세서를 확인하고 서명해 주세요.\n👉 http://localhost:3000/payslip?id=${existingPayslip.id}`,
                     messageType: "system",
                   }),
                 }).catch(() => {});
@@ -855,7 +991,7 @@ function PayslipContent() {
                   .eq("id", existingPayslip.id);
                 if (error) { showToast("저장 오류: " + error.message, "error"); return; }
                 setExistingPayslip((p: any) => ({ ...p, confirmed_at: confirmedAt, status: "confirmed" }));
-                showToast("✅ 급여 명세서를 확인했어요!", "success");
+                showToast("✅ 임금 명세서를 확인했어요!", "success");
 
                 // 사장님에게 채팅 알림 전송
                 if (member?.match_id) {
@@ -867,7 +1003,7 @@ function PayslipContent() {
                       matchId: member.match_id,
                       senderId: user.id,
                       receiverId: member.employer_id,
-                      message: `✅ [급여 명세서 확인 완료]\n${workerName}님이 ${year}년 ${month}월 급여 명세서 확인을 완료했습니다.`,
+                      message: `✅ [임금 명세서 확인 완료]\n${workerName}님이 ${year}년 ${month}월 임금 명세서 확인을 완료했습니다.`,
                       messageType: "system",
                     }),
                   }).catch(() => {});
@@ -897,7 +1033,7 @@ function PayslipContent() {
                       matchId: member.match_id,
                       senderId: user.id,
                       receiverId: member.employer_id,
-                      message: `⚠️ [급여 명세서 수정 요청]\n${year}년 ${month}월 급여 명세서에 대한 수정 요청이 도착했습니다.\n\n사유: ${reason}`,
+                      message: `⚠️ [임금 명세서 수정 요청]\n${year}년 ${month}월 임금 명세서에 대한 수정 요청이 도착했습니다.\n\n사유: ${reason}`,
                       messageType: "system",
                     }),
                   }).catch(() => {});
@@ -911,7 +1047,7 @@ function PayslipContent() {
         )}
         {isWorker && !isEmployer && !existingPayslip && (
           <p style={{ fontSize:13, color:"var(--text-muted)", textAlign:"center", padding:"16px 0" }}>
-            사장님이 급여 명세서를 발행하면 여기서 확인할 수 있어요
+            사장님이 임금 명세서를 발행하면 여기서 확인할 수 있어요
           </p>
         )}
       </div>
@@ -938,7 +1074,7 @@ function PayslipContent() {
             boxShadow: "0 10px 25px rgba(0,0,0,0.3)"
           }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px", color: "var(--text)", textAlign: "center" }}>
-              📄 급여 명세서 발행 확인
+              📄 임금 명세서 발행 확인
             </h3>
             
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
@@ -1010,6 +1146,39 @@ function PayslipContent() {
               >
                 발행하기
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 인쇄 전용 숨김 레이어 */}
+      <div id="official-form-render">
+        <PayslipOfficialForm data={payslipFormData} />
+      </div>
+
+      {/* 임금명세서 미리보기 / 인쇄 */}
+      {showPrintPreview && (
+        <div style={{ position:"fixed", inset:0, zIndex:400, background:"rgba(0,0,0,0.85)", display:"flex", flexDirection:"column" }}>
+          <div style={{ flexShrink:0, display:"flex", alignItems:"center", gap:10, padding:"10px 16px", background:"#18181b", borderBottom:"1px solid #333" }}>
+            <button onClick={() => setShowPrintPreview(false)}
+              style={{ background:"none", border:"none", color:"#aaa", fontSize:22, cursor:"pointer", lineHeight:1 }}>✕</button>
+            <span style={{ flex:1, color:"#fff", fontWeight:700, fontSize:15 }}>임금명세서 미리보기</span>
+            <button onClick={doPrint}
+              style={{ background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:10, padding:"8px 20px", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+              🖨️ 인쇄 / PDF 저장
+            </button>
+          </div>
+          <div style={{ flex:1, overflow:"auto", padding:"16px", display:"flex", justifyContent:"center", alignItems:"flex-start" }}>
+            <div style={{
+              background:"#fff",
+              width:"794px",
+              transformOrigin:"top center",
+              transform:`scale(${previewScale})`,
+              marginBottom: `calc((${previewScale} - 1) * 100%)`,
+              boxShadow:"0 4px 32px rgba(0,0,0,0.5)",
+              flexShrink: 0,
+            }}>
+              <PayslipOfficialForm data={payslipFormData} />
             </div>
           </div>
         </div>

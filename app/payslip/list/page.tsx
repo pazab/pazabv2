@@ -59,19 +59,19 @@ function PayslipListContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
-      <AppHeader title="급여 명세서 목록" showBack />
+      <AppHeader title="임금 명세서 목록" showBack />
       <div style={{ maxWidth:480, margin:"0 auto", padding:16 }}>
         {isEmployer && tmId && (
           <button onClick={() => router.push(`/payslip?tmId=${tmId}`)}
             style={{ width:"100%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", border:"none", borderRadius:14, padding:14, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:16 }}>
-            + 이번달 급여 명세서 발행
+            + 이번달 임금 명세서 발행
           </button>
         )}
 
         {payslips.length === 0 ? (
           <div style={{ textAlign:"center", padding:"60px 0" }}>
             <div style={{ fontSize:48, marginBottom:12 }}>📋</div>
-            <p style={{ color:"var(--text-muted)", fontSize:14 }}>급여 명세서가 없어요</p>
+            <p style={{ color:"var(--text-muted)", fontSize:14 }}>임금 명세서가 없어요</p>
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>

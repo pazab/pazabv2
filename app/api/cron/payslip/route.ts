@@ -303,14 +303,14 @@ export async function GET(req: Request) {
       await createNotification({
         userId: m.worker_id,
         type: "payslip",
-        title: "📋 급여 명세서 자동 발행 안내",
-        body: `${calcYear}년 ${calcMonth}월 급여 명세서가 자동으로 발행되었습니다. 실수령액: ${netPay.toLocaleString()}원`,
+        title: "📋 임금 명세서 자동 발행 안내",
+        body: `${calcYear}년 ${calcMonth}월 임금 명세서가 자동으로 발행되었습니다. 실수령액: ${netPay.toLocaleString()}원`,
         url: "/myteam"
       });
 
       // 채팅방 메시지 발송
       if (m.match_id) {
-        const chatMsg = `📋 ${calcYear}년 ${calcMonth}월 급여 명세서가 자동으로 발행됐어요!\n\n💰 실수령액: ${netPay.toLocaleString()}원\n(총 지급액: ${totalPay.toLocaleString()}원 · 공제액: ${totalDeductions.toLocaleString()}원)\n⏱ 총 근무: ${totalHours.toFixed(1)}시간 (${workDays.length}일)\n\n명세서를 확인해주세요.`;
+        const chatMsg = `📋 ${calcYear}년 ${calcMonth}월 임금 명세서가 자동으로 발행됐어요!\n\n💰 실수령액: ${netPay.toLocaleString()}원\n(총 지급액: ${totalPay.toLocaleString()}원 · 공제액: ${totalDeductions.toLocaleString()}원)\n⏱ 총 근무: ${totalHours.toFixed(1)}시간 (${workDays.length}일)\n\n명세서를 확인해주세요.`;
         
         await supabase.from("chats").insert({
           match_id: m.match_id,

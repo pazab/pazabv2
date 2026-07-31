@@ -139,7 +139,7 @@ export const VOICE_HINTS: Record<string, string[]> = {
     "누가 출근 안 했어?",
   ],
   payslip: [
-    "이번달 급여 명세서 발행해줘",
+    "이번달 임금 명세서 발행해줘",
     "예상 급여 얼마야?",
     "팀원 급여 알려줘",
   ],
