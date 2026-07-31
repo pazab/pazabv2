@@ -51,13 +51,21 @@
 - 입사일 필드 — 알바생 본인 수정 제거, 사장님 전용으로 일원화 (근속기간 기반 계산에 쓰이는 공식 기록이라 자가수정 리스크 있음)
 - "동네 대타로 바로 벌기" 버튼 서브텍스트 문구 수정
 
+### 7. (추가) 알바생 "내 직장" UI 사장님 "우리 매장"과 통일 + 월별 요약 넘기기 + 출근 예정/미출근 오탐 수정
+
+- **월별 요약 넘기기** (`WorkerMemberScroll`) — "이번달 요약(근무일/총시간/예상급여)" 카드에 `‹`/`›` 화살표 추가해서 이전 달 조회 가능. 화살표가 너무 안 보인다는 피드백으로 32px 원형 보라색 버튼으로 재조정. 기존엔 쿼리에 월말 상한이 없어서 과거 달 조회 시 이후 달 데이터까지 합산될 뻔한 버그도 같이 수정(`.lte("work_date", monthEnd)` 추가)
+- **"내 직장" 매장 카드 → 사장님 "우리 매장"과 동일한 Samsung Pass 스타일 스택카드로 전환** — 매장 2개 이상이면 비활성 매장은 얇은 바로 겹쳐쌓이고 선택된 매장만 전체 카드로 펼침, 매장별 고유 그라데이션 8색 고정 할당(`WorkerMemberScroll`에 `accentGradient` prop 신규), 세션에 마지막 선택 매장 저장(`myteam_activeWorkStoreId`)
+  - 계약확인/명세서확인 클릭 시 점프하는 기존 로직도 "해당 매장을 활성 카드로 전환"까지 같이 하도록 `jumpToWorkStore` 헬퍼로 통합
+- **카드 헤더는 색상 배지 정보만, 요일별 근무 시간표는 사장님 화면과 완전히 동일한 패턴으로 교체** — 요일 칩(월~일) 선택 + 08~24시 가로축 위에 근무시간대 막대 표시. 급여 정보도 헤더 밖 중립 배경으로 분리
+- **"오늘 근무자 현황" 카드 + "1초 안심 상태 대시보드" 배너 — 출근 10분 전인데 "미출근"으로 오탐 표시되던 버그 수정** — 두 곳 다 `parseShiftRange` + 10분 버퍼로 게이트 추가. 출근 예정 시각 10분 전까지는 "🕐 출근 예정"(중립)으로 표시하고 "출근 승인" 버튼도 숨김. 그 전엔 예정 시각과 무관하게 항상 "⏳ 미출근" + 승인 버튼이 떠 있어서, 사장님이 실수로 예정 시각보다 훨씬 이르게 승인하면 근무시간이 부풀려질 수 있던 문제(알바생 셀프 체크인 쪽엔 이미 있던 보호장치가 사장님 승인 경로엔 없었음)
+
 ---
 
 ## 파일 변경 목록
 
 | 파일 | 변경 규모 |
 |------|---------|
-| `app/myteam/page.tsx` | +440 / -이하 포함 (최대 변경) |
+| `app/myteam/page.tsx` | +683 / -이하 포함 (최대 변경, 2회차 스택카드+시간표+오탐수정 포함) |
 | `app/payslip/page.tsx` | +255 |
 | `app/employer/team/[id]/page.tsx` | +125 |
 | `app/api/cron/checkin/route.ts` | +71 |
@@ -70,7 +78,7 @@
 | `lib/notify.ts`, `lib/pazTools.ts`, `lib/pazVoice.ts`, `lib/trustScore.ts` | 용어 통일 + actions 지원 |
 | 그 외 (`app/mypage`, `app/page.tsx`, `app/payslip/list`, `app/worker/mywork`, `app/employer/records`, `components/daeta/DaetaHistoryView.tsx`) | 용어 통일 |
 
-**총합**: 20 files changed, 801 insertions(+), 236 deletions(-)
+**총합**: 20 files changed, 801 insertions(+), 236 deletions(-) (1차 커밋) + `app/myteam/page.tsx` 243 insertions(+), 72 deletions(-) (2차)
 
 ---
 
@@ -83,5 +91,5 @@
 
 ---
 
-> 작성: 2026-07-31 17:00 KST
+> 작성: 2026-07-31 17:00 KST (최종 갱신 17:40 KST)
 > 브랜치: main
