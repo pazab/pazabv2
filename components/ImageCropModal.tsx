@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from "react";
+import { useState, useRef, useEffect, MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent, TouchList as ReactTouchList } from "react";
 import { modalOverlay, modalSheet, btnPrimary, btnSecondary } from "@/lib/styles";
 
 interface Props {
@@ -16,21 +16,42 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [imgLoaded, setImgLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showGrid, setShowGrid] = useState(false);
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const currentOffsetStart = useRef({ x: 0, y: 0 });
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartZoom = useRef(1);
 
   // 뷰포트 기본 너비 설정 (모바일 스크린 크기에 맞춰 유연하게 조정)
   const vw = 280;
   const vh = 280 / aspect;
 
+  const clampZoom = (z: number) => Math.max(1, Math.min(3, z));
+
+  // 사진이 뷰포트를 벗어나 빈 배경만 크롭되는 걸 막기 위한 최대 이동 범위
+  const getMaxOffset = (currentZoom: number) => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) return { x: 0, y: 0 };
+    const s0 = Math.max(vw / img.naturalWidth, vh / img.naturalHeight);
+    const w_img = img.naturalWidth * s0 * currentZoom;
+    const h_img = img.naturalHeight * s0 * currentZoom;
+    return { x: Math.max(0, (w_img - vw) / 2), y: Math.max(0, (h_img - vh) / 2) };
+  };
+
+  const constrainOffset = (o: { x: number; y: number }, currentZoom: number) => {
+    const max = getMaxOffset(currentZoom);
+    return { x: Math.max(-max.x, Math.min(max.x, o.x)), y: Math.max(-max.y, Math.min(max.y, o.y)) };
+  };
+
   // 마우스/터치 드래그 시작
   const handleStart = (clientX: number, clientY: number) => {
     if (!imgLoaded) return;
     isDragging.current = true;
+    setShowGrid(true);
     dragStart.current = { x: clientX, y: clientY };
     currentOffsetStart.current = { ...offset };
   };
@@ -40,8 +61,19 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
     handleStart(e.clientX, e.clientY);
   };
 
+  const touchDistance = (touches: ReactTouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
   const handleTouchStart = (e: ReactTouchEvent) => {
-    if (e.touches.length === 1) {
+    if (e.touches.length === 2) {
+      isDragging.current = false;
+      pinchStartDist.current = touchDistance(e.touches);
+      pinchStartZoom.current = zoom;
+      setShowGrid(true);
+    } else if (e.touches.length === 1) {
       handleStart(e.touches[0].clientX, e.touches[0].clientY);
     }
   };
@@ -51,10 +83,10 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
     if (!isDragging.current) return;
     const dx = clientX - dragStart.current.x;
     const dy = clientY - dragStart.current.y;
-    setOffset({
+    setOffset(constrainOffset({
       x: currentOffsetStart.current.x + dx,
       y: currentOffsetStart.current.y + dy,
-    });
+    }, zoom));
   };
 
   const handleMouseMove = (e: ReactMouseEvent) => {
@@ -64,7 +96,13 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
   };
 
   const handleTouchMove = (e: ReactTouchEvent) => {
-    if (isDragging.current && e.touches.length === 1) {
+    if (e.touches.length === 2 && pinchStartDist.current) {
+      const dist = touchDistance(e.touches);
+      const scale = dist / pinchStartDist.current;
+      const nextZoom = clampZoom(pinchStartZoom.current * scale);
+      setZoom(nextZoom);
+      setOffset(prev => constrainOffset(prev, nextZoom));
+    } else if (isDragging.current && e.touches.length === 1) {
       handleMove(e.touches[0].clientX, e.touches[0].clientY);
     }
   };
@@ -72,15 +110,33 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
   // 드래그 종료
   const handleEnd = () => {
     isDragging.current = false;
+    pinchStartDist.current = null;
+    setShowGrid(false);
   };
 
   useEffect(() => {
     const handleMouseUpGlobal = () => {
       isDragging.current = false;
+      setShowGrid(false);
     };
     window.addEventListener("mouseup", handleMouseUpGlobal);
     return () => window.removeEventListener("mouseup", handleMouseUpGlobal);
   }, []);
+
+  const applyZoom = (nextZoom: number) => {
+    const z = clampZoom(nextZoom);
+    setZoom(z);
+    setOffset(prev => constrainOffset(prev, z));
+  };
+  const nudgeZoom = (delta: number) => applyZoom(zoom + delta);
+
+  // imageSrc가 바뀌면(같은 모달 인스턴스를 재사용해 여러 장을 순서대로 크롭하는 경우) zoom/offset을 반드시 리셋
+  // — 이전 사진 기준 offset이 남아있으면 새 사진에서는 크롭 영역이 사진 밖으로 나가 흰 화면만 저장되는 버그가 생김
+  useEffect(() => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+    setImgLoaded(false);
+  }, [imageSrc]);
 
   // 자르기 처리
   const handleCropClick = () => {
@@ -178,7 +234,7 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
 
         {/* 안내문구 */}
         <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, textAlign: "center" }}>
-          사진을 드래그해서 위치를 맞추고,<br />아래 슬라이더로 크기를 조절해 보세요.
+          드래그로 위치를, 손가락 두 개(또는 슬라이더)로 크기를 조절해 보세요.
         </p>
 
         {/* 크롭 뷰포트 컨테이너 */}
@@ -210,34 +266,58 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
               onDragStart={(e) => e.preventDefault()}
               style={imgLoaded ? getImgStyle() : { display: "none" }}
             />
+
+            {/* 3분할 구도 가이드 — 드래그/핀치 중에만 살짝 보여서 방해되지 않게 */}
+            {imgLoaded && (
+              <div style={{
+                position: "absolute", inset: 0, pointerEvents: "none",
+                opacity: showGrid ? 1 : 0, transition: "opacity 0.15s ease",
+              }}>
+                {[1, 2].map(i => (
+                  <div key={`v${i}`} style={{ position: "absolute", left: `${(i / 3) * 100}%`, top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.55)" }} />
+                ))}
+                {[1, 2].map(i => (
+                  <div key={`h${i}`} style={{ position: "absolute", top: `${(i / 3) * 100}%`, left: 0, right: 0, height: 1, background: "rgba(255,255,255,0.55)" }} />
+                ))}
+              </div>
+            )}
+
+            {/* 줌 배지 */}
+            {imgLoaded && (
+              <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, pointerEvents: "none" }}>
+                {Math.round(zoom * 100)}%
+              </div>
+            )}
           </div>
         </div>
 
-        {/* 줌 슬라이더 */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
-            <span>확대 축소</span>
-            <span>{Math.round(zoom * 100)}%</span>
-          </div>
+        {/* 줌 컨트롤 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => nudgeZoom(-0.15)} disabled={!imgLoaded}
+            style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: imgLoaded ? 1 : 0.5 }}>
+            −
+          </button>
           <input
             type="range"
             min="1"
             max="3"
             step="0.01"
             value={zoom}
-            onChange={(e) => {
-              const nextZoom = parseFloat(e.target.value);
-              setZoom(nextZoom);
-            }}
+            onChange={(e) => applyZoom(parseFloat(e.target.value))}
             style={{
-              width: "100%",
+              flex: 1,
               height: 4,
               borderRadius: 2,
+              accentColor: "var(--primary, #8b5cf6)",
               background: "var(--border)",
               outline: "none",
               cursor: "pointer",
             }}
           />
+          <button onClick={() => nudgeZoom(0.15)} disabled={!imgLoaded}
+            style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: imgLoaded ? 1 : 0.5 }}>
+            +
+          </button>
         </div>
 
         {/* 버튼 영역 */}

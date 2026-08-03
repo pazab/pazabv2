@@ -349,7 +349,7 @@ export default function ChatRoomPage() {
   const goToCounterpartProfile = () => {
     if (!counterpart?.id) return;
     if (counterpart.user_type === "employer") {
-      router.push(match?.employer_profile_id ? `/store/${match.employer_profile_id}` : `/profile/${counterpart.id}`);
+      router.push(match?.employer_profile_id ? `/store/${match.employer_profile_id}` : `/worker/${counterpart.id}`);
     } else {
       router.push(`/worker/${counterpart.id}`);
     }

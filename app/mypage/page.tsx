@@ -1129,44 +1129,28 @@ function MyPageContent() {
           </div>
         </div>
 
-        {/* 내 공개 프로필 바로가기 */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+        {/* 내 공개 프로필 바로가기 (소셜+커리어 통합 프로필) */}
+        <div style={{ marginBottom: 12 }}>
           <button
             onClick={() => router.push(`/worker/${user.id}`)}
             style={{
-              background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(139,92,246,0.08) 100%)",
+              width: "100%",
+              background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(236,72,153,0.08) 100%)",
               border: "1px solid var(--primary-border)",
               borderRadius: 16,
               padding: "14px",
               textAlign: "left",
               display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              cursor: "pointer"
-            }}
-          >
-            <span style={{ fontSize: 22 }}>💼</span>
-            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>파잡 커리어</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>경력 및 신뢰도 이력</p>
-          </button>
-
-          <button
-            onClick={() => router.push(`/profile/${user.id}`)}
-            style={{
-              background: "linear-gradient(135deg, rgba(236,72,153,0.15) 0%, rgba(244,114,182,0.08) 100%)",
-              border: "1px solid var(--chip-pink-border)",
-              borderRadius: 16,
-              padding: "14px",
-              textAlign: "left",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
+              alignItems: "center",
+              gap: 12,
               cursor: "pointer"
             }}
           >
             <span style={{ fontSize: 22 }}>👤</span>
-            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--pink-text)" }}>소셜 프로필</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>피드 및 활동 뱃지</p>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>내 프로필</p>
+              <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>경력·신뢰도·뱃지·활동을 한 곳에서</p>
+            </div>
           </button>
         </div>
 

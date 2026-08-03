@@ -5,12 +5,12 @@ import { useRouter, useParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import { getMatchLevel, WORKER_TYPE_INFO } from "@/lib/utils";
-import { getGrade } from "@/lib/trustScore";
+import { getGrade, BADGE_DEFS, getBadgesByRole } from "@/lib/trustScore";
 import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
 import TierBadge from "@/components/TierBadge";
 import { btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
-import { EntityLink } from "@/components/EntityLink";
 import AppHeader from "@/components/AppHeader";
+import PersonalFeedSection from "@/components/profile/PersonalFeedSection";
 
 function HeroScoreBadge({ score }: { score: number }) {
   const level = getMatchLevel(score);
@@ -47,7 +47,7 @@ export default function WorkerDetailPage() {
 
   const { showToast, ToastUI } = useToast();
   const [worker, setWorker] = useState<Record<string, unknown> | null>(null);
-  const [workerUser, setWorkerUser] = useState<Record<string, unknown> | null>(null);
+  const [profileUser, setProfileUser] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -69,6 +69,12 @@ export default function WorkerDetailPage() {
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   const [hasWorkerProfile, setHasWorkerProfile] = useState(false);
   const [ownedStores, setOwnedStores] = useState<{ id: string; business_name: string; business_type: string | null; region: string | null; image_url: string | null }[]>([]);
+  const [careerHistory, setCareerHistory] = useState<{ id: string; storeName: string; businessType: string | null; region: string | null; roleDesc: string | null; hireDate: string | null; endDate: string | null; status: string }[]>([]);
+  const [careerEntries, setCareerEntries] = useState<{ id: string; company_name: string; role_desc: string | null; start_date: string | null; end_date: string | null; is_current: boolean; description: string | null }[]>([]);
+  const [careerModal, setCareerModal] = useState<{ id?: string; company_name: string; role_desc: string; start_date: string; end_date: string; is_current: boolean; description: string } | null>(null);
+  const [savingCareer, setSavingCareer] = useState(false);
+  const [badges, setBadges] = useState<{ key: string; name: string; emoji: string }[]>([]);
+  const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof id === "string") {
@@ -100,9 +106,64 @@ export default function WorkerDetailPage() {
   useEffect(() => { botBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [botMessages]);
   useEffect(() => { init(); }, [id]);
 
+  // 구직 정보(worker_profiles) 등록 여부와 무관하게 항상 표시 — 지원자가 온보딩을 안 거쳤어도
+  // 파잡 내 실제 근무이력/직접입력 경력은 보여야 함
+  useEffect(() => {
+    if (typeof id !== "string") return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/worker/career-history?workerId=${id}`);
+        const data = await res.json();
+        if (data.success) setCareerHistory(data.history || []);
+      } catch {}
+    })();
+    (async () => {
+      const { data } = await supabase.from("worker_career_entries").select("*").eq("worker_id", id).order("start_date", { ascending: false });
+      setCareerEntries(data || []);
+    })();
+  }, [id]);
+
+  const loadCareerEntries = async () => {
+    const { data } = await supabase.from("worker_career_entries").select("*").eq("worker_id", id).order("start_date", { ascending: false });
+    setCareerEntries(data || []);
+  };
+
+  const openAddCareer = () => setCareerModal({ company_name: "", role_desc: "", start_date: "", end_date: "", is_current: false, description: "" });
+  const openEditCareer = (entry: typeof careerEntries[number]) => setCareerModal({
+    id: entry.id, company_name: entry.company_name, role_desc: entry.role_desc || "",
+    start_date: entry.start_date || "", end_date: entry.end_date || "", is_current: entry.is_current, description: entry.description || "",
+  });
+
+  const saveCareerEntry = async () => {
+    if (!careerModal || !careerModal.company_name.trim() || !userId) return;
+    setSavingCareer(true);
+    const payload = {
+      worker_id: id,
+      company_name: careerModal.company_name.trim(),
+      role_desc: careerModal.role_desc.trim() || null,
+      start_date: careerModal.start_date || null,
+      end_date: careerModal.is_current ? null : (careerModal.end_date || null),
+      is_current: careerModal.is_current,
+      description: careerModal.description.trim() || null,
+    };
+    const { error } = careerModal.id
+      ? await supabase.from("worker_career_entries").update(payload).eq("id", careerModal.id)
+      : await supabase.from("worker_career_entries").insert(payload);
+    setSavingCareer(false);
+    if (error) { showToast("저장 중 오류가 발생했어요", "error"); return; }
+    setCareerModal(null);
+    loadCareerEntries();
+    showToast("경력이 저장됐어요");
+  };
+
+  const deleteCareerEntry = async (entryId: string) => {
+    const { error } = await supabase.from("worker_career_entries").delete().eq("id", entryId);
+    if (!error) { setCareerEntries(prev => prev.filter(e => e.id !== entryId)); showToast("삭제됐어요"); }
+  };
+
   const openBotChat = () => {
-    if (botMessages.length === 0 && workerUser) {
-      setBotMessages([{ role: "assistant", content: `안녕하세요! 저는 ${String(workerUser.nickname || "알바생")}님을 대신하는 파잡봇이에요 🤖\n궁금한 점이 있으면 편하게 물어보세요!` }]);
+    if (botMessages.length === 0 && profileUser) {
+      setBotMessages([{ role: "assistant", content: `안녕하세요! 저는 ${String(profileUser.nickname || "알바생")}님을 대신하는 파잡봇이에요 🤖\n궁금한 점이 있으면 편하게 물어보세요!` }]);
     }
     setShowBotChat(true);
   };
@@ -117,7 +178,7 @@ export default function WorkerDetailPage() {
     try {
       const res = await fetch("/api/pre-meet", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages, botType: "worker", botProfile: { ...worker, ...workerUser }, userId }),
+        body: JSON.stringify({ messages: newMessages, botType: "worker", botProfile: { ...worker, ...profileUser }, userId }),
       });
       const data = await res.json();
       setBotMessages(prev => [...prev, { role: "assistant", content: data.success ? data.message : "잠시 오류가 발생했어요 😊" }]);
@@ -136,23 +197,26 @@ export default function WorkerDetailPage() {
       const { data: u } = await supabase.from("users").select("user_type").eq("id", session.user.id).maybeSingle();
       if (u) role = u.user_type;
     }
-    await fetchWorker(session?.user.id, role);
+    await fetchProfile(session?.user.id, role);
   };
 
-  const fetchWorker = async (uid?: string, role?: string | null) => {
-    const { data: profile } = await supabase.from("worker_profiles")
-      .select("*").eq("user_id", id)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-
-    const { data: user } = await supabase.from("users")
-      .select("nickname, trust_score, worker_result, avatar_url").eq("id", id).maybeSingle();
+  const fetchProfile = async (uid?: string, role?: string | null) => {
+    const [{ data: profile }, { data: user }, { data: badgeRows }] = await Promise.all([
+      supabase.from("worker_profiles")
+        .select("*").eq("user_id", id)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("users")
+        .select("id, nickname, avatar_url, trust_score, user_type, created_at, worker_result").eq("id", id).maybeSingle(),
+      supabase.from("user_badges").select("badge_key").eq("user_id", id),
+    ]);
 
     if (!user) { setLoading(false); return; }
 
     const data = (profile ?? { user_id: id }) as Record<string, unknown>;
-    setWorkerUser(user as Record<string, unknown>);
+    setProfileUser(user as Record<string, unknown>);
     setWorker(data);
     setHasWorkerProfile(!!profile);
+    setBadges(getBadgesByRole(badgeRows || [], (user as { user_type?: string }).user_type === "employer" ? "employer" : "worker"));
 
     const { data: stores } = await supabase.from("employer_profiles")
       .select("id, business_name, business_type, region, image_url").eq("user_id", id)
@@ -295,7 +359,7 @@ export default function WorkerDetailPage() {
   };
 
   if (loading) return <main style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}><p style={{ color: "var(--text-muted)" }}>불러오는 중...</p></main>;
-  if (!workerUser) return (
+  if (!profileUser) return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ textAlign: "center" }}>
         <p style={{ color: "var(--text-muted)", marginBottom: 16 }}>구직자 정보를 찾을 수 없어요</p>
@@ -305,9 +369,9 @@ export default function WorkerDetailPage() {
   );
 
   const w = worker || {};
-  const name = String(workerUser.nickname || "알바생");
+  const name = String(profileUser.nickname || "알바생");
   const typeInfo = WORKER_TYPE_INFO[String(w.worker_type || "")];
-  const workerResult = (workerUser as Record<string, unknown>).worker_result as Record<string, unknown> | null;
+  const workerResult = (profileUser as Record<string, unknown>).worker_result as Record<string, unknown> | null;
   const noShowSafe = workerResult?.noShowRisk === "낮음";
   const credentials = Array.isArray(w.credentials) ? w.credentials as { name: string; is_mandatory_by_law?: boolean; is_preset?: boolean }[] : [];
   const desiredTypes = w.category_ids && Array.isArray(w.custom_categories) && w.custom_categories.length > 0
@@ -331,9 +395,10 @@ export default function WorkerDetailPage() {
   const hasMedia = mediaItems.length > 0;
   const activeMedia = mediaItems[activeMediaIndex];
 
-  const grade = getGrade(Number(workerUser.trust_score || 50));
+  const grade = getGrade(Number(profileUser.trust_score || 50));
   const status = sent ? "sent" : String(existingMatch?.progress_status || "");
   const isReceived = existingMatch?.isReceived === true;
+  const isWorkerRole = profileUser.user_type === "worker" || profileUser.user_type === "both";
 
   const ownerMenu = (
     <div style={{ position: "relative" }}>
@@ -359,7 +424,7 @@ export default function WorkerDetailPage() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 150, width: "100%", maxWidth: 480, margin: "0 auto" }}>
-      <AppHeader title="파잡 커리어" showBack showBellAndMenu={true} />
+      <AppHeader title={isWorkerRole ? "파잡 커리어" : "프로필"} showBack showBellAndMenu={true} />
       {ToastUI}
 
       {hasWorkerProfile ? (
@@ -408,24 +473,14 @@ export default function WorkerDetailPage() {
               <span style={{ fontSize: 10, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", padding: "3px 8px", borderRadius: 8 }}>{grade.emoji} {grade.name}</span>
             </div>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", margin: "0 0 10px" }}>📍 {String(w.desired_region || "지역 협의")}</p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <EntityLink
-                href={`/profile/${id}`}
-                avatarUrl={workerUser.avatar_url as string | null}
-                fallbackEmoji="👤"
-                name={name}
-                label="프로필"
-                variant="hero"
-              />
-            </div>
           </div>
         </div>
-      ) : (
-        /* 컴팩트 헤더 (구직 정보 없을 때 — 정체성만 표시) */
+      ) : isWorkerRole ? (
+        /* 컴팩트 헤더 (워커 계정, 구직 정보 없을 때 — 정체성만 표시) */
         <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "20px" }}>
           <div style={{ width: 68, height: 68, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--border)" }}>
-            {workerUser.avatar_url ? (
-              <img src={workerUser.avatar_url as string} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            {profileUser.avatar_url ? (
+              <img src={profileUser.avatar_url as string} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             ) : (
               <i className="ti ti-user" style={{ fontSize: 28, color: "var(--text-muted)" }} aria-hidden="true" />
             )}
@@ -436,12 +491,121 @@ export default function WorkerDetailPage() {
           </div>
           {ownerMenu}
         </div>
+      ) : (
+        /* 소셜형 헤더 (사장님 전용 계정 — 신뢰도 바 포함) */
+        <div style={{ padding: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "linear-gradient(135deg,#7c3aed,#ec4899)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, border: "2px solid var(--border)" }}>
+              {profileUser.avatar_url ? (
+                <img src={profileUser.avatar_url as string} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : "🏪"}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 4px", color: "var(--text)" }}>{name}</h1>
+              <span style={{ fontSize: 11, background: "var(--surface2)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 8, fontWeight: 700 }}>{grade.emoji} {grade.name}</span>
+            </div>
+            {ownerMenu}
+          </div>
+          <div style={{ background: "var(--surface2, var(--surface))", borderRadius: 12, padding: "10px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>종합 신뢰도</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--purple-text)" }}>{Number(profileUser.trust_score || 0)}점</span>
+            </div>
+            <div style={{ height: 6, background: "var(--progress-track)", borderRadius: 4 }}>
+              <div style={{ height: "100%", borderRadius: 4, background: "linear-gradient(90deg,#7c3aed,#ec4899)", width: `${Math.min(100, Number(profileUser.trust_score || 0))}%`, transition: "width 0.6s" }} />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 본문 */}
       <div style={{ padding: "0 20px" }}>
 
-      {hasWorkerProfile ? (<>
+      {/* 🏅 뱃지 */}
+      {badges.length > 0 && (
+        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 10px", letterSpacing: "0.5px" }}>🏅 뱃지</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {badges.map(b => (
+              <button key={b.key} onClick={() => setSelectedBadge(selectedBadge === b.key ? null : b.key)}
+                style={{ background: selectedBadge === b.key ? "var(--primary-light)" : "var(--card-inner)", border: `1px solid ${selectedBadge === b.key ? "var(--primary-border)" : "var(--card-inner-border)"}`, borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "var(--purple-text)", cursor: "pointer", fontWeight: 600 }}>
+                {b.emoji} {b.name}
+              </button>
+            ))}
+          </div>
+          {selectedBadge && BADGE_DEFS[selectedBadge] && (
+            <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 10, padding: "8px 12px", marginTop: 10 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>{BADGE_DEFS[selectedBadge].emoji} {BADGE_DEFS[selectedBadge].name}</p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{BADGE_DEFS[selectedBadge].desc}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ✅ 파잡 근무 이력 (구직 정보 등록 여부와 무관하게 항상 표시 — 워커 타입 계정만) */}
+      {isWorkerRole && careerHistory.length > 0 && (
+        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>✅ 파잡 근무 이력</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {careerHistory.map(h => (
+              <div key={h.id} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "var(--text)" }}>{h.storeName}</p>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
+                      {h.roleDesc ? `${h.roleDesc} · ` : ""}{h.businessType || ""}
+                    </p>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 8, whiteSpace: "nowrap", background: h.status === "active" ? "var(--success-bg)" : "var(--surface2)", color: h.status === "active" ? "var(--success)" : "var(--text-muted)" }}>
+                    {h.status === "active" ? "재직중" : "근무완료"}
+                  </span>
+                </div>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0 0" }}>
+                  {h.hireDate || "?"} ~ {h.endDate ? String(h.endDate).slice(0, 10) : (h.status === "active" ? "현재" : "?")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 📝 경력사항 (사용자 직접 입력 — 파잡 밖에서의 경력, 워커 타입 계정만) */}
+      {isWorkerRole && (careerEntries.length > 0 || isOwner) && (
+        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: 0, letterSpacing: "0.5px" }}>📝 경력사항</p>
+            {isOwner && (
+              <button onClick={openAddCareer} style={{ fontSize: 11, fontWeight: 700, color: "var(--purple-text)", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>+ 추가</button>
+            )}
+          </div>
+          {careerEntries.length === 0 ? (
+            isOwner && <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>파잡 밖에서의 근무 경력을 추가해보세요.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {careerEntries.map(e => (
+                <div key={e.id} onClick={() => isOwner && openEditCareer(e)} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px", cursor: isOwner ? "pointer" : "default" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "var(--text)" }}>{e.company_name}</p>
+                      {e.role_desc && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{e.role_desc}</p>}
+                    </div>
+                    {isOwner && (
+                      <button onClick={(ev) => { ev.stopPropagation(); setPendingConfirm({ title: "경력 삭제", message: "이 경력사항을 삭제할까요?", onConfirm: () => { setPendingConfirm(null); deleteCareerEntry(e.id); } }); }}
+                        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 2 }}>🗑️</button>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0 0" }}>
+                    {e.start_date || "?"} ~ {e.is_current ? "현재" : (e.end_date || "?")}
+                  </p>
+                  {e.description && <p style={{ fontSize: 12, color: "var(--text)", margin: "8px 0 0", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{e.description}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isWorkerRole && (hasWorkerProfile ? (<>
         {/* 핵심 조건 */}
         <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -551,7 +715,7 @@ export default function WorkerDetailPage() {
             </div>
           </div>
         )
-      )}
+      ))}
 
         {/* 운영 매장 */}
         {ownedStores.length > 0 && (
@@ -574,10 +738,17 @@ export default function WorkerDetailPage() {
             </div>
           </div>
         )}
+
+        {/* 📝 최근 소식 (개인 피드) */}
+        <PersonalFeedSection
+          profileUserId={id}
+          viewerId={userId}
+          nickname={name}
+          avatarUrl={profileUser.avatar_url as string | null}
+        />
       </div>
 
-      {hasWorkerProfile && (
-      /* 하단 버튼 */
+      {/* 하단 버튼 (구직 정보 등록 여부와 무관하게 항상 노출 — 채용제안/대타요청은 별개 기능) */}
       <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "var(--nav-bg)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--nav-border)", zIndex: 40, transition: "bottom 0.3s ease" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex", gap: 10 }}>
           {isOwner ? null : isReceived && status === "pending" ? (
@@ -631,6 +802,52 @@ export default function WorkerDetailPage() {
           )}
         </div>
       </div>
+      {/* 경력 추가/수정 모달 */}
+      {careerModal && (
+        <div style={{ ...modalOverlay }}>
+          <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 16px" }}>{careerModal.id ? "경력 수정" : "경력 추가"}</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, display: "block", marginBottom: 6 }}>회사/매장명 *</label>
+                <input value={careerModal.company_name} onChange={e => setCareerModal(prev => prev && { ...prev, company_name: e.target.value })} placeholder="예) OO커피 탕정점"
+                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, display: "block", marginBottom: 6 }}>담당 업무</label>
+                <input value={careerModal.role_desc} onChange={e => setCareerModal(prev => prev && { ...prev, role_desc: e.target.value })} placeholder="예) 홀 서빙, 바리스타"
+                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, display: "block", marginBottom: 6 }}>시작일</label>
+                  <input type="date" value={careerModal.start_date} onChange={e => setCareerModal(prev => prev && { ...prev, start_date: e.target.value })}
+                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", color: "var(--text)", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, display: "block", marginBottom: 6 }}>종료일</label>
+                  <input type="date" value={careerModal.end_date} disabled={careerModal.is_current} onChange={e => setCareerModal(prev => prev && { ...prev, end_date: e.target.value })}
+                    style={{ width: "100%", background: "var(--surface2)", opacity: careerModal.is_current ? 0.5 : 1, border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", color: "var(--text)", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div onClick={() => setCareerModal(prev => prev && { ...prev, is_current: !prev.is_current })} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <div style={{ width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${careerModal.is_current ? "var(--primary)" : "var(--border)"}`, background: careerModal.is_current ? "var(--primary)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, flexShrink: 0 }}>
+                  {careerModal.is_current && "✓"}
+                </div>
+                <span style={{ fontSize: 13, color: "var(--text)" }}>현재 재직중</span>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, display: "block", marginBottom: 6 }}>상세 설명 (선택)</label>
+                <textarea value={careerModal.description} onChange={e => setCareerModal(prev => prev && { ...prev, description: e.target.value })} placeholder="주요 업무, 성과 등을 자유롭게 적어주세요" rows={3}
+                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", color: "var(--text)", fontSize: 13, outline: "none", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+              <button onClick={saveCareerEntry} disabled={savingCareer || !careerModal.company_name.trim()} style={{ ...btnPrimary, flex: 1, opacity: (savingCareer || !careerModal.company_name.trim()) ? 0.6 : 1 }}>{savingCareer ? "저장 중..." : "저장"}</button>
+              <button onClick={() => setCareerModal(null)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 확인 모달 */}

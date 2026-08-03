@@ -7,6 +7,8 @@ import AppHeader from "@/components/AppHeader";
 import { EntityLink } from "@/components/EntityLink";
 import StoreRegisterModal from "@/components/StoreRegisterModal";
 import { useToast } from "@/lib/useToast";
+import { BADGE_DEFS, getBadgesByRole } from "@/lib/trustScore";
+import PostComposeModal from "@/components/feed/PostComposeModal";
 
 interface StoreInfo {
   id: string;
@@ -66,6 +68,10 @@ export default function StoreHomePage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [pendingOffer, setPendingOffer] = useState<{ id: string; employer_id: string } | null>(null);
   const [offerSending, setOfferSending] = useState(false);
+  const [badges, setBadges] = useState<{ key: string; name: string; emoji: string }[]>([]);
+  const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
+  const [teamCount, setTeamCount] = useState<number | null>(null);
+  const [showCompose, setShowCompose] = useState(false);
   const { showToast, ToastUI } = useToast();
 
   // 상세 라이트박스
@@ -97,6 +103,15 @@ export default function StoreHomePage() {
         .eq("id", storeRaw.user_id)
         .maybeSingle();
       setStore({ ...storeRaw, owner: ownerData ?? null });
+
+      const { data: badgeRows } = await supabase.from("user_badges").select("badge_key").eq("user_id", storeRaw.user_id);
+      setBadges(getBadgesByRole(badgeRows || [], "employer"));
+
+      try {
+        const tcRes = await fetch(`/api/store/team-count?storeId=${storeId}`);
+        const tcData = await tcRes.json();
+        if (tcData.success) setTeamCount(tcData.count);
+      } catch {}
     } else {
       setStore(null);
     }
@@ -344,11 +359,31 @@ export default function StoreHomePage() {
             {store.description && (
               <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{store.description}</p>
             )}
+
+            {badges.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
+                {badges.map(b => (
+                  <button key={b.key} onClick={() => setSelectedBadge(selectedBadge === b.key ? null : b.key)}
+                    style={{ background: selectedBadge === b.key ? "var(--primary-light)" : "var(--card-inner)", border: `1px solid ${selectedBadge === b.key ? "var(--primary-border)" : "var(--card-inner-border)"}`, borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "var(--purple-text)", cursor: "pointer", fontWeight: 600 }}>
+                    {b.emoji} {b.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {selectedBadge && BADGE_DEFS[selectedBadge] && (
+              <div style={{ background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 10, padding: "8px 12px" }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>{BADGE_DEFS[selectedBadge].emoji} {BADGE_DEFS[selectedBadge].name}</p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{BADGE_DEFS[selectedBadge].desc}</p>
+              </div>
+            )}
+
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-              <span className="text-[11px] text-text-muted">👥 팔로워 {followerCount}명</span>
+              <span className="text-[11px] text-text-muted">
+                👥 팔로워 {followerCount}명{teamCount != null && teamCount > 0 ? ` · 👷 함께 일하는 중 ${teamCount}명` : ""}
+              </span>
               {store.owner && (
                 <EntityLink
-                  href={`/profile/${store.user_id}`}
+                  href={`/worker/${store.user_id}`}
                   avatarUrl={store.owner.avatar_url}
                   fallbackEmoji="👤"
                   name={store.owner.nickname || "운영자"}
@@ -388,7 +423,7 @@ export default function StoreHomePage() {
             <span className="text-xs font-bold text-text-sub">📸 매장 소식</span>
             {isOwner && (
               <button 
-                onClick={() => router.push(`/feed?write=true&storeId=${storeId}`)}
+                onClick={() => setShowCompose(true)}
                 className="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md transition active:scale-95 flex items-center gap-1 focus:outline-none"
               >
                 <i className="ti ti-plus" aria-hidden="true" />
@@ -686,6 +721,17 @@ export default function StoreHomePage() {
             setShowEditModal(false);
             init(); // 데이터 새로고침
           }}
+        />
+      )}
+
+      {showCompose && myId && (
+        <PostComposeModal
+          userId={myId}
+          employerProfileId={storeId}
+          title="매장 소식 등록"
+          placeholder="매장 소식이나 근무 이야기를 들려주세요... ✨"
+          onClose={() => setShowCompose(false)}
+          onPosted={(post) => setPosts(prev => [{ ...post, likedByMe: false }, ...prev])}
         />
       )}
     </main>

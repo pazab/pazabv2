@@ -46,6 +46,10 @@ function roundToHalfHour(h: number, m: number): string {
   totalMin = ((totalMin % 1440) + 1440) % 1440;
   return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
 }
+function addHoursToTime(time: string, hours: number): string {
+  const [h, m] = time.split(":").map(Number);
+  return roundToHalfHour(0, h * 60 + m + Math.round(hours * 60));
+}
 function addDaysToDateStr(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -835,6 +839,10 @@ export default function TeamMemberPage() {
 
   const contractHours = member?.work_hours ? parseFloat(member.work_hours) : 8;
   const contractRange = contractHoursRange(member?.work_hours);
+  // work_hours가 "HH:MM~HH:MM" 범위가 아니라 dailyHours(숫자, 예: "8")로만 저장된 계약은 contractRange가 null이 됨.
+  // 이 경우 실제 출근시간(attStart) + 근무시간으로 정상 퇴근시간을 역산해서 "지금 시각" 폴백을 피함
+  const scheduledEndTime = contractRange?.end
+    || (attStart && contractHours && !String(member?.work_hours || "").includes(":") ? addHoursToTime(attStart, contractHours) : "");
   const totalActualHours = monthAtt
     .filter(a => a.status !== "absent" && a.status !== "off")
     .reduce((sum, a) => sum + (a.actual_hours || contractHours), 0);
@@ -955,7 +963,7 @@ export default function TeamMemberPage() {
                   </span>
                 </div>
                 {pType && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", margin: "0 0 2px" }}>{PERSONALITY_EMOJI[pType]} {pType}</p>}
-                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
                   입사일 {member.hire_date || "미설정"}{" "}
                   {!isResigned && (
                     <button onClick={() => {
@@ -964,6 +972,11 @@ export default function TeamMemberPage() {
                     }} style={{ fontSize: 10, color: "#fff", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer" }}>
                       수정
                     </button>
+                  )}
+                  {!isResigned && !member.hire_date && (
+                    <span style={{ fontSize: 10, color: "#fff", background: "rgba(245,158,11,0.35)", borderRadius: 4, padding: "2px 6px", fontWeight: 700 }}>
+                      ⚠️ 입사일을 꼭 입력해 주세요
+                    </span>
                   )}
                 </p>
               </div>
@@ -1379,14 +1392,23 @@ export default function TeamMemberPage() {
                       setAttNote(att?.memo || "");
                       const isTodayDate = dateStr === todayStr;
                       // 기존 기록 있으면 그대로, 없으면(신규 입력) 결근/휴무가 아닌 이상 계약 근무시간을 기본값으로 채움
-                      // 오늘 날짜이고 퇴근 기록이 없는 경우 기본적으로 퇴근시간을 비워 알바생 퇴근버튼이 활성화되도록 유지
+                      // 오늘 날짜이면서 아직 계약 퇴근시간 전이면 퇴근시간을 비워 알바생 퇴근버튼이 활성화되도록 유지.
+                      // 계약 퇴근시간이 이미 지났으면(예: 야간에 정산하는 경우) "지금 시각"이 아니라 정상 계약 퇴근시간을 기본값으로 채워 바로 마감할 수 있게 함
                       const timeIrrelevant = ["absent", "off"].includes(status);
-                      setAttStart(att?.check_in
+                      const toMins = (t: string) => { const [hh, mm] = t.split(":").map(Number); return hh * 60 + mm; };
+                      const nowMinsKstAtt = (() => { const kst = new Date(Date.now() + 9 * 60 * 60 * 1000); return kst.getUTCHours() * 60 + kst.getUTCMinutes(); })();
+                      const startValue = att?.check_in
                         ? new Date(att.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
-                        : (!timeIrrelevant && contractRange ? contractRange.start : ""));
+                        : (!timeIrrelevant && contractRange ? contractRange.start : "");
+                      // contractRange가 없는(work_hours가 "HH:MM~HH:MM" 범위가 아니라 dailyHours 숫자만 있는) 계약도
+                      // 출근시간 + 근무시간으로 정상 퇴근시간을 역산해서 같은 방식으로 처리
+                      const derivedEnd = contractRange?.end
+                        || (!timeIrrelevant && startValue && contractHours && !String(member?.work_hours || "").includes(":") ? addHoursToTime(startValue, contractHours) : "");
+                      const pastScheduledEnd = !!(derivedEnd && toMins(derivedEnd) > toMins(startValue || "00:00") && nowMinsKstAtt >= toMins(derivedEnd));
+                      setAttStart(startValue);
                       setAttEnd(att?.check_out
                         ? new Date(att.check_out).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
-                        : (isTodayDate ? "" : (!timeIrrelevant && contractRange ? contractRange.end : "")));
+                        : (isTodayDate && !pastScheduledEnd ? "" : (!timeIrrelevant ? derivedEnd : "")));
                       setShowAttModal(true);
                     }}
                     style={{
@@ -2040,8 +2062,10 @@ export default function TeamMemberPage() {
                       onClick={() => {
                         const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
                         const nowTime = `${String(kst.getUTCHours()).padStart(2, "0")}:${String(kst.getUTCMinutes()).padStart(2, "0")}`;
-                        setAttEnd(nowTime);
-                        saveAttendance(nowTime);
+                        // 지금 시각이 아니라 정상 계약 근무 종료시간 기준으로 마감 (사장님이 늦게 확인할수록 마감시간이 밀리는 걸 방지)
+                        const closeTime = scheduledEndTime || nowTime;
+                        setAttEnd(closeTime);
+                        saveAttendance(closeTime);
                       }}
                       disabled={saving}
                       style={{
@@ -2060,7 +2084,7 @@ export default function TeamMemberPage() {
                         gap: 6
                       }}
                     >
-                      <i className="ti ti-lock" aria-hidden="true" /> 지금 시각으로 바로 마감 처리
+                      <i className="ti ti-lock" aria-hidden="true" /> {scheduledEndTime ? `정상 근무시간(${scheduledEndTime})으로 마감 처리` : "지금 시각으로 바로 마감 처리"}
                     </button>
                   </>
                 )}

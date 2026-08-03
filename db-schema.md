@@ -46,6 +46,7 @@
 | user_badges | ✅ 사용 중 | |
 | users | ✅ 사용 중 | name 컬럼 DROP 완료 |
 | worker_profiles | ✅ 사용 중 | trust_score/grade DROP 완료 |
+| worker_career_entries | ✅ 신규 생성 (2026-08-04) | 파잡 밖 경력 직접입력 (사용자 SQL 에디터 실행), SELECT 공개/CUD 본인전용 |
 | ~~chatrooms~~ | 🗑️ DROP 완료 | messages와 쌍, 레거시 |
 | ~~messages~~ | 🗑️ DROP 완료 | chatrooms 쌍, 레거시 |
 | ~~job_postings~~ | 🗑️ DROP 완료 | jobs로 대체 |
@@ -358,6 +359,7 @@
 | ai_usage_logs | user_id, model, input_tokens, output_tokens, cost_usd, endpoint, created_at |
 | interviews | match_id, employer_id, worker_id, type, transcript, result, created_at |
 | trust_score_logs | user_id, delta, reason, before_score, after_score, ref_id, created_at |
+| worker_career_entries | worker_id, company_name, role_desc, start_date, end_date, is_current, description, created_at, updated_at |
 
 ---
 

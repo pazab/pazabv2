@@ -2597,8 +2597,9 @@ function MyTeamPageContent() {
                   const absents = scheduledToday.filter((m: any) => m.todayAtt?.status === "absent");
                   const uncheckedIn = scheduledToday.filter((m: any) => !m.todayAtt?.check_in && m.todayAtt?.status !== "absent" && isDueIn(m));
                   const pendingContracts = allMembers.filter((m: any) => m.contractStatus !== "done");
+                  const missingHireDate = allMembers.filter((m: any) => !m.hire_date);
 
-                  const hasIssues = lates.length > 0 || absents.length > 0 || uncheckedIn.length > 0 || pendingContracts.length > 0;
+                  const hasIssues = lates.length > 0 || absents.length > 0 || uncheckedIn.length > 0 || pendingContracts.length > 0 || missingHireDate.length > 0;
                   const checkedInCount = scheduledToday.filter((m: any) => !!m.todayAtt?.check_in).length;
 
                   return (
@@ -2648,7 +2649,8 @@ function MyTeamPageContent() {
                                 {lates.length > 0 && `지각 ${lates.length}건 `}
                                 {absents.length > 0 && `결근 ${absents.length}건 `}
                                 {uncheckedIn.length > 0 && `출근대기 ${uncheckedIn.length}건 `}
-                                {pendingContracts.length > 0 && `계약확인 ${pendingContracts.length}건`}
+                                {pendingContracts.length > 0 && `계약확인 ${pendingContracts.length}건 `}
+                                {missingHireDate.length > 0 && `입사일 미입력 ${missingHireDate.length}건`}
                               </p>
                             </div>
                           </div>
@@ -2674,6 +2676,11 @@ function MyTeamPageContent() {
                                 📄 미확인 계약서 {pendingContracts.length}건
                               </span>
                             )}
+                            {missingHireDate.map((m: any) => (
+                              <span key={`hd_${m.id}`} onClick={() => jumpToTeamMember(m.id)} style={{ fontSize: 10, background: "#f59e0b20", color: "#d97706", border: "1px solid #f59e0b40", padding: "3px 8px", borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                                📅 {m.worker?.nickname || "팀원"} (입사일 미입력)
+                              </span>
+                            ))}
                           </div>
                         </div>
                       )}

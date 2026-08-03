@@ -590,7 +590,7 @@ function FeedContent() {
                   {/* 작성자 정보 */}
                   <div className="flex items-center justify-between p-3 border-b border-border hover:bg-surface2/40 transition relative">
                     <div
-                      onClick={() => router.push(post.storeId ? `/store/${post.storeId}` : `/profile/${post.user_id}`)}
+                      onClick={() => router.push(post.storeId ? `/store/${post.storeId}` : `/worker/${post.user_id}`)}
                       className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
                       <div className="w-10 h-10 rounded-full overflow-hidden bg-surface2 border border-border flex items-center justify-center flex-shrink-0">
                         {post.authorAvatar ? (

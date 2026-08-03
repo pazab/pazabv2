@@ -1,7 +1,18 @@
 # PLAN.md
-> 최종 업데이트: 2026-07-30 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-08-04 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
+
+**소셜 프로필 + 파잡 커리어 통합, 근태 마감 로직 개선, 하단 네비 피드탭 제거, 크롭 버그 수정 (2026-08-04)**
+> 상세 내역은 [docs/20260804_0227_PAZAB_DEV_HANDOVER.md](docs/20260804_0227_PAZAB_DEV_HANDOVER.md) 참조.
+- **`/profile/[userId]` → `/worker/[id]`로 통합**, 전자는 얇은 리다이렉트로 축소 (`app/api/lovecall`이 알림에 `/worker/${id}`를 영구 저장하므로 이쪽을 정본으로 결정). 뱃지·개인피드(`components/profile/PersonalFeedSection.tsx` 신규 분리)를 이식, 사장님 전용 계정용 신뢰도 바 헤더 신규. 뱃지 조회가 존재하지 않는 컬럼(`earned_at`)을 select해서 원래도 계속 비어 보이던 버그도 같이 수정.
+- **`app/api/worker/career-history/route.ts` 신규**: `team_members` RLS를 서비스 롤로 우회해 임금 제외 근무이력 반환, "파잡 근무 이력" 섹션으로 노출.
+- **`worker_career_entries` 테이블 신규**(사용자가 SQL 에디터 직접 실행): 파잡 밖 경력 직접입력 CRUD, `/worker/[id]`에 내장. 두 섹션 모두 `worker_profiles` 등록 여부와 무관하게 `user_type`만으로 노출하도록 게이팅.
+- **근태 마감 로직**: 사장님이 뒤늦게 확인해서 마감 처리할 때 "지금 시각" 대신 계약 근무시간(또는 출근시간+근무시간 역산)을 기본값으로 채우도록 `app/employer/team/[id]/page.tsx` 수정.
+- **`components/BottomNav.tsx`**: "피드" 탭 제거(CLAUDE.md에 이미 있던 "피드 확장 동결" 결정 미실행 상태였음 — 4탭으로 축소), 탭 하이라이트 스타일은 여러 시안 검토 후 원래 방식(아이콘 위 바) 유지로 확정.
+- **`components/feed/PostComposeModal.tsx` 신규**: "소식 등록"이 `/feed` 페이지로 이동해 방금 뺀 전체피드 화면이 뒤에 깔리던 모순을 없애기 위해 독립 작성 모달로 분리, 사진 업로드 시 정사각 크롭 단계 추가.
+- **`components/ImageCropModal.tsx`**(앱 전체 공용 크로퍼) 버그 수정: 팬 이동 범위 제한이 없어서 사진이 뷰포트 밖으로 나갈 수 있었고, 여러 장 순서대로 크롭 시 이전 사진의 zoom/offset이 남아 크롭 결과가 흰 화면으로 나오는 버그. 3분할 가이드·핀치줌도 추가.
+- 이번 세션 전반부는 워크트리 경로에서 작업했다가 뒤늦게 발견 — `C:\pazabv2` 본체로 수동 동기화 후 이후 전부 본체에서 직접 작업.
 
 **"both"(사장님+알바 동시) 계정 단일모드 UX 정리 + 마이팀/마이페이지 정보 밀도 축소 (2026-07-30)**
 - **배경**: v3급 전면 재설계를 고민하다가, 실제로 코드를 꼬이게 만드는 원인이 "사장님/알바 동시 계정(`user_type: 'both'`)"이었다는 결론 — 스키마(`employer_profiles`/`team_members`)는 이미 깔끔히 분리돼 있어 안 건드림, 문제는 UI 레이어. 상세 판단 근거는 [STRATEGY.md](STRATEGY.md) §12 참조.
