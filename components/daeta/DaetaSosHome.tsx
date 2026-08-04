@@ -134,11 +134,19 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   };
 
   const load = useCallback(async () => {
-    const { data: rows } = await supabase
+    const { data: rowsRaw } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at")
+      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
+
+    // 근무 시작 시각(expires_at)이 지났는데 응답자 없이 방치된 공고는 크론 없이 조회 시점에 만료 처리
+    const nowIso = new Date().toISOString();
+    const expiredIds = (rowsRaw || []).filter(r => (r as any).expires_at && (r as any).expires_at < nowIso).map(r => r.id);
+    if (expiredIds.length > 0) {
+      supabase.from("daeta_postings").update({ status: "expired" }).in("id", expiredIds);
+    }
+    const rows = (rowsRaw || []).filter(r => !(r as any).expires_at || (r as any).expires_at >= nowIso);
 
     const postingList = (rows || []) as SosPosting[];
     // 내 공고가 먼저 오도록 정렬
@@ -375,6 +383,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const applyPosting = async (posting: SosPosting) => {
     setActionLoading(posting.id);
     try {
+      // 확정된 대타를 취소한 이력이 있으면 정지 기간 동안 지원 제한
+      const { data: userRow } = await supabase.from("users").select("daeta_cancel_suspended_until").eq("id", userId).maybeSingle();
+      if (userRow?.daeta_cancel_suspended_until && new Date(userRow.daeta_cancel_suspended_until) > new Date()) {
+        showToast(`확정된 대타를 취소한 이력으로 ${new Date(userRow.daeta_cancel_suspended_until).toLocaleString("ko-KR")}까지 지원이 제한돼요.`, "error");
+        setActionLoading(null);
+        return;
+      }
       const res = await fetch("/api/lovecall", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -578,18 +593,20 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                       </div>
                       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                         {isMine ? (
-                          <>
-                            <button
-                              onClick={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
-                              style={{ background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 10, padding: "6px 10px", color: "var(--text, #fff)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                              수정
-                            </button>
-                            <button
-                              onClick={() => cancelPosting(p)}
-                              style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                              취소
-                            </button>
-                          </>
+                          !meta.acceptedMatchId && (
+                            <>
+                              <button
+                                onClick={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
+                                style={{ background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 10, padding: "6px 10px", color: "var(--text, #fff)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                수정
+                              </button>
+                              <button
+                                onClick={() => cancelPosting(p)}
+                                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                취소
+                              </button>
+                            </>
+                          )
                         ) : (
                           <button
                             onClick={() => applyPosting(p)}

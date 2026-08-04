@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
+import { getBreakMinutesForDate } from "@/lib/utils";
 
 const getServiceClient = () =>
   createClient(
@@ -115,7 +116,15 @@ export async function POST(req: NextRequest) {
       const checkIn = new Date(existing.check_in);
       const checkOutTime = `${today}T${timeStr}:00+09:00`;
       const checkOut = new Date(checkOutTime);
-      const diffHours = Math.round((checkOut.getTime() - checkIn.getTime()) / 36000) / 100;
+      const { data: memberContracts } = await supabase
+        .from("contracts")
+        .select("status, contract_data")
+        .eq("team_member_id", teamMemberId)
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false });
+      const breakMinutes = getBreakMinutesForDate(memberContracts, today);
+      const rawMs = checkOut.getTime() - checkIn.getTime() - breakMinutes * 60 * 1000;
+      const diffHours = Math.max(0, Math.round(rawMs / 36000) / 100);
 
       let status = existing.status;
       const contractHours = member.work_hours && !member.work_hours.includes(":") ? parseFloat(member.work_hours) : null;

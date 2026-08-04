@@ -506,12 +506,20 @@ function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, o
                 return null;
               })()}
 
-              {/* 보낸것 취소 버튼 - 취소/실패/거절 상태 제외 */}
+              {/* 보낸것 취소 버튼 - 취소/실패/거절 상태 제외. 대타 기원 매칭은 수락 즉시 자동계약이 체결돼서
+                  여기서 그냥 취소하면 페널티(정지·감점) 없이 파기돼버림 — 채팅의 페널티 확인 절차로 유도 */}
               {!showRespond && !["cancelled", "failed", "rejected", "hired"].includes(lc.progress_status || lc.status) && (
-                <button onClick={() => onCancel(lc.id)}
-                  style={{ width: "100%", background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
-                  {lc.myRole === "worker" ? "지원 취소하기" : "채용제안 취소하기"}
-                </button>
+                lc.daeta_posting_id ? (
+                  <button onClick={() => router.push(`/chat/${lc.id}`)}
+                    style={{ width: "100%", background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
+                    채팅에서 대타 취소하기 (페널티 안내)
+                  </button>
+                ) : (
+                  <button onClick={() => onCancel(lc.id)}
+                    style={{ width: "100%", background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
+                    {lc.myRole === "worker" ? "지원 취소하기" : "채용제안 취소하기"}
+                  </button>
+                )
               )}
             </div>
           );
@@ -994,8 +1002,9 @@ function MyPageContent() {
       });
       const data = await res.json();
       if (data.success) {
+        const nextStatus = action === "accept" ? "accepted" : "rejected";
         setLoveCalls(prev => prev.map(lc =>
-          lc.id === matchId ? { ...lc, status: action === "accept" ? "accepted" : "rejected" } : lc
+          lc.id === matchId ? { ...lc, status: nextStatus, progress_status: nextStatus } : lc
         ));
         if (action === "accept") {
           // 시스템 메시지 전송

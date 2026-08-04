@@ -19,6 +19,75 @@ export function isWorkingOnDay(workDays: string | null | undefined, dayKo: strin
   return false;
 }
 
+// 계약서(contract_data)에 저장된 휴게시간(분)을 찾는다.
+// 출퇴근 시각 차이는 휴게시간을 포함한 raw 값이라, 실근무시간 계산 시 이 값을 빼줘야 함 (없으면 0).
+// 요일별 breakTimeMon~Sun 필드는 계약서 위자드가 "요일마다 달라요"(perDayHours)를 켰을 때만 실제로
+// 개별 입력됨 — 꺼져 있으면(기본값) 폼 초기화 시 채워둔 상시 "30"이 그대로 남아있어 실제 공통
+// breakTime(예: 60)과 다를 수 있으므로, perDayHours가 켜져 있을 때만 요일별 값을 신뢰한다.
+const BREAK_DAYKEYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export function getBreakMinutesForDate(
+  contracts: { status?: string | null; contract_data?: any }[] | null | undefined,
+  dateStr: string
+): number {
+  const contract = contracts?.find(c => c.status === "active") || contracts?.[0];
+  const cd = contract?.contract_data;
+  if (!cd || cd.noBreak) return 0;
+  let raw = cd.breakTime;
+  if (cd.perDayHours) {
+    const dayIdx = new Date(`${dateStr}T00:00:00`).getDay();
+    const dk = BREAK_DAYKEYS[dayIdx];
+    raw = cd[`breakTime${dk}`] ?? cd.breakTime;
+  }
+  const mins = parseInt(String(raw ?? "0"), 10);
+  return isNaN(mins) ? 0 : mins;
+}
+
+// 주(월요일 시작) 단위 그룹핑 키 — 명세서 정산기간이 달력 월 기준이라 주 경계가 월을 넘나들 수 있는데,
+// 이 함수 자체는 넘겨받은 attendance 배열 범위 안에서만 주 단위로 묶는다(월 경계 걸친 주는 각 월에서 부분 집계됨 — 기존 초과근무 계산과 동일한 한계).
+function getWeekKey(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const day = d.getDay(); // 0=일 ~ 6=토
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diffToMonday);
+  return monday.toISOString().slice(0, 10);
+}
+
+// 주휴수당(근로기준법 제55조): 주 15시간 이상 근무 + 그 주 결근(무단) 없이 개근한 주에 한해
+// (주 실근로시간 ÷ 40) × 8시간분을 시급으로 별도 지급. 계약서에서 시급에 이미 포함해서
+// 책정했다고 선언(wageIncludesWeeklyPay)한 경우는 이중지급 방지를 위해 0.
+export function calcWeeklyHolidayPay(
+  attendance: { work_date: string; status: string; actual_hours?: number | null }[] | null | undefined,
+  contractHours: number,
+  hourlyRate: number,
+  wageIncludesWeeklyPay: boolean
+): number {
+  if (wageIncludesWeeklyPay || !hourlyRate || !attendance?.length) return 0;
+  const weeks = new Map<string, { hours: number; hasAbsent: boolean }>();
+  for (const a of attendance) {
+    const key = getWeekKey(a.work_date);
+    const w = weeks.get(key) || { hours: 0, hasAbsent: false };
+    if (a.status === "absent") w.hasAbsent = true;
+    else if (["normal", "late", "early_leave"].includes(a.status)) w.hours += a.actual_hours ?? contractHours;
+    weeks.set(key, w);
+  }
+  let total = 0;
+  for (const { hours, hasAbsent } of weeks.values()) {
+    if (hasAbsent || hours < 15) continue;
+    total += Math.round((hours / 40) * 8 * hourlyRate);
+  }
+  return total;
+}
+
+// 연장/야간 가산수당(근로기준법 제56조)은 상시근로자 5인 이상 사업장에만 의무 — 5인 미만이면
+// 가산 없이 통상시급만 지급하면 됨(연장·야간 시간 자체의 기본급은 별도로 이미 지급됨).
+export function getOvertimePremiumMultiplier(is5OrMore: boolean): number {
+  return is5OrMore ? 1.5 : 1;
+}
+export function getNightPremiumMultiplier(is5OrMore: boolean): number {
+  return is5OrMore ? 0.5 : 0;
+}
+
 export function getTrustGrade(score: number): { label: string; emoji: string; color: string } {
   if (score >= 90) return { label: "플래티넘", emoji: "💎", color: "#60a5fa" };
   if (score >= 75) return { label: "골드", emoji: "🥇", color: "#fbbf24" };

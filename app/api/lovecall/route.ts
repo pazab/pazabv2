@@ -329,6 +329,9 @@ export async function PATCH(req: NextRequest) {
                 worker_signed: true,
                 signed_at: new Date().toISOString(),
               });
+
+              // 매칭 확정된 공고는 더 이상 다른 알바생에게 노출되거나 수정·재취소 가능한 "구인중" 상태가 아님
+              await supabase.from("daeta_postings").update({ status: "matched" }).eq("id", acceptMatchData.daeta_posting_id);
             }
           }
 
@@ -375,6 +378,49 @@ export async function PATCH(req: NextRequest) {
         break;
       case "reject":
         updateData.progress_status = "rejected";
+        {
+          const { data: rejectMatchData } = await supabase
+            .from("matches")
+            .select("worker_id, employer_id, employer_profile_id, initiated_by")
+            .eq("id", matchId).single();
+          if (rejectMatchData) {
+            try {
+              let businessName = "매장";
+              if (rejectMatchData.employer_profile_id) {
+                const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", rejectMatchData.employer_profile_id).maybeSingle();
+                if (ep?.business_name) businessName = ep.business_name;
+              }
+              const { data: workerUser } = await supabase.from("users").select("nickname, real_name").eq("id", rejectMatchData.worker_id).maybeSingle();
+              const workerName = workerUser?.nickname || workerUser?.real_name || "알바생";
+
+              const workerInitiated = rejectMatchData.initiated_by === rejectMatchData.worker_id;
+
+              if (workerInitiated) {
+                // 알바생이 지원 → 사장님이 거절 → 알바생에게 알림
+                await createNotification({
+                  userId: rejectMatchData.worker_id,
+                  type: "lovecall",
+                  title: `😔 지원 거절 (${businessName})`,
+                  body: `${businessName}에서 지원을 거절했어요. 다른 곳도 둘러보세요!`,
+                  url: `/mypage`,
+                  data: { matchId }
+                });
+              } else {
+                // 사장님이 채용 제안 → 알바생이 거절 → 사장님에게 알림
+                await createNotification({
+                  userId: rejectMatchData.employer_id,
+                  type: "lovecall",
+                  title: `😔 채용 제안 거절 (${businessName})`,
+                  body: `${workerName}님이 채용 제안을 거절했어요.`,
+                  url: `/mypage`,
+                  data: { matchId }
+                });
+              }
+            } catch (err) {
+              console.error("[reject notify error]", err);
+            }
+          }
+        }
         break;
       case "cancel":
         updateData.progress_status = "cancelled";

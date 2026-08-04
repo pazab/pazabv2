@@ -248,7 +248,7 @@ export default function BottomNav() {
   // /feed 페이지·소식 등록 자체는 그대로 남아있고(각자 프로필에서 접근), 동네 밀도 생기면 재노출 검토
   const tabs = [
     { icon: "ti-bolt", label: "대타", path: "/daeta", active: pathname.startsWith("/daeta"), isDaeta: true, badge: daetaUnread },
-    { icon: "ti-home", label: "홈", path: "/myteam", active: pathname === "/" || pathname.startsWith("/myteam") || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/") },
+    { icon: "ti-home", label: "홈", path: "/myteam", active: pathname === "/" || pathname.startsWith("/myteam") || pathname.startsWith("/explore") || pathname.startsWith("/job") || pathname.startsWith("/worker/"), isHome: true },
     { icon: "ti-message-2", label: "채팅", path: "/chat", active: pathname.startsWith("/chat"), badge: unreadCount },
     { icon: "ti-user-circle", label: "MY", path: "/mypage", active: pathname.startsWith("/mypage") || pathname.startsWith("/profile") || pathname.startsWith("/personality") || pathname.startsWith("/result") || pathname.startsWith("/interview") },
   ];
@@ -303,8 +303,41 @@ export default function BottomNav() {
           <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", padding: "8px 4px calc(8px + env(safe-area-inset-bottom))" }}>
             {tabs.map(tab => {
               const isDaeta = (tab as any).isDaeta;
+              const isHome = (tab as any).isHome;
               const activeColor = isDaeta ? "#fb923c" : "#a78bfa";
               const barColor = isDaeta ? "#fb923c" : "var(--primary)";
+
+              if (isHome) {
+                return (
+                  <button key={tab.label} onClick={() => handleTabClick(tab.path)}
+                    style={{
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                      background: "none", border: "none", cursor: "pointer",
+                      padding: "0 6px 4px", position: "relative", flex: 1, marginTop: -14,
+                    }}>
+                    <div style={{
+                      position: "relative",
+                      width: 44,
+                      height: 44,
+                      borderRadius: "50%",
+                      background: tab.active
+                        ? "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)"
+                        : "linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(109,40,217,0.1) 100%)",
+                      border: tab.active ? "2px solid rgba(255,255,255,0.4)" : "1.5px solid rgba(139,92,246,0.3)",
+                      boxShadow: tab.active ? "0 6px 18px rgba(139,92,246,0.45)" : "0 4px 12px rgba(0,0,0,0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.25s ease",
+                    }}>
+                      <i className={`ti ${tab.icon}`} style={{ fontSize: 22, color: tab.active ? "#ffffff" : "#c4b5fd" }} aria-hidden="true" />
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 800, color: tab.active ? "var(--primary, #8b5cf6)" : "var(--text-muted)", transition: "color 0.2s" }}>
+                      {tab.label}
+                    </span>
+                  </button>
+                );
+              }
 
               return (
                 <button key={tab.label} onClick={() => handleTabClick(tab.path)}

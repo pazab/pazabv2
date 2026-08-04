@@ -1,7 +1,32 @@
 # PLAN.md
-> 최종 업데이트: 2026-08-04 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
+> 최종 업데이트: 2026-08-05 | PAZAB v2 (`C:\pazabv2`, Supabase: clrjxxkgceluvzvrkvyl)
 
 ## 구현 완료
+
+**근태 휴게시간 미공제 + 근로기준법 컴플라이언스 4종 + 실명 동기화 버그 + 대타 취소/완료 프로세스 전면 정비 (2026-08-05)**
+> 이번 세션부터 세션별 상세본을 `docs/`에 별도로 만들지 않고 이 PLAN.md 한 파일로 통일.
+
+- **근태 휴게시간 미공제 버그**: 출퇴근 시각으로 근무시간을 계산하는 모든 지점(사장님 수동입력·인라인수정, 알바생 앱 퇴근버튼, 푸시알림 원탭 퇴근)이 휴게시간을 안 빼고 있었음 — `lib/utils.ts`에 `getBreakMinutesForDate()` 신설, 4개 파일(`app/employer/team/[id]/page.tsx`, `app/myteam/page.tsx`, `app/api/attendance/quick-action/route.ts`)에 적용. 계약서 위자드가 "요일마다 달라요" 토글 꺼져있을 때 요일별 필드의 미사용 기본값("30")을 잘못 우선시하던 2차 버그도 발견해 `perDayHours` 플래그로 수정. 팀원 상세 상단 3열→4열 그리드로 "휴게시간" 항목 추가.
+- **근로기준법 컴플라이언스 4종** (계약서 위자드 `app/contract/page.tsx` + 명세서 3곳 + 연소자 검증):
+  1. 주휴수당 — 계약서에 "시급에 포함 여부" 토글 추가, 미포함(기본값) 시 명세서 발행(수동/자동/예상급여 3곳) 시 주 15시간+개근 판정해서 자동 가산. `lib/utils.ts`의 `calcWeeklyHolidayPay()`.
+  2. 5인 미만 사업장 가산수당 면제 — `employer_profiles.is_5_or_more_employees` 신규 컬럼, 계약서에서 선언하면 명세서 3곳의 연장/야간 가산 배율에 반영(`getOvertimePremiumMultiplier`).
+  3. 연소근로자(18세 미만) 1일 7시간/1주 35시간 하드블록 + 22~06시 야간근로 경고 배너.
+  4. 퇴직금 — 퇴직 확인 모달에서 근속 1년+주 15시간 자동 판정, 최근 3개월 명세서 기반 예상액 계산·고지(송금은 미실행).
+  - DB: `employer_profiles.is_5_or_more_employees`, `payslips.weekly_holiday_pay` 컬럼 추가(사용자가 SQL 에디터 직접 실행).
+- **`users` 테이블 RLS로 인해 조용히 실패하던 버그 2건 발견**:
+  - 계약서 저장 시 사장님 세션이 알바생의 `users` 행(실명/생년월일/연락처/주소)을 직접 update하던 게 RLS 때문에 매번 0건 처리(에러 없음)돼서 한 번도 동작한 적이 없었음 — `app/api/contract/sync-worker-info/route.ts` 신규(서비스 롤+권한검증)로 대체, 기존 데이터 3건 백필. 실명은 팀원 상세 "개인정보" 섹션(생년월일 위)과 `myteam` 목록에 노출.
+  - `components/daeta/DaetaHistoryView.tsx`가 `users.name`(DROP된 컬럼)을 select하고 있어서 대타 기록 화면이 항상 빈 목록으로 보였던 버그도 같은 계열로 발견, `real_name`으로 수정.
+- **대타(긴급 대타 요청) 프로세스 전면 정비**:
+  - 매칭 수락 즉시 자동 계약 체결되는데 `daeta_postings.status`가 "pending"에 그대로 남아있던 버그 — 수락 시 `"matched"`로 전환하도록 수정, 기존 방치 건 1건 백필. 근무 시작 시각(`expires_at`) 지난 미매칭 공고는 크론 없이 조회 시점에 자동 "expired" 처리(3개 화면에 동일 패턴).
+  - `DaetaSosHome.tsx`의 수정/취소 버튼이 이미 매칭된 공고에도 떠 있던 버그 수정(`meta.acceptedMatchId` 체크 누락).
+  - 확정 후 취소 페널티 시스템 신규: `app/api/daeta/cancel/route.ts` — 최근 90일 내 취소 횟수별 가중(1회 유예 → 3일/7일/14일 정지 + 신뢰점수 -10/-15/-20), 취소한 쪽의 대타 지원/등록만 제한.
+  - 근무 완료(정산)·노쇼 신고: `app/api/daeta/complete/route.ts` 신규 — `matches` 테이블에 애초에 존재하지 않는 `status` 컬럼을 update하려던 게 계속 조용히 실패하던 버그를 발견해 `progress_status`만 쓰도록 수정(`DaetaHistoryView.tsx`의 기존 로직도 같은 버그가 있어서 이 라우트로 교체).
+  - 채팅방(`app/chat/[id]/page.tsx`)에 취소/완료/노쇼 액션을 전부 넣었다가, "대화 화면에 정산·신뢰점수 같은 무거운 처리까지 넣는 게 맞나"는 재검토 끝에 요약 배너+"대타 관리하기" 링크만 남기고 실제 액션은 `DaetaHistoryView`(`/daeta?history=1&matchId=`)로 이전. `app/daeta/page.tsx`에 `useSearchParams` 기반 딥링크 추가(Suspense 래핑 필요), `view==="home"` 조건이 `showHistory` 체크보다 먼저 return해버려 딥링크가 씹히던 순서 버그도 수정.
+  - 임금 미지급 신고 시 검증 없이 사장님 계정을 즉시 영구정지시키고 "정부 진정서를 자동 접수했다"고 거짓 안내하던 로직 제거 — `app/api/daeta/report-unpaid/route.ts` 신규(감점 없는 검토대기 로그 + 사장님·관리자 양쪽 알림만, 실제 정지는 관리자가 `/admin/trust`에서 사람이 판단).
+  - `mypage.tsx` "받은 지원" 목록의 취소 버튼이 대타 확정 매칭에도 페널티 없이 그냥 취소되던 구멍 수정(대타 기원이면 채팅으로 유도).
+  - 하단 네비 홈 탭에 예전 5탭 시절 원형 FAB 스타일 복원(`components/BottomNav.tsx`).
+- 전 항목 `npx tsc --noEmit` 신규 에러 0건 확인(기존 무관 에러 2개 파일은 그대로). 브라우저 시각 확인 미실시.
+- **다음 세션 확인 필요**: "대타 내역" 화면(`DaetaHistoryView` 재구성본)을 사용자가 이상하다고 언급 — 구체적 증상 미파악, 재확인 필요.
 
 **소셜 프로필 + 파잡 커리어 통합, 근태 마감 로직 개선, 하단 네비 피드탭 제거, 크롭 버그 수정 (2026-08-04)**
 > 상세 내역은 [docs/20260804_0227_PAZAB_DEV_HANDOVER.md](docs/20260804_0227_PAZAB_DEV_HANDOVER.md) 참조.

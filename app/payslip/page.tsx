@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
+import { calcWeeklyHolidayPay, getOvertimePremiumMultiplier } from "@/lib/utils";
 import PayslipOfficialForm, { PayslipFormData } from "@/components/PayslipOfficialForm";
 
 function PayslipContent() {
@@ -50,6 +51,7 @@ function PayslipContent() {
   const [nationalPension, setNationalPension] = useState(0);
   const [contractInsurances, setContractInsurances] = useState<{ insPension: boolean; insHealth: boolean; insEmp: boolean } | null>(null);
   const [contractData, setContractData] = useState<any>(null);
+  const [is5OrMore, setIs5OrMore] = useState(true);
   const [expandAttendance, setExpandAttendance] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
@@ -139,6 +141,11 @@ function PayslipContent() {
       setContractData(contract?.contract_data || null);
       setAttendance(data.attendance_data || []);
       setCalcType(data.health_insurance > 0 || data.national_pension > 0 || (data.income_tax === 0 && data.health_insurance === 0) ? "regular" : "daily");
+
+      if (m.employer_profile_id) {
+        const { data: ep } = await supabase.from("employer_profiles").select("is_5_or_more_employees").eq("id", m.employer_profile_id).maybeSingle();
+        setIs5OrMore(ep?.is_5_or_more_employees !== false);
+      }
     }
   }
 
@@ -191,6 +198,11 @@ function PayslipContent() {
           insHealth: cd.insHealth !== false,
           insEmp: cd.insEmp !== false,
         });
+      }
+
+      if (m.employer_profile_id) {
+        const { data: ep } = await supabase.from("employer_profiles").select("is_5_or_more_employees").eq("id", m.employer_profile_id).maybeSingle();
+        setIs5OrMore(ep?.is_5_or_more_employees !== false);
       }
 
       // year/month 클로저 문제 방지 - 현재 날짜로 직접 계산
@@ -270,26 +282,25 @@ function PayslipContent() {
         }
       })();
 
+  // 연장 가산수당(1.5배)은 상시근로자 5인 이상 사업장에만 법적 의무 — 5인 미만이면 가산 없이 통상시급만
+  const overtimeMultiplier = getOvertimePremiumMultiplier(is5OrMore);
+  const hourlyRateForWeeklyPay = wageType === "monthly" ? wage / 209 : wageType === "daily" ? (contractHours > 0 ? wage / contractHours : 0) : wage;
+
   // 승인 전까지는 계산된 값을 화면엔 보여주되(참고용) 실제 지급액엔 반영 안 함
-  const pendingOvertimePay = (() => {
-    if (wageType === "monthly") {
-      const hourlyEquiv = wage / 209;
-      return Math.round(overtimeHours * hourlyEquiv * 1.5);
-    } else if (wageType === "daily") {
-      const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
-      return Math.round(overtimeHours * hourlyEquiv * 1.5);
-    } else {
-      return Math.round(overtimeHours * wage * 1.5);
-    }
-  })();
+  const pendingOvertimePay = Math.round(overtimeHours * hourlyRateForWeeklyPay * overtimeMultiplier);
 
   const overtimePay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
     ? (existingPayslip.overtime_pay ?? 0)
     : (overtimeApproved ? pendingOvertimePay : 0);
 
+  // 주휴수당(근로기준법 제55조) — 계약서에서 시급에 이미 포함했다고 선언했으면 0
+  const weeklyHolidayPay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
+    ? (existingPayslip.weekly_holiday_pay ?? 0)
+    : calcWeeklyHolidayPay(attendance, contractHours, hourlyRateForWeeklyPay, !!contractData?.wageIncludesWeeklyPay);
+
   const totalPay = existingPayslip && existingPayslip.year === year && existingPayslip.month === month
     ? (existingPayslip.total_pay ?? 0)
-    : (basePay + overtimePay);
+    : (basePay + overtimePay + weeklyHolidayPay);
 
   // 1. 계산 의존성 useEffect: 계산 인풋이 바뀔 때 세금/공제 금액 기본 계산
   useEffect(() => {
@@ -316,7 +327,7 @@ function PayslipContent() {
         const dailyHours = a.actual_hours || contractHours;
         const dailyOvertime = Math.max(0, dailyHours - contractHours);
         const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
-        const dailyPay = Math.round(wage + dailyOvertime * hourlyEquiv * 1.5);
+        const dailyPay = Math.round(wage + dailyOvertime * hourlyEquiv * overtimeMultiplier);
         const tax = calcDailyWorkerTax(dailyPay);
         calcInc += tax.incomeTax;
         calcLoc += tax.localTax;
@@ -356,7 +367,7 @@ function PayslipContent() {
       setIncomeTax(0);
       setLocalTax(0);
     }
-  }, [totalPay, calcType, taxRates, year, month, existingPayslip, workDays.length, totalHours, contractInsurances, wage, contractHours]);
+  }, [totalPay, calcType, taxRates, year, month, existingPayslip, workDays.length, totalHours, contractInsurances, wage, contractHours, overtimeMultiplier]);
 
   // 실시간으로 체크 상태와 편집된 수치를 연동해 합계 산출
   const currentIncomeTax = enableIncomeTax ? incomeTax : 0;
@@ -394,6 +405,7 @@ function PayslipContent() {
       overtime_hours: overtimeHours,
       base_pay: basePay,
       overtime_pay: overtimePay,
+      weekly_holiday_pay: weeklyHolidayPay,
       total_pay: totalPay,
       work_days: workDays.length,
       attendance_data: attendance,
@@ -491,10 +503,15 @@ function PayslipContent() {
         label: "초과근무수당",
         amount: overtimePay,
         method: wageType === "monthly"
-          ? `시급환산 ${Math.round(wage / 209).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5`
+          ? `시급환산 ${Math.round(wage / 209).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × ${overtimeMultiplier}${!is5OrMore ? " (5인 미만 사업장, 가산 없음)" : ""}`
           : wageType === "daily"
-          ? `시급환산 ${Math.round(contractHours > 0 ? wage / contractHours : 0).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5`
-          : `${overtimeHours.toFixed(1)}h × ${wage.toLocaleString()}원 × 1.5`,
+          ? `시급환산 ${Math.round(contractHours > 0 ? wage / contractHours : 0).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × ${overtimeMultiplier}${!is5OrMore ? " (5인 미만 사업장, 가산 없음)" : ""}`
+          : `${overtimeHours.toFixed(1)}h × ${wage.toLocaleString()}원 × ${overtimeMultiplier}${!is5OrMore ? " (5인 미만 사업장, 가산 없음)" : ""}`,
+      }] : []),
+      ...(weeklyHolidayPay > 0 ? [{
+        label: "주휴수당",
+        amount: weeklyHolidayPay,
+        method: "주 15시간 이상·개근 주(週) 기준, (주 실근로시간 ÷ 40) × 8h × 시급",
       }] : []),
     ],
     totalPay,
@@ -631,11 +648,15 @@ function PayslipContent() {
               },
               ...(overtimePay > 0 ? [{
                 label: wageType === "monthly"
-                  ? `초과수당 (시급환산 ${Math.round(wage / 209).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5)`
+                  ? `초과수당 (시급환산 ${Math.round(wage / 209).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × ${overtimeMultiplier}${!is5OrMore ? ", 5인미만" : ""})`
                   : wageType === "daily"
-                  ? `초과수당 (시급환산 ${Math.round(contractHours > 0 ? wage / contractHours : 0).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × 1.5)`
-                  : `초과수당 (${overtimeHours.toFixed(1)}h × ${wage.toLocaleString()}원 × 1.5)`,
+                  ? `초과수당 (시급환산 ${Math.round(contractHours > 0 ? wage / contractHours : 0).toLocaleString()}원 × ${overtimeHours.toFixed(1)}h × ${overtimeMultiplier}${!is5OrMore ? ", 5인미만" : ""})`
+                  : `초과수당 (${overtimeHours.toFixed(1)}h × ${wage.toLocaleString()}원 × ${overtimeMultiplier}${!is5OrMore ? ", 5인미만" : ""})`,
                 value: `${overtimePay.toLocaleString()}원`
+              }] : []),
+              ...(weeklyHolidayPay > 0 ? [{
+                label: "주휴수당 (주 15시간 이상·개근)",
+                value: `${weeklyHolidayPay.toLocaleString()}원`
               }] : []),
             ].map(r => (
               <div key={r.label} style={{ display:"flex", justifyContent:"space-between" }}>

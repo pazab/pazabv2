@@ -139,11 +139,22 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
     }
 
     // 5) 내 동네/Tier 기준 주변 대타 공고 로드
-    const { data: openPostings } = await supabase
+    const { data: openPostingsRaw } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, lat, lng, escalation_stage, allow_new")
+      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, lat, lng, escalation_stage, allow_new, expires_at")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
+
+    // 근무 시작 시각(expires_at)이 지난 공고는 크론 없이 조회 시점에 만료 처리 — 응답자 없이 방치된 공고가
+    // 목록에 영구히 남는 걸 막는다. status 갱신은 결과를 기다리지 않고 백그라운드로만 반영(fire-and-forget).
+    const nowIso = new Date().toISOString();
+    const expiredIds = (openPostingsRaw || [])
+      .filter((row: { expires_at: string | null }) => row.expires_at && row.expires_at < nowIso)
+      .map((row: { id: string }) => row.id);
+    if (expiredIds.length > 0) {
+      supabase.from("daeta_postings").update({ status: "expired" }).in("id", expiredIds);
+    }
+    const openPostings = (openPostingsRaw || []).filter((row: { expires_at: string | null }) => !row.expires_at || row.expires_at >= nowIso);
 
     const visible = (openPostings || []).filter((row: { escalation_stage: number; allow_new: boolean }) => {
       const stage = row.escalation_stage || 1;

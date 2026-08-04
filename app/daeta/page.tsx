@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
@@ -70,8 +70,10 @@ async function getDbBase(userId: string): Promise<{ lat: number; lng: number; so
   return null;
 }
 
-export default function DaetaPage() {
+function DaetaPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const focusMatchId = searchParams.get("matchId") || undefined;
 
   // SOS 홈 우선 구조 (DESIGN_PLAN.md P1): 로그인 유저는 역할별 홈, 카드덱은 "직접 고르기" 보조 경로
   const [view, setView] = useState<"boot" | "home" | "deck">("boot");
@@ -89,10 +91,15 @@ export default function DaetaPage() {
   const [isEmployer, setIsEmployer] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(searchParams.get("history") === "1");
   const [userType, setUserType] = useState<string>("worker");
   const { showToast, ToastUI } = useToast();
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+
+  // 채팅방의 "대타 관리하기" 링크(?history=1&matchId=)로 들어온 경우 히스토리 화면을 바로 염
+  useEffect(() => {
+    if (searchParams.get("history") === "1") setShowHistory(true);
+  }, [searchParams]);
 
   // New states for real-time Daeta matching & editing
   const [activePosting, setActivePosting] = useState<any | null>(null);
@@ -355,14 +362,21 @@ export default function DaetaPage() {
     // 사장님인 경우 가장 최근 등록한 pending 대타 공고의 필수 자격 요건 조회
     let reqCreds: any[] = [];
     if (checkIsEmployer && checkUserId) {
-      const { data: posting } = await supabase
+      const { data: candidatePostings } = await supabase
         .from("daeta_postings")
         .select("*")
         .eq("user_id", checkUserId)
         .eq("status", "pending")
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(5);
+
+      // 근무 시작 시각(expires_at)이 지났는데 방치된 공고는 크론 없이 조회 시점에 만료 처리
+      const nowIso = new Date().toISOString();
+      const expiredIds = (candidatePostings || []).filter(p => p.expires_at && p.expires_at < nowIso).map(p => p.id);
+      if (expiredIds.length > 0) {
+        supabase.from("daeta_postings").update({ status: "expired" }).in("id", expiredIds);
+      }
+      const posting = (candidatePostings || []).find(p => !p.expires_at || p.expires_at >= nowIso) || null;
       if (posting) {
         setActivePosting(posting);
         if (posting.required_credentials) {
@@ -488,6 +502,21 @@ export default function DaetaPage() {
       <style>{`@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }`}</style>
     </div>
   );
+
+  // ── 대타 기록/관리 (채팅방 "대타 관리하기" 딥링크 등) — view가 "home"으로 전환되기 전에 먼저 체크해야
+  // 링크로 들어와도 SOS 홈에 밀리지 않고 실제로 이 화면이 뜬다.
+  if (showHistory && currentUserId) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 500, overflowY: "auto" }}>
+        <DaetaHistoryView
+          userId={currentUserId}
+          userType={userType as any}
+          onBack={() => setShowHistory(false)}
+          focusMatchId={focusMatchId}
+        />
+      </div>
+    );
+  }
 
   // ── 단일 통합 대타 허브 홈 ──
   if (view === "home" && currentUserId) {
@@ -653,19 +682,6 @@ export default function DaetaPage() {
     transition: animDir ? "transform 0.28s cubic-bezier(0.4,0,0.2,1)" : "none",
     opacity: animDir ? 0 : 1,
   };
-
-  // ── 피드 ──
-  if (showHistory && currentUserId) {
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 500, overflowY: "auto" }}>
-        <DaetaHistoryView
-          userId={currentUserId}
-          userType={userType as any}
-          onBack={() => setShowHistory(false)}
-        />
-      </div>
-    );
-  }
 
   return (
     // PC에서 폰 비율로 중앙 정렬, 모바일에서 full-screen
@@ -1235,5 +1251,13 @@ export default function DaetaPage() {
       <style>{`@keyframes bounce { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(6px)} }`}</style>
     </div>
     </div>
+  );
+}
+
+export default function DaetaPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}><p style={{ color: "var(--text-muted)" }}>로딩 중...</p></div>}>
+      <DaetaPageContent />
+    </Suspense>
   );
 }

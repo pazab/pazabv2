@@ -8,7 +8,7 @@ import InviteBottomSheet from "@/components/InviteBottomSheet";
 import StoreRegisterModal from "@/components/StoreRegisterModal";
 import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
-import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX } from "@/lib/utils";
+import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX, getBreakMinutesForDate } from "@/lib/utils";
 import { sendPushNotification } from "@/lib/usePush";
 import { cardStyle, cardInnerStyle, cardGradientStyle, btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
@@ -242,7 +242,14 @@ function CheckInButton({ member, userId, onRefresh }: { member: any; userId: str
 
     const checkIn = new Date(todayAtt.check_in);
     const checkOut = new Date(checkOutTime);
-    const diffHours = Math.round((checkOut.getTime() - checkIn.getTime()) / 36000) / 100;
+    const { data: memberContracts } = await supabase
+      .from("contracts")
+      .select("status, contract_data")
+      .eq("team_member_id", member.id)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false });
+    const breakMinutes = getBreakMinutesForDate(memberContracts, today);
+    const diffHours = Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime() - breakMinutes * 60 * 1000) / 36000) / 100);
 
     // 조퇴 자동 판단
     let status = todayAtt.status;
@@ -1612,7 +1619,7 @@ function MyTeamPageContent() {
     // 모든 팀원 로드 (employer_profile_id 포함)
     const { data } = await supabase.from("team_members")
       .select(`id, worker_id, employer_id, employer_profile_id, hire_date, status, wage, work_days, work_hours, member_role, contract_status,
-        users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, email, trust_score)`)
+        users!team_members_worker_id_fkey (nickname, real_name, avatar_url, worker_result, email, trust_score)`)
       .eq("employer_id", uid).eq("status", "active")
       .order("hire_date", { ascending: false });
     if (!data) return;
@@ -3273,6 +3280,11 @@ function MyTeamPageContent() {
                                 <div style={{ flex:1, minWidth:0 }}>
                                   <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:2 }}>
                                     <span style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{name}</span>
+                                    {m.worker?.real_name ? (
+                                      m.worker.real_name !== name && <span style={{ fontSize:11, color:"var(--text-muted)" }}>({m.worker.real_name})</span>
+                                    ) : (
+                                      <span style={{ fontSize:9, background:"rgba(251,146,60,0.2)", color:"#fb923c", borderRadius:5, padding:"1px 5px", fontWeight:700 }}>실명 미등록</span>
+                                    )}
                                     {m.member_role === "manager" && <span style={{ fontSize:10, background:"#f59e0b20", color:"#f59e0b", borderRadius:5, padding:"1px 5px", fontWeight:700 }}>매니저</span>}
                                     {m.worker?.trust_score != null && (() => { const g = getTrustGrade(m.worker.trust_score); return <span style={{ fontSize:10, color:g.color, fontWeight:700 }}>{g.emoji}</span>; })()}
                                   </div>

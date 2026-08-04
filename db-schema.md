@@ -22,7 +22,7 @@
 | bot_chat_logs | ✅ 사용 중 | AI 상담 로그 |
 | chats | ✅ 사용 중 | 실제 채팅 테이블 |
 | contracts | ✅ 사용 중 | |
-| daeta_postings | ✅ 사용 중 | 긴급 대타 공고 |
+| daeta_postings | ✅ 사용 중 | 긴급 대타 공고. `status`: 'pending'\|'matched'(매칭 확정, 수정·재취소 불가)\|'expired'(응답 없이 근무시작시각 경과, 조회 시점에 자동 처리)\|'completed'\|'cancelled' |
 | employer_profiles | ✅ 사용 중 | 공고 레거시 컬럼 DROP 완료 |
 | invite_codes | ✅ 사용 중 | |
 | job_categories | ✅ 사용 중 | 마스터 테이블 |
@@ -104,6 +104,7 @@
 | bot_knowledge | text | YES | | |
 | bot_interview_done | boolean | YES | false | |
 | bot_last_checked_at | timestamptz | YES | | |
+| is_5_or_more_employees | boolean | YES | true | ✅ 상시근로자 5인 이상 여부 — 연장/야간 가산수당(근로기준법 제56조) 적용 대상 판정용. 미설정(null)은 안전하게 5인 이상으로 간주 |
 
 > 공고 레거시 컬럼 DROP 완료: `job_status`, `job_type`, `wage`, `wage_negotiable`, `work_days`, `days_negotiable`, `work_hours`, `work_start_hour`, `work_end_hour`, `work_start_date`, `work_end_date`, `expires_at`, `is_urgent`, `is_long_term`, `meal_provided`, `parking`, `staff_count`, `tags`, `required_credentials`, `hexaco_data`, `bio5_data`, `analyzed_mbti`, `tagline`, `best_matches`, `worst_matches`, `caution`, `employer_bot_knowledge`
 
@@ -223,6 +224,7 @@
 | employer_result | jsonb | YES | | ✅ |
 | trust_score | integer | YES | 50 | ✅ SOT |
 | grade | text | YES | 'bronze' | ✅ SOT |
+| daeta_cancel_suspended_until | timestamptz | YES | | ✅ 확정된 대타 취소 페널티 — 이 시각까지 대타 등록(사장님)/지원(알바생) 제한 |
 | is_active | boolean | YES | true | |
 | profile_completed | boolean | YES | false | |
 | ~~push_token~~ | text | YES | | 🗑️ DROP 예정 (레거시) |
@@ -321,7 +323,8 @@
 | work_days | integer | YES | | |
 | overtime_hours | numeric | YES | | |
 | base_pay/overtime_pay | integer | YES | | |
-| total_pay | integer | YES | | ✅ SOT |
+| weekly_holiday_pay | integer | YES | 0 | ✅ 주휴수당(근로기준법 제55조), 계약서 wageIncludesWeeklyPay 선언 시 0 |
+| total_pay | integer | YES | | ✅ SOT (base_pay + overtime_pay + weekly_holiday_pay) |
 | deductions | integer | YES | 0 | |
 | income_tax/local_tax | integer | YES | 0 | |
 | health_insurance/employment_insurance/national_pension | integer | YES | 0 | |

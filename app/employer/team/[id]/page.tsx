@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
-import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX } from "@/lib/utils";
+import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX, getBreakMinutesForDate, calcWeeklyHolidayPay, getOvertimePremiumMultiplier } from "@/lib/utils";
 import DateWheelPicker from "@/components/DateWheelPicker";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 import { sendPushNotification } from "@/lib/usePush";
@@ -65,6 +65,7 @@ function contractHoursRange(workHours: string | null | undefined): { start: stri
     end: roundToHalfHour(parseInt(m[3]), parseInt(m[4])),
   };
 }
+
 
 // ─────────────────────────────────────────────
 // 근태 이력 타임라인 (아코디언, 기본 접힘)
@@ -315,6 +316,7 @@ export default function TeamMemberPage() {
   const [member, setMember] = useState<any>(null);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
+  const [is5OrMore, setIs5OrMore] = useState(true);
   const [taxRates, setTaxRates] = useState<any>(null);
   const [showDeductionDetail, setShowDeductionDetail] = useState(false);
 
@@ -324,6 +326,7 @@ export default function TeamMemberPage() {
   const [docsOpen, setDocsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(true);
   const [showResignModal, setShowResignModal] = useState(false);
+  const [severanceInfo, setSeveranceInfo] = useState<{ eligible: boolean; reason: string; days?: number; avgDailyWage?: number; amount?: number } | null>(null);
   const [editHireDate, setEditHireDate] = useState(false);
   const [hireDateInput, setHireDateInput] = useState("");
 
@@ -349,6 +352,7 @@ export default function TeamMemberPage() {
   const [attNote, setAttNote] = useState("");
   const [attStart, setAttStart] = useState<string>("");
   const [attEnd, setAttEnd] = useState<string>("");
+  const [attBreakMin, setAttBreakMin] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   const [attLogRefreshKey, setAttLogRefreshKey] = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -401,6 +405,54 @@ export default function TeamMemberPage() {
     if (member?.id) loadAttendance(member.id, viewYear, viewMonth);
   }, [viewYear, viewMonth]);
 
+  // 퇴직 확인 모달을 열 때 퇴직금(근로기준법 제34조) 대상 여부·예상액을 계산해서 고지 — 실제 지급/송금은 하지 않음
+  useEffect(() => {
+    if (!showResignModal || !member) return;
+    setSeveranceInfo(null);
+    (async () => {
+      const hireDate = member.hire_date;
+      if (!hireDate) {
+        setSeveranceInfo({ eligible: false, reason: "입사일 정보가 없어 판정할 수 없어요" });
+        return;
+      }
+      const days = Math.floor((Date.now() - new Date(hireDate).getTime()) / (24 * 60 * 60 * 1000));
+      if (days < 365) {
+        setSeveranceInfo({ eligible: false, reason: `계속근로기간 ${days}일 — 1년(365일) 미만이라 대상 아님`, days });
+        return;
+      }
+      const workDaysCount = member.work_days ? member.work_days.split(/[·,\s]+/).filter(Boolean).length : 5;
+      const weeklyHoursApprox = (member.work_hours ? parseFloat(member.work_hours) || 0 : 8) * workDaysCount;
+      if (weeklyHoursApprox < 15) {
+        setSeveranceInfo({ eligible: false, reason: "주 소정근로시간 15시간 미만이라 대상 아님", days });
+        return;
+      }
+      const { data: recentSlips } = await supabase.from("payslips")
+        .select("total_pay, pay_period_start, pay_period_end")
+        .eq("team_member_id", member.id)
+        .order("year", { ascending: false })
+        .order("month", { ascending: false })
+        .limit(3);
+      if (!recentSlips || recentSlips.length === 0) {
+        setSeveranceInfo({ eligible: true, reason: "발행된 명세서가 없어 평균임금을 자동 계산할 수 없어요 — 직접 계산 필요", days });
+        return;
+      }
+      let totalPay3m = 0, totalDays3m = 0;
+      recentSlips.forEach((s: any) => {
+        totalPay3m += s.total_pay || 0;
+        if (s.pay_period_start && s.pay_period_end) {
+          totalDays3m += Math.round((new Date(s.pay_period_end).getTime() - new Date(s.pay_period_start).getTime()) / (24 * 60 * 60 * 1000)) + 1;
+        }
+      });
+      if (totalDays3m === 0) {
+        setSeveranceInfo({ eligible: true, reason: "최근 명세서에 정산기간 정보가 없어 평균임금을 자동 계산할 수 없어요 — 직접 계산 필요", days });
+        return;
+      }
+      const avgDailyWage = totalPay3m / totalDays3m;
+      const amount = Math.round(avgDailyWage * 30 * (days / 365));
+      setSeveranceInfo({ eligible: true, reason: "", days, avgDailyWage: Math.round(avgDailyWage), amount });
+    })();
+  }, [showResignModal, member?.id]);
+
   // Realtime 출퇴근 구독
   useEffect(() => {
     if (!memberId) return;
@@ -421,7 +473,7 @@ export default function TeamMemberPage() {
 
   async function loadMember() {
     const { data } = await supabase.from("team_members")
-      .select(`*, users!team_members_worker_id_fkey (nickname, avatar_url, worker_result, phone, email, trust_score, birth_date, address, address_detail)`)
+      .select(`*, users!team_members_worker_id_fkey (nickname, real_name, avatar_url, worker_result, phone, email, trust_score, birth_date, address, address_detail)`)
       .eq("id", memberId).single();
     if (data) {
       let wage = data.wage;
@@ -477,12 +529,13 @@ export default function TeamMemberPage() {
       // 업종 기반 보건증 필수 여부
       if (data.employer_profile_id) {
         const { data: ep } = await supabase.from("employer_profiles")
-          .select("business_type").eq("id", data.employer_profile_id).maybeSingle();
+          .select("business_type, is_5_or_more_employees").eq("id", data.employer_profile_id).maybeSingle();
         if (ep?.business_type) {
           const creds = await fetchCredentialsWithFallback();
           const hasMandatoryHealthCert = creds.some(c => c.category_name === ep.business_type && c.name === "보건증" && c.is_mandatory_by_law);
           setNeedsHealthCert(hasMandatoryHealthCert);
         }
+        setIs5OrMore(ep?.is_5_or_more_employees !== false);
       }
 
       loadAttendance(data.id);
@@ -700,6 +753,7 @@ export default function TeamMemberPage() {
         const [eh, em] = effectiveEnd.split(":").map(Number);
         let mins = (eh * 60 + em) - (sh * 60 + sm);
         if (crossesMidnight) mins += 1440;
+        mins -= attBreakMin;
         return mins > 0 ? Math.round(mins / 60 * 10) / 10 : null;
       }
       return null;
@@ -851,25 +905,27 @@ export default function TeamMemberPage() {
   const wage = member?.wage || 0;
   const wageType: string = member?.wage_type || "hourly";
   const workedDays = thisMonthStats.normal + thisMonthStats.late + thisMonthStats.early_leave;
+  const estimateCd = (contracts.find(c => c.status === "active") || contracts[0])?.contract_data;
+  const overtimeMultiplier = getOvertimePremiumMultiplier(is5OrMore);
+  const hourlyRateForEstimate = wageType === "monthly" ? wage / 209 : wageType === "daily" ? (contractHours > 0 ? wage / contractHours : 0) : wage;
+  const weeklyHolidayPayEstimate = calcWeeklyHolidayPay(monthAtt, contractHours, hourlyRateForEstimate, !!estimateCd?.wageIncludesWeeklyPay);
   const estimatedPay = (() => {
     if (wageType === "monthly") {
-      // 월급: 예정 출근일 기준 일할 계산 + 초과근무 시 시급 환산(월급/209h) × 1.5
+      // 월급: 예정 출근일 기준 일할 계산 + 초과근무 시 시급 환산(월급/209h) × 가산배율(5인미만이면 1)
       const dailyRate = scheduledDaysInMonth > 0 ? wage / scheduledDaysInMonth : 0;
       const base = Math.round(dailyRate * workedDays);
-      const hourlyEquiv = wage / 209;
-      const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
-      return base + overtime;
+      const overtime = Math.round(overtimeHours * hourlyRateForEstimate * overtimeMultiplier);
+      return base + overtime + weeklyHolidayPayEstimate;
     } else if (wageType === "daily") {
-      // 일급: 출근일 × 일급 + 초과근무 × (일급/contractHours) × 1.5
+      // 일급: 출근일 × 일급 + 초과근무 × (일급/contractHours) × 가산배율
       const base = workedDays * wage;
-      const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
-      const overtime = Math.round(overtimeHours * hourlyEquiv * 1.5);
-      return base + overtime;
+      const overtime = Math.round(overtimeHours * hourlyRateForEstimate * overtimeMultiplier);
+      return base + overtime + weeklyHolidayPayEstimate;
     } else {
       // 시급 (hourly): 기존 계산
       const regularPay = Math.min(totalActualHours, expectedHours) * wage;
-      const overtimePay = overtimeHours * wage * 1.5;
-      return Math.round(regularPay + overtimePay);
+      const overtimePay = overtimeHours * wage * overtimeMultiplier;
+      return Math.round(regularPay + overtimePay + weeklyHolidayPayEstimate);
     }
   })();
 
@@ -985,7 +1041,7 @@ export default function TeamMemberPage() {
  
           {/* 근무 조건 3열 */}
           <div style={{ padding: "10px 16px 12px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
               {[
                 { label: wageType === "monthly" ? "월급" : wageType === "daily" ? "일급" : "시급", value: member.wage ? `${member.wage.toLocaleString()}원` : "미정" },
                 { label: "근무요일", value: member.work_days || "미정" },
@@ -1008,6 +1064,17 @@ export default function TeamMemberPage() {
                       return `${num}h`;
                     }
                     return member.work_hours;
+                  })()
+                },
+                {
+                  label: "휴게시간",
+                  value: (() => {
+                    const latestContract = contracts.find(c => c.status === "active") || contracts[0];
+                    const cd = latestContract?.contract_data;
+                    if (!cd) return "미정";
+                    if (cd.noBreak) return "없음";
+                    const b = parseInt(String(cd.breakTime ?? "0"), 10);
+                    return (!b || isNaN(b)) ? "없음" : `${b}분`;
                   })()
                 },
               ].map(r => (
@@ -1104,6 +1171,7 @@ export default function TeamMemberPage() {
                 const mergedPhone = member.worker?.phone || cd.workerPhone || "";
                 const mergedAddr = [member.worker?.address, member.worker?.address_detail].filter(Boolean).join(" ")
                   || [cd.workerAddr, cd.workerAddrDetail].filter(Boolean).join(" ");
+                const mergedName = member.worker?.real_name || cd.worker || "";
 
                 return (
                   <div style={{ background: "var(--surface)", borderRadius: 14, padding: 14, border: "1px solid var(--border)" }}>
@@ -1192,6 +1260,7 @@ export default function TeamMemberPage() {
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {[
+                          { label: "성명", value: mergedName || null },
                           { label: "생년월일", value: mergedBirth ? (revealPersonalInfo ? mergedBirth : ageLabel(mergedBirth)) : null },
                           { label: "연락처", value: mergedPhone ? (revealPersonalInfo ? mergedPhone : maskPhone(mergedPhone)) : null },
                           { label: "주소", value: mergedAddr ? (revealPersonalInfo ? mergedAddr : maskAddress(mergedAddr)) : null },
@@ -1409,6 +1478,7 @@ export default function TeamMemberPage() {
                       setAttEnd(att?.check_out
                         ? new Date(att.check_out).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })
                         : (isTodayDate && !pastScheduledEnd ? "" : (!timeIrrelevant ? derivedEnd : "")));
+                      setAttBreakMin(getBreakMinutesForDate(contracts, dateStr));
                       setShowAttModal(true);
                     }}
                     style={{
@@ -1527,7 +1597,7 @@ export default function TeamMemberPage() {
                                 setInlineSaving(true);
                                 const [sh, sm] = inlineStart.split(":").map(Number);
                                 const [eh, em] = inlineEnd.split(":").map(Number);
-                                const mins = (eh * 60 + em) - (sh * 60 + sm);
+                                const mins = (eh * 60 + em) - (sh * 60 + sm) - getBreakMinutesForDate(contracts, att.work_date);
                                 const actualHours = mins > 0 ? Math.round(mins / 60 * 10) / 10 : null;
                                 await supabase.from("attendance").upsert({
                                   team_member_id: member.id,
@@ -2130,11 +2200,21 @@ export default function TeamMemberPage() {
                     <input type="time" value={attEnd} onChange={e => setAttEnd(e.target.value)} style={timeInputStyle} />
                   </div>
                   {!attEnd && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "6px 0 0" }}>퇴근시간을 비워두면 알바생이 앱에서 직접 퇴근 처리해요</p>}
+                  {attStart && attEnd && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>휴게시간(분)</span>
+                      <input type="number" inputMode="numeric" value={attBreakMin}
+                        onChange={e => setAttBreakMin(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontSize: 13, outline: "none" }} />
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>계약서 기준 자동 반영 — 필요시 수정</span>
+                    </div>
+                  )}
                   {attStart && attEnd && (() => {
                     const [sh, sm] = attStart.split(":").map(Number);
                     const [eh, em] = attEnd.split(":").map(Number);
                     let mins = (eh * 60 + em) - (sh * 60 + sm);
                     if (attEnd < attStart) mins += 1440; // 자정 넘김
+                    mins -= attBreakMin;
                     if (mins <= 0) return null;
                     const hours = Math.round(mins / 60 * 10) / 10;
                     const overtime = Math.max(0, hours - (contractHours || 0));
@@ -2282,6 +2362,34 @@ export default function TeamMemberPage() {
                 근태·계약서 이력은 보존되며<br />팀원 목록에서 제외돼요
               </p>
             </div>
+
+            {severanceInfo && (
+              <div style={{
+                background: severanceInfo.eligible ? "rgba(124,58,237,0.1)" : "var(--surface2)",
+                border: `1px solid ${severanceInfo.eligible ? "rgba(124,58,237,0.4)" : "var(--border)"}`,
+                borderRadius: 12, padding: "10px 14px", marginBottom: 16
+              }}>
+                {severanceInfo.eligible ? (
+                  <>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: "#c4b5fd", margin: "0 0 4px" }}>
+                      💰 퇴직금 지급 대상이에요 (근속 {severanceInfo.days}일)
+                    </p>
+                    {severanceInfo.amount != null ? (
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
+                        예상 퇴직금 <strong style={{ color: "var(--text)" }}>{severanceInfo.amount.toLocaleString()}원</strong> (최근 3개월 평균임금 기준 참고치 — 실제 지급은 사장님이 직접 계좌이체로 진행해주세요, 퇴직일로부터 14일 이내 지급 의무)
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>{severanceInfo.reason}</p>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
+                    ℹ️ 퇴직금 대상 아님 — {severanceInfo.reason}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setShowResignModal(false)}
                 style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, fontSize: 14, color: "var(--text-muted)", cursor: "pointer" }}>

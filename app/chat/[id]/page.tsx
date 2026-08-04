@@ -39,6 +39,7 @@ export default function ChatRoomPage() {
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [revisionReason, setRevisionReason] = useState("");
   const [contractStatus, setContractStatus] = useState<"none"|"pending"|"done"|"cancelled">("none");
+  const [daetaContract, setDaetaContract] = useState<any>(null);
   const [leaveStep, setLeaveStep] = useState<"confirm" | "review">("confirm");
   const [quickReview, setQuickReview] = useState<"good" | "bad" | null>(null);
   const [quickReviewReason, setQuickReviewReason] = useState("");
@@ -103,6 +104,15 @@ export default function ChatRoomPage() {
     supabase.from("users").select("birth_date, phone, address, address_detail").eq("id", userId).maybeSingle()
       .then(({ data }) => setSignSelfInfo(data || { birth_date: null, phone: null, address: null, address_detail: null }));
   }, [showSignConfirm, userId]);
+
+  // 대타 지원발 매칭은 수락 시점에 이미 근로계약서가 자동 체결됨(app/api/lovecall/route.ts accept 처리) —
+  // 면접예약/채용제안 같은 일반 채용 절차를 또 거칠 필요가 없으므로 요약 배너용으로 그 계약서를 조회
+  useEffect(() => {
+    if (!match?.daeta_posting_id || !matchId) { setDaetaContract(null); return; }
+    supabase.from("contracts").select("*").eq("match_id", matchId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => setDaetaContract(data));
+  }, [match?.daeta_posting_id, matchId]);
 
   useEffect(() => {
     let readPollIntervalId: any;
@@ -650,8 +660,12 @@ export default function ChatRoomPage() {
 
   const isEmployer = match?.employer_id === userId;
   isEmployerRef.current = isEmployer;
+  const isDaetaMatch = !!match?.daeta_posting_id;
 
   const getProgressBadge = (): { label: string; chip: CSSProperties } => {
+    if (isDaetaMatch && !["rejected", "failed", "cancelled"].includes(progressStatus)) {
+      return { label: "✅ 대타 확정", chip: chipSuccess };
+    }
     switch (progressStatus) {
       case "pending": return { label: "⏳ 수락대기", chip: mutedChip };
       case "rejected": return { label: "💔 거절됨", chip: chipDanger };
@@ -742,15 +756,15 @@ export default function ChatRoomPage() {
                   style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 15 }}>{muteNotif ? "🔔" : "🔕"}</span> {muteNotif ? "알림 켜기" : "알림 끄기"}
                 </button>
-                {/* 면접 예약/수정 (사장님 + accepted 상태만) */}
-                {isEmployer && progressStatus === "accepted" && (
+                {/* 면접 예약/수정 (사장님 + accepted 상태만) — 대타는 수락 시 이미 자동계약 완료라 면접 절차 자체가 불필요 */}
+                {!isDaetaMatch && isEmployer && progressStatus === "accepted" && (
                   <button onClick={() => { setShowMenu(false); setShowInterviewModal(true); }}
                     style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--warning)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 15 }}>📅</span> {hasInterview ? "면접 일정 수정" : "면접 예약하기"}
                   </button>
                 )}
                 {/* 면접 결과 처리 (interviewing 상태) */}
-                {progressStatus === "interviewing" && (<>
+                {!isDaetaMatch && progressStatus === "interviewing" && (<>
                   {isEmployer && (
                     <button onClick={() => { setShowMenu(false); handleInterviewResult("complete"); }}
                       style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--success)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
@@ -766,8 +780,8 @@ export default function ChatRoomPage() {
                     <span style={{ fontSize: 15 }}>🚫</span> 노쇼 신고
                   </button>
                 </>)}
-                {/* 채용 확정 (사장님 + accepted or interviewing만) */}
-                {isEmployer && ["accepted", "interviewing"].includes(progressStatus) && (
+                {/* 채용 확정 (사장님 + accepted or interviewing만) — 대타는 이미 계약 체결됨 */}
+                {!isDaetaMatch && isEmployer && ["accepted", "interviewing"].includes(progressStatus) && (
                   <button onClick={() => { setShowMenu(false); handleProgress("hire"); }}
                     style={{ width: "100%", background: "none", border: "none", padding: "13px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--success)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 15 }}>✅</span> 채용 제안 보내기
@@ -888,8 +902,8 @@ export default function ChatRoomPage() {
         </div>
       )}
 
-      {/* 채용 프로세스 액션 가이드 배너 (사장님용) */}
-      {isEmployer && (
+      {/* 채용 프로세스 액션 가이드 배너 (사장님용) — 대타 매칭은 이미 자동계약 완료라 별도 안내 배너로 대체 */}
+      {!isDaetaMatch && isEmployer && (
         <>
           {progressStatus === "accepted" && (
             <div style={{
@@ -1058,6 +1072,32 @@ export default function ChatRoomPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* 대타 확정 요약 배너 — 실제 상태변경 액션(취소/완료/노쇼)은 /daeta 히스토리 화면으로 위임.
+          채팅은 대화·상태 요약만, 신뢰점수·정산처럼 무거운 처리는 전용 화면에서 하는 게 맞아서 분리함 */}
+      {isDaetaMatch && !["rejected", "failed", "cancelled", "hired"].includes(progressStatus) && (
+        <div style={{
+          background: "var(--success-bg)",
+          borderBottom: "1px solid var(--success-border)",
+          padding: "12px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--success)" }}>✅ 대타 확정 — 자동계약 완료</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {daetaContract?.work_hours ? `근무: ${daetaContract.work_hours}` : "면접·채용 제안 없이 바로 근무 협의만 하면 돼요"}
+              {daetaContract?.wage ? ` · 시급 ${Number(daetaContract.wage).toLocaleString()}원` : ""}
+            </span>
+          </div>
+          <button onClick={() => router.push(`/daeta?history=1&matchId=${matchId}`)}
+            style={{ background: "var(--surface)", border: "1px solid var(--success-border)", borderRadius: 12, padding: "8px 14px", color: "var(--success)", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+            🗂 대타 관리하기 →
+          </button>
+        </div>
       )}
 
       {/* 채용 프로세스 액션 가이드 배너 (알바생용) */}

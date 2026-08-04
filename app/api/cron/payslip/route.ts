@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
+import { calcWeeklyHolidayPay, getOvertimePremiumMultiplier } from "@/lib/utils";
 
 // service_role 클라이언트 생성
 const getServiceClient = () =>
@@ -184,27 +185,41 @@ export async function GET(req: Request) {
       const totalHours = workDays.reduce((s, a) => s + (a.actual_hours || contractHours), 0);
       const overtimeHours = Math.max(0, totalHours - workDays.length * contractHours);
 
+      // 상시근로자 5인 이상 여부 (연장/야간 가산수당 의무 대상 판정) — 매장 프로필에 없으면(마이그레이션 전) 안전하게 5인 이상으로 간주
+      const { data: epRow } = await supabase.from("employer_profiles")
+        .select("is_5_or_more_employees")
+        .eq("id", m.employer_profile_id)
+        .maybeSingle();
+      const is5OrMore = epRow?.is_5_or_more_employees !== false;
+      const overtimeMultiplier = getOvertimePremiumMultiplier(is5OrMore);
+
       // 세전 급여 계산
       let basePay = 0;
       let overtimePay = 0;
+      let hourlyRateForWeeklyPay = 0;
 
       if (wageType === "monthly") {
         const workDaysStr = cd?.workDaysText || m.work_days || "";
         const scheduledDays = getScheduledDaysInMonth(calcYear, calcMonth, workDaysStr);
         const dailyRate = scheduledDays > 0 ? wage / scheduledDays : 0;
         basePay = Math.round(dailyRate * workDays.length);
-        overtimePay = Math.round(overtimeHours * (wage / 209) * 1.5);
+        hourlyRateForWeeklyPay = wage / 209;
+        overtimePay = Math.round(overtimeHours * hourlyRateForWeeklyPay * overtimeMultiplier);
       } else if (wageType === "daily") {
         basePay = Math.round(wage * workDays.length);
-        const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
-        overtimePay = Math.round(overtimeHours * hourlyEquiv * 1.5);
+        hourlyRateForWeeklyPay = contractHours > 0 ? wage / contractHours : 0;
+        overtimePay = Math.round(overtimeHours * hourlyRateForWeeklyPay * overtimeMultiplier);
       } else {
         // hourly
         basePay = Math.round((totalHours - overtimeHours) * wage);
-        overtimePay = Math.round(overtimeHours * wage * 1.5);
+        hourlyRateForWeeklyPay = wage;
+        overtimePay = Math.round(overtimeHours * wage * overtimeMultiplier);
       }
 
-      const totalPay = basePay + overtimePay;
+      // 주휴수당 (근로기준법 제55조) — 계약서에서 시급에 이미 포함했다고 선언했으면 0
+      const weeklyHolidayPay = calcWeeklyHolidayPay(attendance, contractHours, hourlyRateForWeeklyPay, !!cd?.wageIncludesWeeklyPay);
+
+      const totalPay = basePay + overtimePay + weeklyHolidayPay;
 
       // 공제액 및 실수령액 계산
       const calcType = wageType === "daily" ? "daily" : "regular";
@@ -221,7 +236,7 @@ export async function GET(req: Request) {
           const dailyHours = a.actual_hours || contractHours;
           const dailyOvertime = Math.max(0, dailyHours - contractHours);
           const hourlyEquiv = contractHours > 0 ? wage / contractHours : 0;
-          const dailyPay = Math.round(wage + dailyOvertime * hourlyEquiv * 1.5);
+          const dailyPay = Math.round(wage + dailyOvertime * hourlyEquiv * overtimeMultiplier);
           const tax = calcDailyWorkerTax(dailyPay);
           currentIncomeTax += tax.incomeTax;
           currentLocalTax += tax.localTax;
@@ -265,6 +280,7 @@ export async function GET(req: Request) {
         overtime_hours: overtimeHours,
         base_pay: basePay,
         overtime_pay: overtimePay,
+        weekly_holiday_pay: weeklyHolidayPay,
         total_pay: totalPay,
         work_days: workDays.length,
         attendance_data: attendance,

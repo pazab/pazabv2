@@ -136,6 +136,8 @@ function ContractContent() {
     hasParentConsent: true,
     breakStart: "12:00",
     breakEnd: "13:00",
+    is5OrMore: true,
+    wageIncludesWeeklyPay: false,
   });
 
   const errStyle = (empty: boolean) => empty && triedNext
@@ -261,14 +263,20 @@ function ContractContent() {
     const weekNight = nightH * weekDays;
     const weekOvertimeWarn = weekOvertime > 12; // 주 12시간 초과 경고
 
-    // 주휴수당 (주 15시간 이상 시 발생)
+    // 주휴수당 (주 15시간 이상 시 발생, 단 시급에 이미 포함해서 책정한 경우는 별도 가산 제외)
     const weekTotal = dailyH * weekDays;
-    const juhyu = weekTotal >= 15 ? Math.round((weekTotal / 40) * 8 * hourlyRate) : 0;
+    const juhyuEligible = weekTotal >= 15 && !f.wageIncludesWeeklyPay;
+    const juhyu = juhyuEligible ? Math.round((weekTotal / 40) * 8 * hourlyRate) : 0;
+
+    // 가산수당(연장 1.5배·야간 0.5배 가산분)은 상시근로자 5인 이상 사업장에만 법적 의무 발생.
+    // 5인 미만이면 가산 없이 통상시급만 지급하면 됨(연장·야간 시간 자체는 monthRegular에 이미 포함).
+    const premiumMultiplierOvertime = f.is5OrMore ? 1.5 : 1;
+    const premiumMultiplierNight = f.is5OrMore ? 0.5 : 0;
 
     // 월 환산 (4.345주)
     const monthRegular = Math.round(weekRegular * 4.345 * hourlyRate);
-    const monthOvertime = Math.round(weekOvertime * 4.345 * hourlyRate * 1.5);
-    const monthNight = Math.round(weekNight * 4.345 * hourlyRate * 0.5); // 야간 가산분만
+    const monthOvertime = Math.round(weekOvertime * 4.345 * hourlyRate * premiumMultiplierOvertime);
+    const monthNight = Math.round(weekNight * 4.345 * hourlyRate * premiumMultiplierNight); // 야간 가산분만
     const monthJuhyu = Math.round(juhyu * 4.345);
     const monthTotal = monthRegular + monthOvertime + monthNight + monthJuhyu;
 
@@ -276,7 +284,7 @@ function ContractContent() {
       hourlyRate: Math.round(hourlyRate),
       regularH, overtimeH, nightH,
       weekRegular, weekOvertime, weekTotal, weekOvertimeWarn,
-      juhyu: weekTotal >= 15,
+      juhyu: juhyuEligible,
       monthRegular, monthOvertime, monthNight, monthJuhyu, monthTotal,
     };
   })();
@@ -415,7 +423,7 @@ function ContractContent() {
       if (eps && eps.length > 0) {
         const { data: epsExt } = await supabase
           .from("employer_profiles")
-          .select("id, biz_reg_number, ceo_name, address, address_detail, biz_tel")
+          .select("id, biz_reg_number, ceo_name, address, address_detail, biz_tel, is_5_or_more_employees")
           .eq("user_id", user.id)
           .or("is_deleted.is.null,is_deleted.eq.false")
           .not("business_name", "is", null)
@@ -623,7 +631,7 @@ function ContractContent() {
     let epData = m.employer_profile_id ? myEps.find((e: any) => e.id === m.employer_profile_id) : null;
     if (!epData && m.employer_profile_id) {
       const { data } = await supabase.from("employer_profiles")
-        .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel")
+        .select("id, business_name, business_type, region, address, address_detail, biz_reg_number, ceo_name, biz_tel, is_5_or_more_employees")
         .eq("id", m.employer_profile_id).maybeSingle();
       epData = data;
     }
@@ -713,6 +721,7 @@ function ContractContent() {
       dailyHours: ws && we ? String(Math.round((parseInt(we) - parseInt(ws)) * 10) / 10) : "8",
       wage: ep?.wage ? Number(ep.wage).toLocaleString() : "",
       weeklyHoliday: defaultHoliday,
+      is5OrMore: ep?.is_5_or_more_employees !== false,
       contractDate: `${today.getFullYear()}년  ${String(today.getMonth() + 1).padStart(2, "0")}월  ${String(today.getDate()).padStart(2, "0")}일`,
     }));
   };
@@ -743,6 +752,7 @@ function ContractContent() {
       workerPhone: wu?.phone || p.workerPhone,
       workerAddr: p.workerAddr,
       workerAddrDetail: p.workerAddrDetail,
+      is5OrMore: ep?.is_5_or_more_employees !== false,
       contractDate: `${today.getFullYear()}년  ${String(today.getMonth() + 1).padStart(2, "0")}월  ${String(today.getDate()).padStart(2, "0")}일`,
     }));
   };
@@ -796,6 +806,12 @@ function ContractContent() {
         if (!f.jobDesc.trim()) return "담당업무를 입력해주세요.";
         if (f.workDaysMode === "check" && selectedDays.length === 0) return "근무 요일을 선택해주세요.";
         if (!f.workStart || !f.workEnd) return "출퇴근 시각을 입력해주세요.";
+        if (ct === "minor") {
+          const dailyH2 = parseFloat(String(f.dailyHours || "0")) || 0;
+          const weeklyH2 = parseFloat(String(f.weeklyHours || "0")) || 0;
+          if (dailyH2 > 7) return "근로기준법상 만 18세 미만 근로자는 1일 7시간을 초과해 근무할 수 없어요.";
+          if (weeklyH2 > 35) return "근로기준법상 만 18세 미만 근로자는 1주 35시간을 초과해 근무할 수 없어요.";
+        }
         return null;
       case 3: { // 임금
         const wageLabel = f.wageType === "day" ? "일급" : f.wageType === "month" ? "월급" : "시급";
@@ -881,24 +897,34 @@ function ContractContent() {
       if (selMatch?.employer_id) {
         await supabase.from("users").update({ phone: f.ceoPhone }).eq("id", selMatch.employer_id);
       }
-      if (selMatch?.worker_id && (f.worker || f.workerBirth || f.workerPhone || f.workerAddr)) {
-        const workerUpdate: Record<string, string | null> = {};
-        if (f.worker) workerUpdate.real_name = f.worker;
-        if (f.workerBirth) workerUpdate.birth_date = f.workerBirth.replace(/\.\s*/g, "-").replace(/-$/, "").trim();
-        if (f.workerPhone) workerUpdate.phone = f.workerPhone;
-        if (f.workerAddr) workerUpdate.address = f.workerAddr;
-        if (f.workerAddrDetail) workerUpdate.address_detail = f.workerAddrDetail;
-        await supabase.from("users").update(workerUpdate).eq("id", selMatch.worker_id);
+      if (selMatch?.worker_id && selMatch?.id && (f.worker || f.workerBirth || f.workerPhone || f.workerAddr)) {
+        // users 테이블 RLS는 본인 행만 쓰기 허용이라 사장님 세션에서 알바생 행을
+        // 직접 update하면 에러 없이 조용히 0건 처리됨 — 서버 라우트(서비스 롤) 경유
+        await fetch("/api/contract/sync-worker-info", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamMemberId: selMatch.id,
+            workerId: selMatch.worker_id,
+            real_name: f.worker || null,
+            birth_date: f.workerBirth ? f.workerBirth.replace(/\.\s*/g, "-").replace(/-$/, "").trim() : null,
+            phone: f.workerPhone || null,
+            address: f.workerAddr || null,
+            address_detail: f.workerAddrDetail || null,
+          }),
+        });
       }
       if (selEp?.id) {
         await supabase.from("employer_profiles").update({
           biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
           address: f.bizAddr, address_detail: f.bizAddrDetail, biz_tel: f.ceoPhone,
+          is_5_or_more_employees: f.is5OrMore,
         }).eq("id", selEp.id);
       } else if (selMatch?.employer_id) {
         await supabase.from("employer_profiles").update({
           biz_reg_number: f.bizRegNo, ceo_name: f.ceo,
           address: f.bizAddr, address_detail: f.bizAddrDetail, biz_tel: f.ceoPhone,
+          is_5_or_more_employees: f.is5OrMore,
         }).eq("user_id", selMatch.employer_id);
       }
 
@@ -1739,6 +1765,20 @@ function ContractContent() {
                       />
                     )}
                   </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>상시근로자 수</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {[{ v: true, label: "5인 이상" }, { v: false, label: "5인 미만" }].map(o => (
+                        <button key={String(o.v)} onClick={() => updateField("is5OrMore", o.v)}
+                          style={{ flex: 1, background: f.is5OrMore === o.v ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)", border: "none", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "6px 0 0", lineHeight: 1.6 }}>
+                      5인 미만 사업장은 연장·야간 가산수당(근로기준법 제56조) 적용 제외 대상이라 이 계약서·명세서의 가산수당 계산에 반영돼요. 이 매장의 다음 계약서에도 자동 적용됩니다.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -1895,6 +1935,23 @@ function ContractContent() {
                     </div>
                   </div>
 
+                  {ct === "minor" && f.workStart && f.workEnd && (() => {
+                    const [sh, sm] = f.workStart.split(":").map(Number);
+                    const [eh, em] = f.workEnd.split(":").map(Number);
+                    let startMin = sh * 60 + sm, endMin = eh * 60 + em;
+                    if (endMin <= startMin) endMin += 24 * 60;
+                    const nightStart = 22 * 60, nightEnd = 30 * 60;
+                    const overlaps = Math.min(endMin, nightEnd) > Math.max(startMin, nightStart);
+                    if (!overlaps) return null;
+                    return (
+                      <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 12, padding: "10px 14px" }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", margin: 0, lineHeight: 1.6 }}>
+                          ⚠️ 근로기준법상 만 18세 미만 근로자는 원칙적으로 22:00~06:00 야간근로가 금지돼요. 예외적으로 필요하면 고용노동부 인가를 별도로 받아야 합니다.
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   {/* 시간 입력 */}
                   {ct !== "parttime" ? (
                     <>
@@ -1966,6 +2023,9 @@ function ContractContent() {
                                 const [sh, sm] = start.split(":").map(Number);
                                 const [eh, em] = end.split(":").map(Number);
                                 const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                                if (noBreak && totalMin >= 240) {
+                                  showToast(`⚠️ 근로기준법상 근무 ${totalMin >= 480 ? "8시간" : "4시간"} 이상이면 휴게 ${totalMin >= 480 ? "1시간" : "30분"} 이상이 의무예요. 사람이 못 쉬어도 계속 대기·근무한다면 그 시간은 무급 휴게가 아니라 유급 근로시간으로 처리해야 해요.`, "error");
+                                }
                                 if (totalMin > 0) {
                                   const daily = Math.round((totalMin - breakMin) / 60 * 10) / 10;
                                   const workDayCount = selectedDays.length || 5;
@@ -2062,7 +2122,18 @@ function ContractContent() {
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input type="checkbox" id="noBreakPt" checked={!!f.noBreak} onChange={e => setF(p => ({ ...p, noBreak: e.target.checked, breakTime: e.target.checked ? "0" : "30" }))} style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
+                            <input type="checkbox" id="noBreakPt" checked={!!f.noBreak} onChange={e => {
+                              const noBreak = e.target.checked;
+                              if (noBreak && f.workStart && f.workEnd) {
+                                const [sh, sm] = f.workStart.split(":").map(Number);
+                                const [eh, em] = f.workEnd.split(":").map(Number);
+                                const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+                                if (totalMin >= 240) {
+                                  showToast(`⚠️ 근로기준법상 근무 ${totalMin >= 480 ? "8시간" : "4시간"} 이상이면 휴게 ${totalMin >= 480 ? "1시간" : "30분"} 이상이 의무예요. 사람이 못 쉬어도 계속 대기·근무한다면 그 시간은 무급 휴게가 아니라 유급 근로시간으로 처리해야 해요.`, "error");
+                                }
+                              }
+                              setF(p => ({ ...p, noBreak, breakTime: noBreak ? "0" : "30" }));
+                            }} style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
                             <label htmlFor="noBreakPt" style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>휴게 없음</label>
                           </div>
                         </div>
@@ -2146,6 +2217,15 @@ function ContractContent() {
                       </div>
                     )}
                   </div>
+
+                  {/* 주휴수당 포함여부 토글 */}
+                  <button onClick={() => updateField("wageIncludesWeeklyPay", !f.wageIncludesWeeklyPay)}
+                    style={{ background: f.wageIncludesWeeklyPay ? "linear-gradient(135deg,#7c3aed20,#ec489920)" : "var(--surface2)", border: "1.5px solid " + (f.wageIncludesWeeklyPay ? "#7c3aed" : "var(--border)"), borderRadius: 12, padding: "13px 16px", color: "var(--text)", fontSize: 13, textAlign: "left", cursor: "pointer", fontWeight: f.wageIncludesWeeklyPay ? 700 : 400 }}>
+                    {f.wageIncludesWeeklyPay ? "✓ 위 금액에 주휴수당 포함됨" : "위 금액은 주휴수당 별도 (탭하여 변경)"}
+                  </button>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "-8px 0 0", lineHeight: 1.6 }}>
+                    주 15시간 이상·개근 근무 시 주휴수당은 법정 의무예요. 위 금액에 이미 포함해서 책정했다면 켜주세요 — 켜면 명세서에서 별도로 더 계산하지 않아요. 꺼져 있으면(기본값) 명세서 생성 시 자동으로 추가 계산됩니다.
+                  </p>
 
                   {/* 상여금 토글 */}
                   <button onClick={() => updateField("hasBonus", !f.hasBonus)}
