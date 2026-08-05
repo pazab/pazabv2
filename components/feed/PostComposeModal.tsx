@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import ImageCropModal from "@/components/ImageCropModal";
+import { convertHeicIfNeeded } from "@/lib/heicConvert";
 
 const isVideoFile = (file: File) => {
   if (!file) return false;
@@ -37,12 +38,12 @@ export default function PostComposeModal({ userId, employerProfileId = null, tit
     setCropTarget({ file, url: URL.createObjectURL(file), editIndex });
   };
 
-  const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (files.length === 0) return;
     e.target.value = ""; // 같은 파일 재선택도 onChange가 다시 뜨도록
 
-    const images = files.filter(f => !isVideoFile(f));
+    const rawImages = files.filter(f => !isVideoFile(f));
     const videos = files.filter(f => isVideoFile(f));
 
     // 비디오는 크롭 없이 바로 추가
@@ -52,8 +53,10 @@ export default function PostComposeModal({ userId, employerProfileId = null, tit
       setMediaPreviews(prev => [...prev, ...previews]);
     }
 
-    // 이미지는 한 장씩 순서대로 크롭 화면으로
-    if (images.length > 0) {
+    // 이미지는 한 장씩 순서대로 크롭 화면으로 — HEIC(아이폰 기본 포맷)는 크롭 미리보기가
+    // <img>로 디코딩이 안 돼 검정 화면만 뜨므로 큐에 넣기 전에 JPEG로 변환해둔다.
+    if (rawImages.length > 0) {
+      const images = await Promise.all(rawImages.map(convertHeicIfNeeded));
       const [first, ...rest] = images;
       setCropQueue(rest);
       openCrop(first, null);

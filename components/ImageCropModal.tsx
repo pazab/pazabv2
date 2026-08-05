@@ -13,8 +13,10 @@ interface Props {
 
 export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onClose, onCrop }: Props) {
   const [zoom, setZoom] = useState(1);
+  const [minZoom, setMinZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
 
@@ -30,7 +32,7 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
   const vw = 280;
   const vh = 280 / aspect;
 
-  const clampZoom = (z: number) => Math.max(1, Math.min(3, z));
+  const clampZoom = (z: number) => Math.max(minZoom, Math.min(3, z));
 
   // 사진이 뷰포트를 벗어나 빈 배경만 크롭되는 걸 막기 위한 최대 이동 범위
   const getMaxOffset = (currentZoom: number) => {
@@ -134,9 +136,28 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
   // — 이전 사진 기준 offset이 남아있으면 새 사진에서는 크롭 영역이 사진 밖으로 나가 흰 화면만 저장되는 버그가 생김
   useEffect(() => {
     setZoom(1);
+    setMinZoom(1);
     setOffset({ x: 0, y: 0 });
     setImgLoaded(false);
+    setImgError(false);
   }, [imageSrc]);
+
+  // 원본 크기를 알고 나서(=로드 완료 시점) 계산: 크롭 비율과 원본 비율이 다르면(예: 세로로 긴 인물사진을
+  // 가로 3:2 틀에 넣을 때) "채우기" 배율이 이미 사진을 절반 넘게 잘라내는 문제가 있었음 — 얼굴 사진을
+  // 넣었는데 눈코입만 확대되어 보이는 원인. 시작 배율을 "전체 사진이 다 보이는 배율"로 낮추고,
+  // 사용자가 원하면 슬라이더로 더 확대해서 잘라낼 수 있게 최소 줌만 낮춰줌(최대 줌 3배는 그대로).
+  const handleImgLoad = () => {
+    const img = imgRef.current;
+    if (img && img.naturalWidth && img.naturalHeight) {
+      const sCover = Math.max(vw / img.naturalWidth, vh / img.naturalHeight);
+      const sContain = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
+      const initialZoom = Math.min(1, sContain / sCover);
+      setMinZoom(initialZoom);
+      setZoom(initialZoom);
+      setOffset({ x: 0, y: 0 });
+    }
+    setImgLoaded(true);
+  };
 
   // 자르기 처리
   const handleCropClick = () => {
@@ -252,7 +273,7 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
               overflow: "hidden",
               borderRadius: isCircle ? "50%" : aspect === 1 ? "18px" : "12px",
               boxShadow: "0 0 0 9999px rgba(0,0,0,0.5), inset 0 0 0 2px rgba(255,255,255,0.4)",
-              background: "#18181b",
+              background: imgLoaded ? "#fff" : "#18181b",
               userSelect: "none",
             }}
           >
@@ -260,12 +281,22 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
               ref={imgRef}
               src={imageSrc}
               alt="crop-source"
-              onLoad={() => setImgLoaded(true)}
+              onLoad={handleImgLoad}
+              onError={() => setImgError(true)}
               onMouseDown={handleMouseDown}
               onTouchStart={handleTouchStart}
               onDragStart={(e) => e.preventDefault()}
               style={imgLoaded ? getImgStyle() : { display: "none" }}
             />
+
+            {/* 브라우저가 디코딩 못 하는 형식(예: 변환 안 된 HEIC) — 검정 화면 대신 원인 안내 */}
+            {imgError && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, textAlign: "center" }}>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", margin: 0, lineHeight: 1.6 }}>
+                  이 사진 형식을 불러올 수 없어요.<br />다른 사진으로 다시 시도해주세요.
+                </p>
+              </div>
+            )}
 
             {/* 3분할 구도 가이드 — 드래그/핀치 중에만 살짝 보여서 방해되지 않게 */}
             {imgLoaded && (

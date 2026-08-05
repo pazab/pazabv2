@@ -163,6 +163,7 @@
 | employer_left/worker_left | boolean | YES | false | |
 | hire_confirmed_by_employer/worker | boolean | YES | false | |
 | initiated_by | uuid | YES | | |
+| employer_rating | smallint | YES | | ✅ 신규 생성 (2026-08-06) — 대타 완료 시 사장님 평가(1~5, 선택), trust_score 자동 연동 |
 | created_at/updated_at | timestamptz | NO | now() | |
 
 > ⚠️ `employer_profile_id` 컬럼 없음  

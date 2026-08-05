@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import InviteBottomSheet from "@/components/InviteBottomSheet";
 import ImageCropModal from "@/components/ImageCropModal";
+import { convertHeicIfNeeded } from "@/lib/heicConvert";
 
 import AppHeader from "@/components/AppHeader";
 import { Suspense } from "react";
@@ -1085,15 +1086,16 @@ function MyPageContent() {
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
             {/* 아바타 + 업로드 */}
             <label style={{ cursor: "pointer", flexShrink: 0, position: "relative" }}>
-              <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
+              <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                e.target.value = "";
+                const converted = await convertHeicIfNeeded(file);
                 const reader = new FileReader();
                 reader.onload = () => {
                   setTempImageSrc(reader.result as string);
                 };
-                reader.readAsDataURL(file);
-                e.target.value = "";
+                reader.readAsDataURL(converted);
               }} />
                {(user as any).avatar_url ? (
                 <img src={(user as any).avatar_url} alt="avatar"

@@ -40,6 +40,25 @@ function MatchScoreSection({ score }: { score: number }) {
   );
 }
 
+function calcCareerMonths(start: string | null, end: string | null, isCurrent: boolean): number {
+  if (!start) return 0;
+  const s = new Date(start);
+  if (isNaN(s.getTime())) return 0;
+  const e = isCurrent || !end ? new Date() : new Date(end);
+  if (isNaN(e.getTime())) return 0;
+  const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+  return Math.max(0, months);
+}
+
+function formatCareerDuration(months: number): string {
+  if (months <= 0) return "-";
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  if (years === 0) return `${rest}개월`;
+  if (rest === 0) return `${years}년`;
+  return `${years}년 ${rest}개월`;
+}
+
 export default function WorkerDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -400,6 +419,48 @@ export default function WorkerDetailPage() {
   const isReceived = existingMatch?.isReceived === true;
   const isWorkerRole = profileUser.user_type === "worker" || profileUser.user_type === "both";
 
+  type TimelineItem = {
+    id: string;
+    verified: boolean;
+    title: string;
+    subtitle: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    isCurrent: boolean;
+    description?: string | null;
+    entry?: typeof careerEntries[number];
+  };
+
+  const timelineItems: TimelineItem[] = [
+    ...careerHistory.map(h => ({
+      id: `hist-${h.id}`,
+      verified: true,
+      title: h.storeName,
+      subtitle: [h.roleDesc, h.businessType].filter(Boolean).join(" · ") || null,
+      startDate: h.hireDate,
+      endDate: h.endDate,
+      isCurrent: h.status === "active",
+    })),
+    ...careerEntries.map(e => ({
+      id: `entry-${e.id}`,
+      verified: false,
+      title: e.company_name,
+      subtitle: e.role_desc,
+      startDate: e.start_date,
+      endDate: e.end_date,
+      isCurrent: e.is_current,
+      description: e.description,
+      entry: e,
+    })),
+  ].sort((a, b) => {
+    const ad = a.startDate ? new Date(a.startDate).getTime() : 0;
+    const bd = b.startDate ? new Date(b.startDate).getTime() : 0;
+    return bd - ad;
+  });
+
+  const totalCareerMonths = timelineItems.reduce((sum, item) => sum + calcCareerMonths(item.startDate, item.endDate, item.isCurrent), 0);
+  const verifiedCareerCount = careerHistory.length;
+
   const ownerMenu = (
     <div style={{ position: "relative" }}>
       <button onClick={() => setShowMenu(!showMenu)} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⋯</button>
@@ -521,6 +582,24 @@ export default function WorkerDetailPage() {
       {/* 본문 */}
       <div style={{ padding: "0 20px" }}>
 
+      {/* 💼 경력 요약 */}
+      {isWorkerRole && timelineItems.length > 0 && (
+        <div style={{ padding: "20px 0 4px", display: "flex", gap: 8 }}>
+          <div style={{ flex: 1, textAlign: "center", background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 8px" }}>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>총 경력</p>
+            <p style={{ fontSize: 15, fontWeight: 800, margin: 0, color: "var(--text)" }}>{formatCareerDuration(totalCareerMonths)}</p>
+          </div>
+          <div style={{ flex: 1, textAlign: "center", background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 8px" }}>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>근무이력</p>
+            <p style={{ fontSize: 15, fontWeight: 800, margin: 0, color: "var(--text)" }}>{timelineItems.length}곳</p>
+          </div>
+          <div style={{ flex: 1, textAlign: "center", background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 8px" }}>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>파잡 인증</p>
+            <p style={{ fontSize: 15, fontWeight: 800, margin: 0, color: verifiedCareerCount > 0 ? "var(--success)" : "var(--text)" }}>{verifiedCareerCount}곳</p>
+          </div>
+        </div>
+      )}
+
       {/* 🏅 뱃지 */}
       {badges.length > 0 && (
         <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
@@ -542,64 +621,49 @@ export default function WorkerDetailPage() {
         </div>
       )}
 
-      {/* ✅ 파잡 근무 이력 (구직 정보 등록 여부와 무관하게 항상 표시 — 워커 타입 계정만) */}
-      {isWorkerRole && careerHistory.length > 0 && (
-        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>✅ 파잡 근무 이력</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {careerHistory.map(h => (
-              <div key={h.id} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "var(--text)" }}>{h.storeName}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
-                      {h.roleDesc ? `${h.roleDesc} · ` : ""}{h.businessType || ""}
-                    </p>
-                  </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 8, whiteSpace: "nowrap", background: h.status === "active" ? "var(--success-bg)" : "var(--surface2)", color: h.status === "active" ? "var(--success)" : "var(--text-muted)" }}>
-                    {h.status === "active" ? "재직중" : "근무완료"}
-                  </span>
-                </div>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0 0" }}>
-                  {h.hireDate || "?"} ~ {h.endDate ? String(h.endDate).slice(0, 10) : (h.status === "active" ? "현재" : "?")}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 📝 경력사항 (사용자 직접 입력 — 파잡 밖에서의 경력, 워커 타입 계정만) */}
-      {isWorkerRole && (careerEntries.length > 0 || isOwner) && (
+      {/* 💼 경력 (파잡 근무이력 + 직접입력 경력을 하나의 타임라인으로 통합) */}
+      {isWorkerRole && (timelineItems.length > 0 || isOwner) && (
         <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: 0, letterSpacing: "0.5px" }}>📝 경력사항</p>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: 0, letterSpacing: "0.5px" }}>💼 경력</p>
             {isOwner && (
               <button onClick={openAddCareer} style={{ fontSize: 11, fontWeight: 700, color: "var(--purple-text)", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>+ 추가</button>
             )}
           </div>
-          {careerEntries.length === 0 ? (
+          {timelineItems.length === 0 ? (
             isOwner && <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>파잡 밖에서의 근무 경력을 추가해보세요.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {careerEntries.map(e => (
-                <div key={e.id} onClick={() => isOwner && openEditCareer(e)} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px", cursor: isOwner ? "pointer" : "default" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "var(--text)" }}>{e.company_name}</p>
-                      {e.role_desc && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{e.role_desc}</p>}
+              {timelineItems.map(item => {
+                const entry = item.entry;
+                return (
+                  <div key={item.id} onClick={() => entry && isOwner && openEditCareer(entry)} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px", cursor: entry && isOwner ? "pointer" : "default" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
+                          <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: "var(--text)" }}>{item.title}</p>
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6, whiteSpace: "nowrap", background: item.verified ? "var(--success-bg)" : "var(--surface2)", color: item.verified ? "var(--success)" : "var(--text-muted)" }}>
+                            {item.verified ? "✅ 파잡 인증" : "✏️ 직접입력"}
+                          </span>
+                        </div>
+                        {item.subtitle && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{item.subtitle}</p>}
+                      </div>
+                      {entry && isOwner ? (
+                        <button onClick={(ev) => { ev.stopPropagation(); setPendingConfirm({ title: "경력 삭제", message: "이 경력사항을 삭제할까요?", onConfirm: () => { setPendingConfirm(null); deleteCareerEntry(entry.id); } }); }}
+                          style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 2, flexShrink: 0 }}>🗑️</button>
+                      ) : item.verified ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 8, whiteSpace: "nowrap", flexShrink: 0, background: item.isCurrent ? "var(--success-bg)" : "var(--surface2)", color: item.isCurrent ? "var(--success)" : "var(--text-muted)" }}>
+                          {item.isCurrent ? "재직중" : "근무완료"}
+                        </span>
+                      ) : null}
                     </div>
-                    {isOwner && (
-                      <button onClick={(ev) => { ev.stopPropagation(); setPendingConfirm({ title: "경력 삭제", message: "이 경력사항을 삭제할까요?", onConfirm: () => { setPendingConfirm(null); deleteCareerEntry(e.id); } }); }}
-                        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 2 }}>🗑️</button>
-                    )}
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0 0" }}>
+                      {item.startDate || "?"} ~ {item.isCurrent ? "현재" : (item.endDate ? String(item.endDate).slice(0, 10) : "?")}
+                    </p>
+                    {item.description && <p style={{ fontSize: 12, color: "var(--text)", margin: "8px 0 0", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{item.description}</p>}
                   </div>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0 0" }}>
-                    {e.start_date || "?"} ~ {e.is_current ? "현재" : (e.end_date || "?")}
-                  </p>
-                  {e.description && <p style={{ fontSize: 12, color: "var(--text)", margin: "8px 0 0", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{e.description}</p>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -647,6 +711,11 @@ export default function WorkerDetailPage() {
             </div>
           </div>
         )}
+
+        {/* 🔍 매칭 정보 구분선 — 위는 이력서 영역, 아래는 사장님과의 매칭 정보 */}
+        <div style={{ margin: "4px -20px 0", padding: "10px 20px", background: "var(--surface2)" }}>
+          <p style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", margin: 0, letterSpacing: "0.5px" }}>🔍 매칭 정보</p>
+        </div>
 
         {/* 궁합 */}
         {matchScore != null && <MatchScoreSection score={matchScore} />}

@@ -15,9 +15,12 @@ const getServiceClient = () =>
 // 서버 라우트로 옮기고 알림 발송을 추가함(기존엔 로컬 alert만 뜨고 알바생에겐 아무 알림도 안 갔음).
 export async function POST(req: NextRequest) {
   try {
-    const { matchId, action } = await req.json();
+    const { matchId, action, rating } = await req.json();
     if (!matchId || !["complete", "noshow"].includes(action)) {
       return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+    }
+    if (rating != null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+      return NextResponse.json({ error: "평점은 1~5 사이 정수여야 해요." }, { status: 400 });
     }
 
     const cookieStore = await cookies();
@@ -81,9 +84,24 @@ export async function POST(req: NextRequest) {
       });
       if (psErr) return NextResponse.json({ error: psErr.message }, { status: 500 });
 
-      const { error: matchErr } = await supabase.from("matches").update({ progress_status: "hired" }).eq("id", matchId);
+      const { error: matchErr } = await supabase.from("matches").update({
+        progress_status: "hired",
+        ...(rating != null ? { employer_rating: rating } : {}),
+      }).eq("id", matchId);
       if (matchErr) return NextResponse.json({ error: matchErr.message }, { status: 500 });
       await supabase.from("daeta_postings").update({ status: "completed" }).eq("id", match.daeta_posting_id);
+
+      // 평가가 아주 좋거나(4~5점) 아주 나쁘면(1~2점)만 신뢰점수에 반영 — 매 건마다 흔들리지 않도록
+      if (rating != null && (rating >= 4 || rating <= 2)) {
+        const delta = rating >= 4 ? 3 : -15;
+        const { data: worker } = await supabase.from("users").select("trust_score").eq("id", match.worker_id).maybeSingle();
+        const before = worker?.trust_score ?? 50;
+        const after = Math.min(100, Math.max(0, before + delta));
+        await supabase.from("users").update({ trust_score: after }).eq("id", match.worker_id);
+        await supabase.from("trust_score_logs").insert({
+          user_id: match.worker_id, delta, reason: `대타 완료 후 사장님 평가 ${rating}/5점`, before_score: before, after_score: after, ref_id: matchId,
+        });
+      }
 
       await createNotification({
         userId: match.worker_id,

@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { modalOverlay, modalSheet, btnPrimary, btnSecondary, inputStyle } from "@/lib/styles";
 import ImageCropModal from "@/components/ImageCropModal";
+import { convertHeicIfNeeded } from "@/lib/heicConvert";
 
 const BIZ_CATEGORIES = [
   { emoji: "🍽️", name: "식당/음식점" },
@@ -167,31 +168,33 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
     setUploading(false);
   };
 
-  const handleLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
+    const converted = await convertHeicIfNeeded(file);
     const reader = new FileReader();
     reader.onload = () => {
       setTempImage({ src: reader.result as string, aspect: 1, type: "logo" });
     };
-    reader.readAsDataURL(file);
-    e.target.value = "";
+    reader.readAsDataURL(converted);
   };
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const isVideo = file.type.startsWith("video/");
+    e.target.value = "";
     if (isVideo) {
       uploadFileDirectly(file, true);
     } else {
+      const converted = await convertHeicIfNeeded(file);
       const reader = new FileReader();
       reader.onload = () => {
         setTempImage({ src: reader.result as string, aspect: 16 / 9, type: "cover" });
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(converted);
     }
-    e.target.value = "";
   };
 
   const handleSave = async () => {

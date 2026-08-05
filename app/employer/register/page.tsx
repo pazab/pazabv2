@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
 import ImageCropModal from "@/components/ImageCropModal";
+import { convertHeicIfNeeded } from "@/lib/heicConvert";
 
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
 
@@ -171,10 +172,11 @@ function EmployerRegisterContent() {
         e.target.value = "";
         return;
       }
-      setOriginalFileName(file.name);
+      const converted = await convertHeicIfNeeded(file);
+      setOriginalFileName(converted.name);
       const reader = new FileReader();
       reader.onload = () => { setTempImageSrc(reader.result as string); setCropperOpen(true); };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(converted);
     } else {
       setError("이미지 또는 동영상 파일만 업로드할 수 있어요.");
     }

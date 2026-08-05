@@ -1,5 +1,29 @@
 export const KOREAN_DAY_BY_INDEX = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 만 나이 계산. app/contract/page.tsx의 로컬 calcAge와 동일 로직을 공용화 — 대타 SOS 야간 필터(lib/daetaEscalation.ts)에서도 사용.
+export function calcKoreanAge(birthDate: string | null | undefined): number | null {
+  if (!birthDate) return null;
+  const d = new Date(birthDate);
+  if (isNaN(d.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return age;
+}
+
+// "HH:MM ~ HH:MM" 형식의 근무시간이 야간(22~06시)을 포함하는지 판정.
+// calcWorkPay의 hasNight와 동일 기준(22시 이후 시작 또는 06시 이전 종료) — 근로기준법상 연소근로자(만 18세 미만) 야간근무 제한 판단 기준.
+export function isNightWorkHours(workHours: string | null | undefined): boolean {
+  if (!workHours) return false;
+  const parts = workHours.split("~").map(s => s.trim());
+  if (parts.length < 2) return false;
+  const startHour = parseInt(parts[0].split(":")[0], 10);
+  const endHour = parseInt(parts[1].split(":")[0], 10);
+  if (isNaN(startHour) || isNaN(endHour)) return false;
+  return startHour >= 22 || endHour <= 6;
+}
+
 // work_days 문자열이 해당 요일을 포함하는지 판정 — 개별 요일 나열("월·화·수")과
 // 매크로 표현("평일"/"주말"/"주5일"/"주6일"/"매일") 둘 다 지원. 요일 미설정(빈 값)이면 항상 false(오탐 방지).
 // cron(app/api/cron/checkin), myteam.tsx, employer/team/[id] 세 곳에서 각자 다르게 판정하다 결근

@@ -13,6 +13,7 @@ import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import TierBadge from "@/components/TierBadge";
 import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
+import { modalOverlay, modalSheet, btnPrimary, btnSecondary } from "@/lib/styles";
 
 
 interface WorkerProfileLite {
@@ -73,10 +74,13 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [userInfo, setUserInfo] = useState<{ nickname?: string; avatar_url?: string } | null>(null);
+  const [userInfo, setUserInfo] = useState<{ nickname?: string; avatar_url?: string; birth_date?: string | null } | null>(null);
+  const [showBirthModal, setShowBirthModal] = useState(false);
+  const [birthInput, setBirthInput] = useState("");
+  const [savingBirth, setSavingBirth] = useState(false);
 
   const load = useCallback(async () => {
-    const { data: u } = await supabase.from("users").select("nickname, avatar_url").eq("id", userId).maybeSingle();
+    const { data: u } = await supabase.from("users").select("nickname, avatar_url, birth_date").eq("id", userId).maybeSingle();
     if (u) setUserInfo(u);
 
     // 1) 내 프로필
@@ -186,7 +190,31 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
 
   useEffect(() => { load(); }, [load]);
 
+  // 대타 가능을 켤 땐 생년월일이 있어야 함 — 야간 SOS 자동 필터(lib/daetaEscalation.ts)가
+  // 생년월일 미확인자를 안전하게 제외하기 때문에, 미리 받아둬야 정당한 성인 후보가 새지 않음.
+  // 끌 때는 게이트 없이 바로 처리.
   const toggleAvailable = async () => {
+    const turningOn = !profile?.available_now;
+    if (turningOn && !userInfo?.birth_date) {
+      setBirthInput("");
+      setShowBirthModal(true);
+      return;
+    }
+    await performToggleAvailable();
+  };
+
+  const saveBirthAndToggle = async () => {
+    if (!birthInput) { showToast("생년월일을 입력해주세요", "error"); return; }
+    setSavingBirth(true);
+    const { error } = await supabase.from("users").update({ birth_date: birthInput }).eq("id", userId);
+    setSavingBirth(false);
+    if (error) { showToast("저장 실패: " + error.message, "error"); return; }
+    setUserInfo(prev => prev ? { ...prev, birth_date: birthInput } : prev);
+    setShowBirthModal(false);
+    await performToggleAvailable();
+  };
+
+  const performToggleAvailable = async () => {
     let currentProfile = profile;
 
     if (!currentProfile) {
@@ -541,6 +569,26 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
           <i className="ti ti-list" aria-hidden="true" /> 내 대타 내역
         </button>
       </div>
+
+      {/* 대타 가능 첫 활성화 시 생년월일 확인 — 야간 SOS 자동 필터(연소근로자 보호)를 위해 필요 */}
+      {showBirthModal && (
+        <div style={modalOverlay}>
+          <div style={{ ...modalSheet, maxWidth: 360, margin: "0 auto" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 8px", color: "var(--text)" }}>생년월일을 확인할게요</h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px", lineHeight: 1.6 }}>
+              근로기준법상 만 18세 미만은 야간(22시~06시) 근무가 제한돼요. 대타 가능을 켜기 전, 야간 SOS가 잘못 뜨지 않도록 생년월일만 확인할게요.
+            </p>
+            <input type="date" value={birthInput} onChange={e => setBirthInput(e.target.value)}
+              style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 16 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowBirthModal(false)} style={{ ...btnSecondary, flex: 1 }}>취소</button>
+              <button onClick={saveBirthAndToggle} disabled={savingBirth || !birthInput} style={{ ...btnPrimary, flex: 1, opacity: (savingBirth || !birthInput) ? 0.6 : 1 }}>
+                {savingBirth ? "저장 중..." : "확인하고 켜기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {ToastUI}
     </div>

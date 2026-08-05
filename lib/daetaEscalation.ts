@@ -6,6 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
 import { getWorkerTiers } from "@/lib/daetaTier";
+import { calcKoreanAge, isNightWorkHours } from "@/lib/utils";
 
 export interface DaetaPostingRow {
   id: string;
@@ -140,7 +141,23 @@ export async function notifyNearby(
 
   const ids = [...new Set(nearby.map((w: { user_id: string }) => w.user_id))];
   const tiers = await getWorkerTiers(sb, ids);
-  const targets = ids.filter(id => tiers[id] === targetTier);
+  let targets = ids.filter(id => tiers[id] === targetTier);
+
+  // 근로기준법상 연소근로자(만 18세 미만)는 22~06시 야간근무가 원칙적으로 금지됨.
+  // 대화·확인 절차 없이 후보 풀 단계에서 자동 제외 — 생년월일 미확인자도 안전하게 제외(fail-safe).
+  if (isNightWorkHours(posting.work_hours) && targets.length > 0) {
+    const { data: userRows } = await sb.from("users").select("id, birth_date").in("id", targets);
+    const confirmedAdults = new Set(
+      (userRows || [])
+        .filter((u: { id: string; birth_date: string | null }) => {
+          const age = calcKoreanAge(u.birth_date);
+          return age !== null && age >= 18;
+        })
+        .map((u: { id: string }) => u.id)
+    );
+    targets = targets.filter(id => confirmedAdults.has(id));
+  }
+  if (targets.length === 0) return 0;
 
   const title = targetTier === "tier1"
     ? `⚡ 동네 대타 SOS — ${posting.business_name}`

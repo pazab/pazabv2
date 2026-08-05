@@ -20,6 +20,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   const [actionError, setActionError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [cancelPreview, setCancelPreview] = useState<{ suspendDays: number; trustPenalty: number } | null>(null);
+  const [completeRating, setCompleteRating] = useState(0);
 
   const isEmployer = userType === "employer" || userType === "both";
 
@@ -111,6 +112,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   // 매번 조용히 실패하고 있었음 — progress_status만 갱신되는 서버 라우트로 교체해 실제로 동작하게 함)
   const openConfirm = async (type: "complete" | "noshow" | "cancel", match: any) => {
     setActionError("");
+    if (type === "complete") setCompleteRating(0);
     if (type === "cancel") {
       const lookbackStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
       const { count } = await supabase.from("trust_score_logs")
@@ -130,6 +132,8 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
       const endpoint = pendingAction.type === "cancel" ? "/api/daeta/cancel" : "/api/daeta/complete";
       const body = pendingAction.type === "cancel"
         ? { matchId: pendingAction.match.id }
+        : pendingAction.type === "complete"
+        ? { matchId: pendingAction.match.id, action: "complete", ...(completeRating > 0 ? { rating: completeRating } : {}) }
         : { matchId: pendingAction.match.id, action: pendingAction.type };
       const res = await fetch(endpoint, {
         method: "POST",
@@ -248,6 +252,9 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                   <div>⏰ 시간: {ep?.work_hours}</div>
                   <div>💼 담당업무: {ep?.business_type || "매장 서빙 및 관리"}</div>
                   <div>💰 약속시급: <strong style={{ color: "#c4b5fd" }}>{ep?.wage?.toLocaleString()}원</strong></div>
+                  {isCompleted && rec.employer_rating != null && (
+                    <div>⭐ 사장님 평가: <strong style={{ color: "#fbbf24" }}>{rec.employer_rating}/5</strong></div>
+                  )}
                 </div>
 
                 {/* 서명 근로계약서 확인 링크 */}
@@ -316,9 +323,22 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                   : "확정된 대타를 취소할까요?"}
               </p>
               {pendingAction.type === "complete" && (
-                <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, lineHeight: 1.7, background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: "10px 14px" }}>
-                  확인 시 임금명세서가 자동 발행되고 알바생에게 알림이 가요.
-                </p>
+                <>
+                  <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, lineHeight: 1.7, background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: "10px 14px" }}>
+                    확인 시 임금명세서가 자동 발행되고 알바생에게 알림이 가요.
+                  </p>
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>이번 대타는 어땠나요? (선택 · 신뢰점수에 반영돼요)</p>
+                    <div style={{ display: "flex", justifyContent: "center", gap: 4 }}>
+                      {[1, 2, 3, 4, 5].map(n => (
+                        <button key={n} onClick={() => setCompleteRating(n)}
+                          style={{ background: "none", border: "none", fontSize: 26, cursor: "pointer", padding: 2, lineHeight: 1, filter: n <= completeRating ? "none" : "grayscale(1) opacity(0.35)" }}>
+                          ⭐
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
               {pendingAction.type === "noshow" && (
                 <p style={{ fontSize: 13, color: "#f87171", margin: 0, lineHeight: 1.7, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "10px 14px" }}>
