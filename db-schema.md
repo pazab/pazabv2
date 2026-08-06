@@ -22,7 +22,7 @@
 | bot_chat_logs | ✅ 사용 중 | AI 상담 로그 |
 | chats | ✅ 사용 중 | 실제 채팅 테이블 |
 | contracts | ✅ 사용 중 | |
-| daeta_postings | ✅ 사용 중 | 긴급 대타 공고. `status`: 'pending'\|'matched'(매칭 확정, 수정·재취소 불가)\|'expired'(응답 없이 근무시작시각 경과, 조회 시점에 자동 처리)\|'completed'\|'cancelled' |
+| daeta_postings | ✅ 사용 중 | 긴급 대타 공고. `status`: 'pending'\|'matched'(매칭 확정, 수정·재취소 불가)\|'expired'(응답 없이 근무시작시각 경과, 조회 시점에 자동 처리)\|'completed'\|'cancelled'. `work_date_end`(nullable, `patch_daeta_date_range.sql`) — NULL이면 `work_date` 하루, 값 있으면 `work_date`~`work_date_end` 기간 전체를 공고 1건이 커버(수락 1번으로 기간 전체 확정, 정산은 일수만큼 곱함) |
 | employer_profiles | ✅ 사용 중 | 공고 레거시 컬럼 DROP 완료 |
 | invite_codes | ✅ 사용 중 | |
 | job_categories | ✅ 사용 중 | 마스터 테이블 |

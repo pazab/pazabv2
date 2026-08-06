@@ -276,16 +276,34 @@ export async function PATCH(req: NextRequest) {
               const { data: worker } = await supabase.from("users").select("real_name, nickname, phone, address, birth_date").eq("id", acceptMatchData.worker_id).maybeSingle();
               
               const workDate = daetaPosting.work_date || new Date().toISOString().split("T")[0];
+              const workDateEnd = daetaPosting.work_date_end || workDate;
               const formattedDate = workDate.replace(/-/g, ". ");
+              const formattedEndDate = workDateEnd.replace(/-/g, ". ");
               const getDayEng = (dayIdx: number) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dayIdx] || "Mon";
-              const dayEng = getDayEng(new Date(workDate).getDay());
-              
+
               const parseTimes = (daetaPosting.work_hours || "12:00 ~ 18:00").split("~");
               const startStr = parseTimes[0]?.trim() || "12:00";
               const endStr = parseTimes[1]?.trim() || "18:00";
 
               const days = ["일", "월", "화", "수", "목", "금", "토"];
-              const dayKo = days[new Date(workDate).getDay()] || "월";
+
+              // 시작일~종료일(work_date_end) 전체를 한 공고로 등록한 경우(같은 시간대) —
+              // 계약서에 그 기간에 걸친 요일 전부를 근무요일로 체크하고 동일한 시간을 채움
+              const dayFields: Record<string, string | boolean> = {};
+              const workDaysKo: string[] = [];
+              const cur = new Date(`${workDate}T00:00:00`);
+              const last = new Date(`${workDateEnd}T00:00:00`);
+              while (cur <= last) {
+                const dayEngLoop = getDayEng(cur.getDay());
+                dayFields[`workDays${dayEngLoop}`] = true;
+                dayFields[`workStart${dayEngLoop}`] = startStr;
+                dayFields[`workEnd${dayEngLoop}`] = endStr;
+                dayFields[`breakTime${dayEngLoop}`] = "30";
+                const dayKoLoop = days[cur.getDay()];
+                if (dayKoLoop && !workDaysKo.includes(dayKoLoop)) workDaysKo.push(dayKoLoop);
+                cur.setDate(cur.getDate() + 1);
+              }
+              const dayKo = workDaysKo.join(",") || "월";
 
               const contractData = {
                 contractType: "parttime",
@@ -301,12 +319,9 @@ export async function PATCH(req: NextRequest) {
                 workerPhone: worker?.phone || "",
                 workerAddr: worker?.address || "서울시내",
                 startDate: formattedDate,
-                endDate: formattedDate,
+                endDate: formattedEndDate,
                 workDaysMode: "check",
-                [`workDays${dayEng}`]: true,
-                [`workStart${dayEng}`]: startStr,
-                [`workEnd${dayEng}`]: endStr,
-                [`breakTime${dayEng}`]: "30",
+                ...dayFields,
                 wage: String(daetaPosting.wage),
                 wageType: "hour",
                 payDay: "당일 지급",
@@ -319,7 +334,7 @@ export async function PATCH(req: NextRequest) {
                 worker_id: acceptMatchData.worker_id,
                 match_id: matchId,
                 start_date: workDate,
-                end_date: workDate,
+                end_date: workDateEnd,
                 wage: daetaPosting.wage,
                 work_days: dayKo,
                 work_hours: daetaPosting.work_hours,

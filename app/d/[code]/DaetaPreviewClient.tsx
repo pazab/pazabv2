@@ -5,6 +5,7 @@
  */
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { daetaDayCount } from '@/lib/utils'
 
 interface Posting {
   id: string
@@ -12,6 +13,7 @@ interface Posting {
   business_type: string
   region: string
   work_date: string
+  work_date_end?: string | null
   work_hours: string
   wage: number
   duty: string
@@ -76,7 +78,10 @@ export default function DaetaPreviewClient({ posting, shortCode }: Props) {
                 <div>
                   <p className="text-xs text-gray-400">날짜·시간</p>
                   <p className="font-semibold text-gray-800">
-                    {formatDate(posting.work_date)} {posting.work_hours}
+                    {formatDate(posting.work_date)}
+                    {posting.work_date_end && posting.work_date_end !== posting.work_date
+                      ? ` ~ ${new Date(posting.work_date_end).getMonth() + 1}/${new Date(posting.work_date_end).getDate()} (${daetaDayCount(posting.work_date, posting.work_date_end)}일)`
+                      : ''} {posting.work_hours}
                   </p>
                 </div>
               </div>

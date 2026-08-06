@@ -14,6 +14,7 @@ import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import TierBadge from "@/components/TierBadge";
 import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
 import { modalOverlay, modalSheet, btnPrimary, btnSecondary } from "@/lib/styles";
+import { formatDaetaDateRange } from "@/lib/utils";
 
 
 interface WorkerProfileLite {
@@ -29,6 +30,7 @@ interface IncomingRequest {
   businessName: string;
   region: string;
   workDate: string;
+  workDateEnd?: string | null;
   workHours: string;
   wage: number;
   duty: string;
@@ -40,6 +42,7 @@ interface NearbyPosting {
   businessName: string;
   region: string;
   workDate: string;
+  workDateEnd?: string | null;
   workHours: string;
   wage: number;
   duty: string;
@@ -118,7 +121,7 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
       const postingIds = receivedMatches.map((m: { daeta_posting_id: string }) => m.daeta_posting_id);
       const { data: postingRows } = await supabase
         .from("daeta_postings")
-        .select("id, business_name, region, work_date, work_hours, wage, duty")
+        .select("id, business_name, region, work_date, work_date_end, work_hours, wage, duty")
         .in("id", postingIds)
         .eq("status", "pending");
 
@@ -127,12 +130,13 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
         matchMap[m.daeta_posting_id] = m.id;
       });
 
-      const list: IncomingRequest[] = (postingRows || []).map((row: { id: string; business_name: string; region: string; work_date: string; work_hours: string; wage: number; duty: string }) => ({
+      const list: IncomingRequest[] = (postingRows || []).map((row: { id: string; business_name: string; region: string; work_date: string; work_date_end: string | null; work_hours: string; wage: number; duty: string }) => ({
         matchId: matchMap[row.id] || "",
         postingId: row.id,
         businessName: row.business_name,
         region: row.region,
         workDate: row.work_date,
+        workDateEnd: row.work_date_end,
         workHours: row.work_hours,
         wage: row.wage,
         duty: row.duty,
@@ -145,7 +149,7 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
     // 5) 내 동네/Tier 기준 주변 대타 공고 로드
     const { data: openPostingsRaw } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, lat, lng, escalation_stage, allow_new, expires_at")
+      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, lat, lng, escalation_stage, allow_new, expires_at")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
 
@@ -168,12 +172,13 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
 
     const myLoc = p?.lat != null && p?.lng != null ? { lat: p.lat, lng: p.lng } : null;
     const nearbyList: NearbyPosting[] = visible
-      .map((row: { id: string; user_id: string; business_name: string; region: string; work_date: string; work_hours: string; wage: number; duty: string; lat: number; lng: number; escalation_stage: number }) => ({
+      .map((row: { id: string; user_id: string; business_name: string; region: string; work_date: string; work_date_end: string | null; work_hours: string; wage: number; duty: string; lat: number; lng: number; escalation_stage: number }) => ({
         id: row.id,
         employerUserId: row.user_id,
         businessName: row.business_name,
         region: row.region,
         workDate: row.work_date,
+        workDateEnd: row.work_date_end,
         workHours: row.work_hours,
         wage: row.wage,
         duty: row.duty,
@@ -472,7 +477,7 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
                 <div key={r.matchId} style={{ background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 18, padding: 16 }}>
                   <div style={{ fontSize: 15, fontWeight: 900, color: "var(--text, #fff)" }}>{r.businessName}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", margin: "4px 0 2px" }}>
-                    {r.workDate} · {r.workHours} · {r.duty}
+                    {formatDaetaDateRange(r.workDate, r.workDateEnd)} · {r.workHours} · {r.duty}
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 800, color: "#fb923c", marginBottom: 12 }}>
                     시급 {r.wage.toLocaleString()}원
@@ -524,7 +529,7 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
                       <div>
                         <div style={{ fontSize: 15, fontWeight: 900, color: "var(--text, #fff)" }}>{p.businessName}</div>
                         <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", margin: "4px 0 2px" }}>
-                          {p.workDate} · {p.workHours} · {p.duty}
+                          {formatDaetaDateRange(p.workDate, p.workDateEnd)} · {p.workHours} · {p.duty}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontSize: 14, fontWeight: 800, color: "#fb923c" }}>

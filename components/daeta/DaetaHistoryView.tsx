@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { formatDaetaDateRange } from "@/lib/utils";
 
 interface DaetaHistoryViewProps {
   userId: string;
@@ -55,7 +56,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
       const [postingsRes, usersRes] = await Promise.all([
         supabase
           .from("daeta_postings")
-          .select("id, business_name, business_type, region, wage, work_hours, work_date")
+          .select("id, business_name, business_type, region, wage, work_hours, work_date, work_date_end")
           .in("id", postingIds),
         supabase
           .from("users")
@@ -228,7 +229,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
             const isPending = rec.progress_status === "accepted";
 
             // 일시 포맷
-            const dateStr = ep?.work_date || rec.created_at?.split("T")[0];
+            const dateStr = ep?.work_date ? formatDaetaDateRange(ep.work_date, ep.work_date_end) : rec.created_at?.split("T")[0];
 
             return (
               <div key={rec.id} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 18, padding: "16px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>

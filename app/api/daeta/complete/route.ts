@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
+import { daetaDayCount } from "@/lib/utils";
 
 const getServiceClient = () =>
   createClient(
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
 
     const { data: posting } = await supabase
       .from("daeta_postings")
-      .select("work_hours, wage")
+      .select("work_hours, wage, work_date, work_date_end")
       .eq("id", match.daeta_posting_id)
       .maybeSingle();
 
@@ -65,7 +66,10 @@ export async function POST(req: NextRequest) {
         const eh = parseInt(times[1].split(":")[0]);
         hours = eh > sh ? eh - sh : 24 - sh + eh;
       } catch {}
-      const totalPay = wage * hours;
+      // 시작일~종료일 기간 전체를 한 공고로 등록한 경우(work_date_end) 일수만큼 곱해서 정산
+      const days = posting ? daetaDayCount(posting.work_date, posting.work_date_end) : 1;
+      const totalHours = hours * days;
+      const totalPay = wage * totalHours;
       const now = new Date();
 
       const { error: psErr } = await supabase.from("payslips").insert({
@@ -75,12 +79,12 @@ export async function POST(req: NextRequest) {
         year: now.getFullYear(),
         month: now.getMonth() + 1,
         wage,
-        total_hours: hours,
+        total_hours: totalHours,
         base_pay: totalPay,
         total_pay: totalPay,
         status: "issued",
         issued_at: now.toISOString(),
-        memo: "긴급 대타 급여 당일 정산",
+        memo: days > 1 ? `긴급 대타 급여 정산 (${days}일치)` : "긴급 대타 급여 당일 정산",
       });
       if (psErr) return NextResponse.json({ error: psErr.message }, { status: 500 });
 

@@ -9,7 +9,7 @@ import { fetchMinWage } from "@/lib/minWage";
 interface DaetaRegisterModalProps {
   userId: string;
   onClose: () => void;
-  onSuccess: (postingId?: string | string[]) => void;
+  onSuccess: (postingId?: string) => void;
   postingId?: string | null;
 }
 
@@ -414,63 +414,49 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
 
     try {
       const finalShop = shopInfo!;
+      // 기간(시작일~종료일)을 고르면 한 공고가 그 기간 전체를 커버 — 지원/수락도 기간 전체 단위로 한 번에
+      // 이뤄짐(하루씩 따로 지원해야 했던 이전 방식 폐기). 정산은 app/api/daeta/complete에서 일수만큼 곱해서 계산.
+      const finalEndDate = !postingId && !isSingleDay && endDate && endDate !== workDate ? endDate : null;
 
-      const buildInsertData = (date: string) => ({
-        user_id: userId,
-        business_name: finalShop.businessName,
-        business_type: finalShop.businessType,
-        region: finalShop.region,
-        lat: finalShop.lat,
-        lng: finalShop.lng,
-        work_date: date,
+      const sharedFields = {
+        work_date: workDate,
+        work_date_end: finalEndDate,
         work_hours: `${startHour}:${startMin} ~ ${endHour}:${endMin}`,
         wage: finalWage,
         duty: finalDuty,
         secure_option: secureOption,
         allow_new: allowNew,
-        status: "pending",
-        expires_at: `${date}T${startHour}:${startMin}:00Z`,
         required_credentials: JSON.stringify(selectedCreds),
-      });
+      };
 
       if (postingId) {
         const { error } = await supabase
           .from("daeta_postings")
-          .update({
-            work_date: workDate,
-            work_hours: `${startHour}:${startMin} ~ ${endHour}:${endMin}`,
-            wage: finalWage,
-            duty: finalDuty,
-            secure_option: secureOption,
-            allow_new: allowNew,
-            required_credentials: JSON.stringify(selectedCreds),
-          })
+          .update(sharedFields)
           .eq("id", postingId);
         if (error) throw error;
         showToast("⚡ 대타 공고가 성공적으로 수정되었습니다!");
         setTimeout(() => onSuccess(postingId), 1500);
       } else {
-        // 기간(시작일~종료일)을 골랐으면 그 사이 날짜마다 각각 공고를 생성 —
-        // 매칭/에스컬레이션이 공고 1건=시프트 1건 단위라 한 공고에 여러 날짜를 담지 않고 별개 공고로 나눔
-        const allDates: string[] = [];
-        if (isSingleDay || !endDate || endDate === workDate) {
-          allDates.push(workDate);
-        } else {
-          const cur = new Date(`${workDate}T00:00:00`);
-          const last = new Date(`${endDate}T00:00:00`);
-          while (cur <= last) {
-            allDates.push(cur.toISOString().split("T")[0]);
-            cur.setDate(cur.getDate() + 1);
-          }
-        }
-        const { data: insertedRows, error } = await supabase
+        const { data: inserted, error } = await supabase
           .from("daeta_postings")
-          .insert(allDates.map(buildInsertData))
-          .select("id");
+          .insert({
+            user_id: userId,
+            business_name: finalShop.businessName,
+            business_type: finalShop.businessType,
+            region: finalShop.region,
+            lat: finalShop.lat,
+            lng: finalShop.lng,
+            status: "pending",
+            // 에스컬레이션 만료는 "첫 근무 시작 시각" 기준 — 기간 중 첫날까지 응답 없으면 만료
+            expires_at: `${workDate}T${startHour}:${startMin}:00Z`,
+            ...sharedFields,
+          })
+          .select("id")
+          .single();
         if (error) throw error;
-        const ids = (insertedRows || []).map(r => r.id as string);
-        showToast(ids.length > 1 ? `⚡ SOS 발동! ${ids.length}일치 공고를 등록했어요` : "⚡ SOS 발동! 우리 팀에게 가장 먼저 알릴게요");
-        setTimeout(() => onSuccess(ids.length > 1 ? ids : ids[0]), 1500);
+        showToast("⚡ SOS 발동! 우리 팀에게 가장 먼저 알릴게요");
+        setTimeout(() => onSuccess(inserted?.id), 1500);
       }
     } catch (err: any) {
       console.error(err);
@@ -672,7 +658,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                             onChange={e => setEndDate(e.target.value)}
                             style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }} />
                           <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
-                            시작일~종료일 사이 매일 같은 근무시간·시급으로 공고가 각각 등록돼요. 요일마다 시간이 다르면 체크박스를 켜고 하루씩 따로 등록해 주세요.
+                            시작일~종료일 전체를 하나의 공고로 등록해요. 한 분이 수락하면 기간 전체를 맡게 돼요. 요일마다 근무시간이 다르면 체크박스를 켜고 하루씩 따로 등록해 주세요.
                           </span>
                         </div>
                       )}

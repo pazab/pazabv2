@@ -15,6 +15,7 @@ import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import { getWorkerTiers, TIER_LABEL } from "@/lib/daetaTier";
+import { formatDaetaDateRange } from "@/lib/utils";
 
 
 interface SosPosting {
@@ -23,6 +24,7 @@ interface SosPosting {
   business_name: string;
   region: string;
   work_date: string;
+  work_date_end?: string | null;
   work_hours: string;
   wage: number;
   duty: string;
@@ -141,7 +143,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const load = useCallback(async () => {
     const { data: rowsRaw } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at")
+      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
 
@@ -380,7 +382,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     return { label, minutesLeft };
   }
 
-  const fireSos = async (postingId: string, silent = false) => {
+  const fireSos = async (postingId: string) => {
     try {
       const res = await fetch("/api/daeta/sos", {
         method: "POST",
@@ -389,19 +391,16 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "SOS 발동 실패");
-      if (silent) return;
       if (data.teamNotified > 0) {
         showToast(`⚡ 우리 팀 ${data.teamNotified}명에게 가장 먼저 알렸어요!`);
       } else {
         showToast(`⚡ 팀원이 없어 동네 ✅검증 인력 ${data.nearbyNotified}명에게 바로 공개했어요!`);
       }
     } catch (err) {
-      if (silent) return;
       const message = err instanceof Error ? err.message : "SOS 발동 중 오류";
       showToast(message, "error");
-    } finally {
-      if (!silent) await load();
     }
+    await load();
   };
 
   const applyPosting = async (posting: SosPosting) => {
@@ -609,7 +608,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           )}
                         </div>
                         <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", marginTop: 3 }}>
-                          {p.work_date} · {p.work_hours} · {p.duty}
+                          {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours} · {p.duty}
                         </div>
                         <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c", marginTop: 3 }}>
                           시급 {p.wage.toLocaleString()}원
@@ -826,19 +825,12 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
           userId={userId}
           postingId={editingPostingId}
           onClose={() => { setShowRegisterModal(false); setEditingPostingId(null); }}
-          onSuccess={async (postingIdOrIds) => {
+          onSuccess={async (postingId) => {
             const wasEditing = !!editingPostingId;
             setShowRegisterModal(false);
             setEditingPostingId(null);
-            if (!wasEditing && postingIdOrIds) {
-              const ids = Array.isArray(postingIdOrIds) ? postingIdOrIds : [postingIdOrIds];
-              if (ids.length > 1) {
-                for (const id of ids) await fireSos(id, true);
-                showToast(`⚡ SOS 발동! ${ids.length}일치 공고를 모두 알렸어요`);
-                await load();
-              } else {
-                await fireSos(ids[0]);
-              }
+            if (!wasEditing && postingId) {
+              await fireSos(postingId);
             } else {
               await load();
             }
@@ -968,7 +960,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                               🔥 {p.business_name} {isSelected && "(선택됨)"}
                             </div>
                             <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.6))", marginTop: 2 }}>
-                              {p.work_date} · {p.work_hours} · 시급 {p.wage.toLocaleString()}원
+                              {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours} · 시급 {p.wage.toLocaleString()}원
                             </div>
                           </div>
                           <div style={{

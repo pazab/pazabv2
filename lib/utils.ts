@@ -1,5 +1,25 @@
 export const KOREAN_DAY_BY_INDEX = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 대타 공고 근무일수 — daeta_postings.work_date_end가 있으면 그 기간(양끝 포함) 일수, 없으면 하루.
+// 정산(app/api/daeta/complete)에서 wage × hours × 일수 계산에 사용.
+export function daetaDayCount(startDate: string, endDate?: string | null): number {
+  if (!endDate || endDate === startDate) return 1;
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000);
+  return diffDays > 0 ? diffDays + 1 : 1;
+}
+
+// 대타 공고 날짜 표시 — 기간이면 "8/10~8/12 (3일)", 하루면 "8/10"
+export function formatDaetaDateRange(startDate: string, endDate?: string | null): string {
+  const fmt = (d: string) => {
+    const parts = d.split("-");
+    return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}`;
+  };
+  if (!endDate || endDate === startDate) return fmt(startDate);
+  return `${fmt(startDate)}~${fmt(endDate)} (${daetaDayCount(startDate, endDate)}일)`;
+}
+
 // 만 나이 계산. app/contract/page.tsx의 로컬 calcAge와 동일 로직을 공용화 — 대타 SOS 야간 필터(lib/daetaEscalation.ts)에서도 사용.
 export function calcKoreanAge(birthDate: string | null | undefined): number | null {
   if (!birthDate) return null;

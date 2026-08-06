@@ -6,7 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
 import { getWorkerTiers } from "@/lib/daetaTier";
-import { calcKoreanAge, isNightWorkHours } from "@/lib/utils";
+import { calcKoreanAge, isNightWorkHours, formatDaetaDateRange } from "@/lib/utils";
 
 export interface DaetaPostingRow {
   id: string;
@@ -16,6 +16,7 @@ export interface DaetaPostingRow {
   lat: number;
   lng: number;
   work_date: string;
+  work_date_end?: string | null;
   work_hours: string;
   wage: number;
   duty: string;
@@ -64,7 +65,7 @@ export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; ln
 }
 
 function postingSummary(p: DaetaPostingRow) {
-  return `${p.work_date} ${p.work_hours} · 시급 ${p.wage.toLocaleString()}원`;
+  return `${formatDaetaDateRange(p.work_date, p.work_date_end)} ${p.work_hours} · 시급 ${p.wage.toLocaleString()}원`;
 }
 
 const WARN_BEFORE_MIN = 5;
