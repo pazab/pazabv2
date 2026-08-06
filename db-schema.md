@@ -22,7 +22,7 @@
 | bot_chat_logs | ✅ 사용 중 | AI 상담 로그 |
 | chats | ✅ 사용 중 | 실제 채팅 테이블 |
 | contracts | ✅ 사용 중 | |
-| daeta_postings | ✅ 사용 중 | 긴급 대타 공고. `status`: 'pending'\|'matched'(매칭 확정, 수정·재취소 불가)\|'expired'(응답 없이 근무시작시각 경과, 조회 시점에 자동 처리)\|'completed'\|'cancelled'. `work_date_end`(nullable, `patch_daeta_date_range.sql`) — NULL이면 `work_date` 하루, 값 있으면 `work_date`~`work_date_end` 기간 전체를 공고 1건이 커버(수락 1번으로 기간 전체 확정, 정산은 일수만큼 곱함) |
+| daeta_postings | ✅ 사용 중 | 긴급 대타 공고. `status`: 'pending'\|'matched'(매칭 확정, 수정·재취소 불가)\|'expired'(응답 없이 근무시작시각 경과 — `/api/cron/daeta-escalate`가 5분마다 직접 처리+사장님 실패알림, 2026-08-07부터)\|'completed'\|'cancelled'. `work_date_end`(nullable, `patch_daeta_date_range.sql`) — NULL이면 `work_date` 하루, 값 있으면 `work_date`~`work_date_end` 기간 전체를 공고 1건이 커버(수락 1번으로 기간 전체 확정, 정산은 일수만큼 곱함). `base_wage`/`max_urgent_pct`(`patch_daeta_auto_premium.sql`) — 미체결 시 escalation 단계별 자동 할증의 기준값/사장님 동의 상한. `employer_profile_id`(`patch_daeta_employer_profile_link.sql`) — 공고 카드의 매장 홈 링크용 |
 | employer_profiles | ✅ 사용 중 | 공고 레거시 컬럼 DROP 완료 |
 | invite_codes | ✅ 사용 중 | |
 | job_categories | ✅ 사용 중 | 마스터 테이블 |
@@ -42,7 +42,7 @@
 | sudoku_records | ✅ 사용 중 | |
 | tax_rates | ✅ 사용 중 | 세율 |
 | team_members | ✅ 사용 중 | |
-| team_member_documents | ⏳ 스키마만 작성 (2026-07-24) | 서류함(등본/보건증/통장사본) — `supabase/patch_team_documents.sql`, 미실행. UI/API 미구현 |
+| team_member_documents | ✅ 사용 중 | 서류함(등본/보건증/통장사본) — `app/employer/team/[id]/page.tsx`에 업로드/조회 UI 구현 완료(이 표는 2026-07-24 이후 갱신 안 돼 "미구현"으로 잘못 남아있었음, 2026-08-07 정정). `expires_at`은 `health_certificate`에만 사용 — `/api/cron/doc-expiry`가 매일 D-30/D-7/만료당일(이후 30일마다) 알림 발송 |
 | user_badges | ✅ 사용 중 | |
 | users | ✅ 사용 중 | name 컬럼 DROP 완료 |
 | worker_profiles | ✅ 사용 중 | trust_score/grade DROP 완료 |

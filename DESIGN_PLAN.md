@@ -282,5 +282,5 @@
 
 ## 배포 전 수동 작업 (필수)
 
-1. **SQL 패치 실행**: `supabase/patch_daeta_sos.sql` → Supabase SQL Editor에서 실행 (escalation 컬럼 + daeta_sos_config 테이블). 미실행 시 대타 등록이 실패함.
-2. **크론 등록**: cron-job.org에 `GET /api/cron/daeta-escalate` 5분 주기 추가, `Authorization: Bearer <CRON_SECRET>` 헤더 포함.
+1. **SQL 패치 실행**: `supabase/patch_daeta_sos.sql` → Supabase SQL Editor에서 실행 (escalation 컬럼 + daeta_sos_config 테이블). 미실행 시 대타 등록이 실패함. 추가로 `patch_daeta_auto_premium.sql`, `patch_daeta_employer_profile_link.sql`도 실행 필요(2026-08-07 추가분).
+2. **크론 등록**: cron-job.org에 `GET /api/cron/daeta-escalate` 5분 주기 — ✅ 2026-08-07 등록 완료(그 전엔 코드만 있고 실제 등록이 안 돼 있었음, 여러 핸드오버 문서에 "확인 필요"로만 남아있던 항목). `GET /api/cron/doc-expiry`(팀원 보건증 만료 알림, 매일 1회)도 신규 등록 완료. 둘 다 `Authorization: Bearer <CRON_SECRET>` 헤더 필요.
