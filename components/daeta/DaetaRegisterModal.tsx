@@ -753,14 +753,14 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                               style={{
                                 padding: "6px 12px",
                                 borderRadius: 20,
-                                border: "none",
+                                border: isMandatory && !isSelected ? "1px solid var(--danger-border)" : "none",
                                 fontSize: 11,
                                 cursor: "pointer",
                                 fontWeight: isSelected ? 700 : 400,
                                 background: isSelected
-                                  ? (isMandatory ? "var(--accent)" : "var(--primary)")
-                                  : (isMandatory ? "var(--chip-pink-bg)" : "var(--surface2)"),
-                                color: isSelected ? "#fff" : (isMandatory ? "var(--pink-text)" : "var(--text-muted)"),
+                                  ? (isMandatory ? "var(--danger)" : "var(--primary)")
+                                  : (isMandatory ? "var(--danger-bg)" : "var(--surface2)"),
+                                color: isSelected ? "#fff" : (isMandatory ? "var(--danger)" : "var(--text-muted)"),
                                 boxShadow: "none",
                                 outline: "none",
                                 transition: "all 0.15s"

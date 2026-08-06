@@ -28,9 +28,16 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
   const pinchStartDist = useRef<number | null>(null);
   const pinchStartZoom = useRef(1);
 
-  // 뷰포트 기본 너비 설정 (모바일 스크린 크기에 맞춰 유연하게 조정)
-  const vw = 280;
-  const vh = 280 / aspect;
+  // 뷰포트 기본 너비 설정 — 고정 280px는 큰 화면에선 낭비, 좁은 화면에선 작아 보이던 문제라
+  // 실제 화면 폭(모달 좌우 여백 제외)에 맞춰 계산하고, 회전 시 갱신되도록 리사이즈도 반영한다.
+  const [viewportW, setViewportW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 375));
+  useEffect(() => {
+    const onResize = () => setViewportW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const vw = Math.min(360, viewportW - 64);
+  const vh = vw / aspect;
 
   const clampZoom = (z: number) => Math.max(minZoom, Math.min(3, z));
 
@@ -159,6 +166,26 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
     setImgLoaded(true);
   };
 
+  // data: URI는 네트워크 왕복이 없어 브라우저가 img 엘리먼트에 onLoad 리스너가 붙기도 전에
+  // 디코딩을 끝내버리는 경우가 있음 — 이 경우 load 이벤트가 아예 발생하지 않아 검정 화면으로 남음
+  // (naturalWidth/Height는 채워져 있는데 imgLoaded만 false인 상태로 확인됨).
+  // onLoad를 놓쳤을 가능성에 대비해 img.complete를 폴링해서 보정한다.
+  useEffect(() => {
+    if (imgLoaded || imgError) return;
+    const id = setInterval(() => {
+      const img = imgRef.current;
+      if (img && img.complete) {
+        clearInterval(id);
+        if (img.naturalWidth > 0) {
+          handleImgLoad();
+        } else {
+          setImgError(true);
+        }
+      }
+    }, 80);
+    return () => clearInterval(id);
+  }, [imageSrc, imgLoaded, imgError]);
+
   // 자르기 처리
   const handleCropClick = () => {
     if (!imgRef.current || saving) return;
@@ -244,8 +271,8 @@ export default function ImageCropModal({ imageSrc, aspect, isCircle = false, onC
   };
 
   return (
-    <div style={{ ...modalOverlay, zIndex: 350, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ ...modalSheet, width: "100%", maxWidth: 360, borderRadius: 28, padding: 24, display: "flex", flexDirection: "column", gap: 20, transform: "none", alignSelf: "center", maxHeight: "90vh" }}>
+    <div style={{ ...modalOverlay, zIndex: 350, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div style={{ ...modalSheet, width: "100%", maxWidth: 420, borderRadius: 28, padding: 20, display: "flex", flexDirection: "column", gap: 20, transform: "none", alignSelf: "center", maxHeight: "90vh" }}>
         
         {/* 헤더 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

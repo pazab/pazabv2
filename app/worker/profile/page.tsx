@@ -432,7 +432,8 @@ function WorkerProfileContent() {
 
     if (profileData.image_url) {
       await supabase.from("users").update({ avatar_url: profileData.image_url, profile_completed: true }).eq("id", session.user.id);
-      await supabase.from("employer_profiles").update({ image_url: profileData.image_url }).eq("user_id", session.user.id);
+      // 매장 사진이 아직 없는(1인 사장님 등) 경우에만 알바생 프로필 사진으로 대체 — 이미 매장 고유 사진이 있으면 덮어쓰지 않음
+      await supabase.from("employer_profiles").update({ image_url: profileData.image_url }).eq("user_id", session.user.id).is("image_url", null);
     } else {
       await supabase.from("users").update({ profile_completed: true }).eq("id", session.user.id);
     }
@@ -664,14 +665,14 @@ function WorkerProfileContent() {
                                     style={{
                                       padding: "6px 12px",
                                       borderRadius: 20,
-                                      border: "none",
+                                      border: isMandatory && !isSelected ? "1px solid var(--danger-border)" : "none",
                                       fontSize: 11,
                                       cursor: "pointer",
                                       fontWeight: isSelected ? 700 : 400,
                                       background: isSelected
-                                        ? (isMandatory ? "linear-gradient(135deg, #db2777, #ec4899)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)")
-                                        : (isMandatory ? "rgba(236,72,153,0.15)" : "var(--surface2)"),
-                                      color: isSelected ? "#fff" : (isMandatory ? "#fbcfe8" : "var(--text-muted)"),
+                                        ? (isMandatory ? "linear-gradient(135deg, #dc2626, #ef4444)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)")
+                                        : (isMandatory ? "var(--danger-bg)" : "var(--surface2)"),
+                                      color: isSelected ? "#fff" : (isMandatory ? "var(--danger)" : "var(--text-muted)"),
                                       outline: "none"
                                     }}
                                   >

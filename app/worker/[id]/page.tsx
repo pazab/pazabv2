@@ -694,7 +694,7 @@ export default function WorkerDetailPage() {
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 10px", letterSpacing: "0.5px" }}>🏅 보유 자격증 & 실무기술</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {credentials.map((c) => (
-                <span key={c.name} style={{ fontSize: 12, background: c.is_mandatory_by_law ? "var(--chip-pink-bg)" : "var(--primary-light)", border: `1px solid ${c.is_mandatory_by_law ? "var(--chip-pink-border)" : "var(--primary-border)"}`, color: c.is_mandatory_by_law ? "var(--pink-text)" : "var(--purple-text)", padding: "6px 12px", borderRadius: 20 }}>
+                <span key={c.name} style={{ fontSize: 12, fontWeight: c.is_mandatory_by_law ? 700 : 400, background: c.is_mandatory_by_law ? "var(--danger-bg)" : "var(--primary-light)", border: `1px solid ${c.is_mandatory_by_law ? "var(--danger-border)" : "var(--primary-border)"}`, color: c.is_mandatory_by_law ? "var(--danger)" : "var(--purple-text)", padding: "6px 12px", borderRadius: 20 }}>
                   {c.is_mandatory_by_law && "⚠️ "}{c.name}
                 </span>
               ))}
