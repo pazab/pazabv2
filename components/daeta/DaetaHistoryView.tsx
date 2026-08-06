@@ -100,7 +100,32 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
         };
       });
 
-      setRecords(enriched);
+      // 지원자가 단 한 명도 없어 matches 행 자체가 없는 채로 만료된 내 공고 — 그동안 여기 목록에서 완전히 안 보였음
+      let unmatchedRecords: any[] = [];
+      if (isEmployer) {
+        const matchedPostingIds = new Set(daetaMatches.map((m: any) => m.daeta_posting_id));
+        const { data: myExpired } = await supabase
+          .from("daeta_postings")
+          .select("id, business_name, business_type, region, wage, work_hours, work_date, work_date_end, status, user_id, created_at")
+          .eq("user_id", userId)
+          .eq("status", "expired");
+        unmatchedRecords = (myExpired || [])
+          .filter((p: any) => !matchedPostingIds.has(p.id))
+          .map((p: any) => ({
+            id: `posting-${p.id}`,
+            employer_id: p.user_id,
+            worker_id: null,
+            daeta_posting_id: p.id,
+            progress_status: "expired_no_match",
+            daeta_postings: p,
+            users: null,
+            payslip: null,
+            created_at: p.created_at,
+            _unmatched: true,
+          }));
+      }
+
+      setRecords([...enriched, ...unmatchedRecords].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
     } catch (err: any) {
       console.error("대타 기록 로딩 에러:", err?.message || err?.code || err);
     } finally {
@@ -188,6 +213,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
     if (match.progress_status === "hired") return "✅ 정산 완료";
     if (["cancelled", "failed"].includes(match.progress_status)) return "❌ 취소/노쇼";
     if (match.progress_status === "accepted") return "🤝 근무 예정 / 정산 대기";
+    if (match.progress_status === "expired_no_match") return "😢 못 구함 (지원자 없음)";
     return match.progress_status;
   };
 
@@ -240,7 +266,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                     <span style={{ fontSize: 10, color: "#a78bfa", background: "rgba(167,139,250,0.15)", padding: "2px 8px", borderRadius: 20, fontWeight: 700, marginRight: 6 }}>대타 긴급</span>
                     <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{dateStr}</span>
                     <h3 style={{ fontSize: 16, fontWeight: 900, margin: "6px 0 2px" }}>
-                      {isEmployerForRecord ? `⚡ 알바생: ${targetUser?.nickname || "익명"}` : `🏪 매장: ${ep?.business_name}`}
+                      {rec._unmatched ? `⚡ ${ep?.business_name} — 지원자 없음` : isEmployerForRecord ? `⚡ 알바생: ${targetUser?.nickname || "익명"}` : `🏪 매장: ${ep?.business_name}`}
                     </h3>
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: isCompleted ? "#4ade80" : isCancelled ? "#f87171" : "#fbbf24" }}>
@@ -258,7 +284,8 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                   )}
                 </div>
 
-                {/* 서명 근로계약서 확인 링크 */}
+                {/* 서명 근로계약서 확인 링크 — 매칭 자체가 없던 건(_unmatched)은 계약서도 없어 생략 */}
+                {!rec._unmatched && (
                 <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                   <a href={`/api/contract?matchId=${rec.id}`} target="_blank" rel="noopener noreferrer"
                     style={{ flex: 1, textDecoration: "none", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "10px", textAlign: "center", fontSize: 12, color: "#fff", fontWeight: 700, display: "block" }}>
@@ -271,6 +298,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                     </button>
                   )}
                 </div>
+                )}
 
                 {/* 사장님 액션 버튼 (정산 / 노쇼 신고) */}
                 {isEmployerForRecord && isPending && (

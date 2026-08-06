@@ -379,7 +379,9 @@ export default function StoreHomePage() {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
               <span className="text-[11px] text-text-muted">
-                👥 팔로워 {followerCount}명{teamCount != null && teamCount > 0 ? ` · 👷 함께 일하는 중 ${teamCount}명` : ""}
+                {followerCount > 0 ? `👥 팔로워 ${followerCount}명` : ""}
+                {followerCount > 0 && teamCount != null && teamCount > 0 ? " · " : ""}
+                {teamCount != null && teamCount > 0 ? `👷 함께 일하는 중 ${teamCount}명` : ""}
               </span>
               {store.owner && (
                 <EntityLink
