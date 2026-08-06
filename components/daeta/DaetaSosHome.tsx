@@ -14,6 +14,7 @@ import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
+import SetNeighborhoodSheet from "@/components/daeta/SetNeighborhoodSheet";
 import { getWorkerTiers, TIER_LABEL } from "@/lib/daetaTier";
 import { formatDaetaDateRange } from "@/lib/utils";
 
@@ -33,6 +34,11 @@ interface SosPosting {
   status: string;
   created_at: string;
   stage_updated_at: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  base_wage?: number | null;
+  max_urgent_pct?: number | null;
+  employer_profile_id?: string | null;
 }
 
 // 서버 기본 대기시간(lib/daetaEscalation.ts DEFAULT_CONFIG)과 동일 — 관리자 설정 변경 시 다소 어긋날 수 있는 근사치
@@ -50,6 +56,221 @@ const STAGE_STEPS = [
   { n: 3, label: "신규 포함", icon: "ti-circle-plus" },
   { n: 4, label: "공개 SOS", icon: "ti-speakerphone" },
 ];
+
+function toRad(d: number) { return (d * Math.PI) / 180; }
+
+// 앱 내 카드덱 모드(app/daeta/page.tsx)와 동일하게 실시간 GPS를 1순위로 시도 — 저장된 매장/알바 프로필 위치는 GPS 거부·미지원 시의 대체값일 뿐
+function getGpsBase(): Promise<{ lat: number; lng: number } | null> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(null);
+  return new Promise(resolve => {
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: 6000 }
+    );
+  });
+}
+
+function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// 근무 시작까지 남은 시간(시간 단위) — work_hours가 "HH:MM ~ HH:MM" 형식이 아니면 정렬에서 밀리지 않도록 Infinity 처리
+function hoursUntilShiftStart(p: SosPosting, now: number): number {
+  const startPart = p.work_hours?.split("~")[0]?.trim();
+  if (!startPart) return Infinity;
+  const start = new Date(`${p.work_date}T${startPart}:00`).getTime();
+  if (Number.isNaN(start)) return Infinity;
+  return (start - now) / 3600000;
+}
+
+function isTodayDate(dateStr: string, now: number): boolean {
+  const d = new Date(now);
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return dateStr === todayStr;
+}
+
+// 긴급 판정 — 시작 3시간 이내 or 당일 시작 or 확대공지 단계(3+, 동네 검증인력까지 풀었는데도 안 잡힘)
+function isUrgentPosting(p: SosPosting, now: number): boolean {
+  if ((p.escalation_stage || 1) >= 3) return true;
+  if (isTodayDate(p.work_date, now)) return true;
+  return hoursUntilShiftStart(p, now) <= 3;
+}
+
+interface PostingCardProps {
+  p: SosPosting;
+  isMine: boolean;
+  urgent: boolean;
+  meta: PostingMatchMeta;
+  isApplied: boolean;
+  isLoading: boolean;
+  width?: number | string;
+  myBase?: { lat: number; lng: number } | null;
+  onEdit?: () => void;
+  onCancel?: () => void;
+  onApply?: () => void;
+  onGoToChat: (matchId: string) => void;
+  onViewStore?: (employerProfileId: string) => void;
+}
+
+function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore }: PostingCardProps) {
+  const stage = p.escalation_stage || 1;
+  const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
+  const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
+  return (
+    <div style={{
+      width: width ?? "100%",
+      flexShrink: 0,
+      background: isMine
+        ? "linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(239,68,68,0.06) 100%)"
+        : "var(--surface, rgba(255,255,255,0.04))",
+      border: isMine
+        ? "1.5px solid rgba(249,115,22,0.6)"
+        : urgent
+          ? "1.5px solid rgba(239,68,68,0.45)"
+          : "1px solid var(--border, rgba(255,255,255,0.12))",
+      borderRadius: 18,
+      padding: 16,
+      boxShadow: isMine ? "0 4px 16px rgba(249,115,22,0.15)" : "none",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "space-between",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+            {!isMine && p.employer_profile_id ? (
+              <span
+                onClick={(e) => { e.stopPropagation(); onViewStore?.(p.employer_profile_id!); }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 15, fontWeight: 900, color: "var(--text, #fff)", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3, cursor: "pointer" }}>
+                <i className="ti ti-home" style={{ fontSize: 13, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />
+                {p.business_name}
+              </span>
+            ) : (
+              <span style={{ fontSize: 15, fontWeight: 900, color: "var(--text, #fff)" }}>{p.business_name}</span>
+            )}
+            {isMine ? (
+              <span style={{ fontSize: 10, background: "rgba(249,115,22,0.25)", color: "#fb923c", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 내가 올린 SOS</span>
+            ) : urgent ? (
+              <span style={{ fontSize: 10, background: "rgba(239,68,68,0.22)", color: "#f87171", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 긴급</span>
+            ) : (
+              <span style={{ fontSize: 10, background: "rgba(139,92,246,0.18)", color: "#a78bfa", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>📢 동네 매장 SOS</span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", marginTop: 3, wordBreak: "keep-all", overflowWrap: "break-word" }}>
+            {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours} · {p.duty}
+            {dist != null && ` · 🚶 ${dist < 10 ? dist.toFixed(1) : Math.round(dist)}km`}
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c", marginTop: 3 }}>
+            시급 {p.wage.toLocaleString()}원
+            {isMine && p.base_wage != null && p.wage > p.base_wage && (
+              <span style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.5))", fontWeight: 600, marginLeft: 4 }}>
+                (기본 {p.base_wage.toLocaleString()}원 → 자동 할증)
+              </span>
+            )}
+          </div>
+          {isMine && (p.max_urgent_pct || 0) > 0 && (
+            <div style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.45))", marginTop: 2 }}>
+              ⚡ 안 잡히면 최대 +{p.max_urgent_pct}%까지 자동 할증돼요
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          {isMine ? (
+            !meta.acceptedMatchId && (
+              <>
+                <button
+                  onClick={onEdit}
+                  style={{ background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 10, padding: "6px 10px", color: "var(--text, #fff)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  수정
+                </button>
+                <button
+                  onClick={onCancel}
+                  style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  취소
+                </button>
+              </>
+            )
+          ) : (
+            <button
+              onClick={onApply}
+              disabled={isApplied || isLoading}
+              style={{
+                background: isApplied ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #f97316, #ef4444)",
+                border: "none",
+                borderRadius: 10,
+                padding: "8px 14px",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: isApplied ? "default" : "pointer",
+                opacity: isLoading ? 0.6 : 1,
+                boxShadow: isApplied ? "none" : "0 2px 8px rgba(249,115,22,0.3)",
+              }}
+            >
+              {isLoading ? "..." : isApplied ? "지원 완료" : "🚀 지원하기"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 진행상황(스테퍼·응답건수)은 사장님 본인에게만 의미있는 내부 정보라 내 공고에만 노출 — 남의 공고엔 매장 홈 링크로 대체 */}
+      {isMine ? (
+        meta.acceptedMatchId ? (
+          <button
+            onClick={() => onGoToChat(meta.acceptedMatchId!)}
+            style={{ width: "100%", padding: "10px", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 14, color: "#4ade80", fontSize: 12, fontWeight: 800, cursor: "pointer", marginTop: 8 }}>
+            🎉 {meta.acceptedWorkerName}님 매칭 완료! 채팅 →
+          </button>
+        ) : (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+              {visibleSteps.map((s, i) => {
+                const active = stage >= s.n;
+                const current = stage === s.n;
+                return (
+                  <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+                    <div style={{
+                      flex: 1,
+                      textAlign: "center",
+                      padding: "5px 2px",
+                      borderRadius: 8,
+                      background: current ? "rgba(251,146,60,0.15)" : active ? "rgba(255,255,255,0.06)" : "transparent",
+                      border: current ? "1px solid rgba(251,146,60,0.45)" : "1px solid transparent",
+                    }}>
+                      <i className={`ti ${s.icon}`} style={{ fontSize: 11 }} aria-hidden="true" />
+                      <div style={{ fontSize: 9, fontWeight: current ? 800 : 500, color: current ? "#fb923c" : active ? "var(--text, #fff)" : "var(--text-muted, rgba(255,255,255,0.3))", marginTop: 1 }}>
+                        {s.label}
+                      </div>
+                    </div>
+                    {i < visibleSteps.length - 1 && (
+                      <div style={{ width: 6, height: 1.5, background: active ? "rgba(251,146,60,0.5)" : "rgba(255,255,255,0.12)", flexShrink: 0 }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.45))" }}>
+                {stage === 1 && "팀 알림 중"}
+                {stage === 2 && "동네 검증 공개"}
+                {stage === 3 && "신규 포함 공개"}
+                {stage === 4 && "전체 공개 중"}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: meta.total > 0 ? "#4ade80" : "var(--text-muted, rgba(255,255,255,0.45))" }}>
+                응답 {meta.total}건
+              </span>
+            </div>
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
 
 interface DaetaSosHomeProps {
   userId: string;
@@ -74,6 +295,10 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [historyCount, setHistoryCount] = useState(0);
   const [showAllWorkers, setShowAllWorkers] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [activeTab, setActiveTab] = useState<"post" | "people">("post");
+  const [myBase, setMyBase] = useState<{ lat: number; lng: number } | null>(null);
+  const [neighborhoodLabel, setNeighborhoodLabel] = useState<string | null>(null);
+  const [showNeighborhoodSheet, setShowNeighborhoodSheet] = useState(false);
 
 
 
@@ -141,9 +366,10 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   };
 
   const load = useCallback(async () => {
+    const gpsBasePromise = getGpsBase(); // 다른 조회와 병렬로 미리 시작 — 뒤에서 값 필요할 때 await만
     const { data: rowsRaw } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at")
+      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at, lat, lng, base_wage, max_urgent_pct, employer_profile_id")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
 
@@ -210,7 +436,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     // ⚡ 내 알바 프로필 상태 조회
     const { data: wpRows } = await supabase
       .from("worker_profiles")
-      .select("id, available_now")
+      .select("id, available_now, lat, lng, eupmyeondong, sigungu")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(1);
@@ -218,6 +444,19 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       setWorkerProfile(wpRows[0]);
     } else {
       setWorkerProfile(null);
+    }
+
+    // ⚡ 내 위치 기준점 — 실시간 GPS 1순위, 거부·미지원 시엔 "내 동네"(worker_profiles, 수동 설정)로 대체.
+    // 매장 주소는 기준으로 안 씀 — 이 거리는 "대타 뛰러 갈 통근 거리"라 본인 가게 위치와는 무관함.
+    const wpLoc = wpRows?.[0] as { lat: number | null; lng: number | null; eupmyeondong?: string | null; sigungu?: string | null } | undefined;
+    setNeighborhoodLabel(wpLoc?.eupmyeondong || wpLoc?.sigungu || null);
+    const gpsBase = await gpsBasePromise;
+    if (gpsBase) {
+      setMyBase(gpsBase);
+    } else if (wpLoc?.lat != null && wpLoc?.lng != null) {
+      setMyBase({ lat: wpLoc.lat, lng: wpLoc.lng });
+    } else {
+      setMyBase(null);
     }
 
     // ⚡ 실시간 대타 가능 알바생 목록 조회 (available_now가 true인 대기 중 유저만)
@@ -467,9 +706,35 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     );
   }
 
+  // 공고 정렬: 내 공고(고정) → 긴급(시작임박·확대공지, 임박한 순) → 다른 공고(거리순→최신순)
+  const myPostings = postings.filter(p => p.user_id === userId);
+  const othersPostings = postings.filter(p => p.user_id !== userId);
+  const urgentOthers = othersPostings
+    .filter(p => isUrgentPosting(p, now))
+    .sort((a, b) => hoursUntilShiftStart(a, now) - hoursUntilShiftStart(b, now));
+  const generalOthers = othersPostings
+    .filter(p => !isUrgentPosting(p, now))
+    .sort((a, b) => {
+      const da = myBase && a.lat != null && a.lng != null ? distanceKm(myBase, { lat: a.lat, lng: a.lng }) : Infinity;
+      const db = myBase && b.lat != null && b.lng != null ? distanceKm(myBase, { lat: b.lat, lng: b.lng }) : Infinity;
+      if (da !== db) return da - db;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg, #0a0a0f)", paddingBottom: 100 }}>
-      <AppHeader title="대타" showBellAndMenu />
+      <AppHeader
+        title="대타"
+        showBellAndMenu
+        rightActions={
+          <button
+            onClick={() => setShowNeighborhoodSheet(true)}
+            style={{ display: "flex", alignItems: "center", gap: 3, background: "var(--surface, rgba(255,255,255,0.06))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 20, padding: "5px 10px", color: "var(--text-muted, rgba(255,255,255,0.7))", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+            <i className="ti ti-map-pin" style={{ fontSize: 13 }} aria-hidden="true" />
+            {neighborhoodLabel || "동네 설정"}
+          </button>
+        }
+      />
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px 0" }}>
 
@@ -551,264 +816,217 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
           </div>
         </button>
 
-        {/* 진행 중 요청 카드 (가로 스크롤 캐러셀) */}
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>불러오는 중...</div>
-        ) : postings.length > 0 && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                <i className="ti ti-flame" aria-hidden="true" /> 긴급 대타 공고 ({postings.length}건)
-              </h3>
-              <span style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.5))", display: "flex", alignItems: "center", gap: 3 }}>
-                👈 좌우 스크롤
-              </span>
-            </div>
-
-            <div style={{
-              display: "flex",
-              gap: 12,
-              overflowX: "auto",
-              paddingBottom: 10,
-              scrollSnapType: "x mandatory",
-              WebkitOverflowScrolling: "touch",
-            }}>
-              {postings.map(p => {
-                const isMine = p.user_id === userId;
-                const isApplied = appliedIds.has(p.id);
-                const meta = matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null };
-                const stage = p.escalation_stage || 1;
-                const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
-                return (
-                  <div key={p.id} style={{
-                    width: 300,
-                    flexShrink: 0,
-                    scrollSnapAlign: "start",
-                    background: isMine
-                      ? "linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(239,68,68,0.06) 100%)"
-                      : "var(--surface, rgba(255,255,255,0.04))",
-                    border: isMine
-                      ? "1.5px solid rgba(249,115,22,0.6)"
-                      : "1px solid var(--border, rgba(255,255,255,0.12))",
-                    borderRadius: 18,
-                    padding: 16,
-                    boxShadow: isMine ? "0 4px 16px rgba(249,115,22,0.15)" : "none",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 15, fontWeight: 900, color: "var(--text, #fff)" }}>{p.business_name}</span>
-                          {isMine ? (
-                            <span style={{ fontSize: 10, background: "rgba(249,115,22,0.25)", color: "#fb923c", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 내가 올린 SOS</span>
-                          ) : (
-                            <span style={{ fontSize: 10, background: "rgba(139,92,246,0.18)", color: "#a78bfa", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>📢 동네 매장 SOS</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", marginTop: 3 }}>
-                          {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours} · {p.duty}
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c", marginTop: 3 }}>
-                          시급 {p.wage.toLocaleString()}원
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                        {isMine ? (
-                          !meta.acceptedMatchId && (
-                            <>
-                              <button
-                                onClick={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
-                                style={{ background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 10, padding: "6px 10px", color: "var(--text, #fff)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                                수정
-                              </button>
-                              <button
-                                onClick={() => cancelPosting(p)}
-                                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                                취소
-                              </button>
-                            </>
-                          )
-                        ) : (
-                          <button
-                            onClick={() => applyPosting(p)}
-                            disabled={isApplied || actionLoading === p.id}
-                            style={{
-                              background: isApplied ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #f97316, #ef4444)",
-                              border: "none",
-                              borderRadius: 10,
-                              padding: "8px 14px",
-                              color: "#fff",
-                              fontSize: 12,
-                              fontWeight: 800,
-                              cursor: isApplied ? "default" : "pointer",
-                              opacity: actionLoading === p.id ? 0.6 : 1,
-                              boxShadow: isApplied ? "none" : "0 2px 8px rgba(249,115,22,0.3)",
-                            }}
-                          >
-                            {actionLoading === p.id ? "..." : isApplied ? "지원 완료" : "🚀 지원하기"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 에스컬레이션 스테퍼 */}
-                    {meta.acceptedMatchId ? (
-                      <button
-                        onClick={() => router.push(`/chat/${meta.acceptedMatchId}`)}
-                        style={{ width: "100%", padding: "10px", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 14, color: "#4ade80", fontSize: 12, fontWeight: 800, cursor: "pointer", marginTop: 8 }}>
-                        🎉 {meta.acceptedWorkerName}님 매칭 완료! 채팅 →
-                      </button>
-                    ) : (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
-                          {visibleSteps.map((s, i) => {
-                            const active = stage >= s.n;
-                            const current = stage === s.n;
-                            return (
-                              <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-                                <div style={{
-                                  flex: 1,
-                                  textAlign: "center",
-                                  padding: "5px 2px",
-                                  borderRadius: 8,
-                                  background: current ? "rgba(251,146,60,0.15)" : active ? "rgba(255,255,255,0.06)" : "transparent",
-                                  border: current ? "1px solid rgba(251,146,60,0.45)" : "1px solid transparent",
-                                }}>
-                                  <i className={`ti ${s.icon}`} style={{ fontSize: 11 }} aria-hidden="true" />
-                                  <div style={{ fontSize: 9, fontWeight: current ? 800 : 500, color: current ? "#fb923c" : active ? "var(--text, #fff)" : "var(--text-muted, rgba(255,255,255,0.3))", marginTop: 1 }}>
-                                    {s.label}
-                                  </div>
-                                </div>
-                                {i < visibleSteps.length - 1 && (
-                                  <div style={{ width: 6, height: 1.5, background: active ? "rgba(251,146,60,0.5)" : "rgba(255,255,255,0.12)", flexShrink: 0 }} />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.45))" }}>
-                            {stage === 1 && "팀 알림 중"}
-                            {stage === 2 && "동네 검증 공개"}
-                            {stage === 3 && "신규 포함 공개"}
-                            {stage === 4 && "전체 공개 중"}
-                          </span>
-                          <span style={{ fontSize: 10, fontWeight: 800, color: meta.total > 0 ? "#4ade80" : "var(--text-muted, rgba(255,255,255,0.45))" }}>
-                            응답 {meta.total}건
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ⚡ 실시간 대타 가능 알바생 목록 */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)", margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-              <i className="ti ti-users" aria-hidden="true" /> 실시간 대타 인력 목록 ({availableWorkers.filter(w => w.availableNow).length}명 대기 중)
-            </h3>
-          </div>
-
-          {availableWorkers.length === 0 ? (
-            <div style={{ background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.08))", borderRadius: 16, padding: "20px 16px", textAlign: "center", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>
-              현재 등록된 대타 알바생이 없습니다.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(showAllWorkers ? availableWorkers : availableWorkers.slice(0, 8)).map(w => (
-                <div
-                  key={w.id}
-                  onClick={() => router.push(`/worker/${w.userId}`)}
-                  style={{
-                    background: w.isMe && w.availableNow
-                      ? "rgba(34,197,94,0.12)"
-                      : "var(--surface, rgba(255,255,255,0.04))",
-                    border: w.isMe && w.availableNow
-                      ? "2px solid #22c55e"
-                      : `1px solid ${w.availableNow ? "rgba(34,197,94,0.4)" : "var(--border, rgba(255,255,255,0.08))"}`,
-                    borderRadius: 16,
-                    padding: 12,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    cursor: "pointer",
-                    transition: "transform 0.15s ease",
-                  }}
-                >
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--primary, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 18, overflow: "hidden", flexShrink: 0, border: w.availableNow ? "2px solid #22c55e" : "1px solid var(--border)" }}>
-                    {w.avatarUrl ? <img src={w.avatarUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>{w.nickname[0]?.toUpperCase()}</span>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)" }}>
-                        {w.nickname} {w.isMe && "(나)"}
-                      </span>
-                      {!w.isMe && w.tier && (
-                        <span style={{ fontSize: 9, background: `${TIER_LABEL[w.tier as "tier1" | "tier2"].color}22`, color: TIER_LABEL[w.tier as "tier1" | "tier2"].color, padding: "2px 6px", borderRadius: 8, fontWeight: 800, flexShrink: 0 }}>
-                          {TIER_LABEL[w.tier as "tier1" | "tier2"].emoji}{TIER_LABEL[w.tier as "tier1" | "tier2"].name}
-                        </span>
-                      )}
-                      {w.isMe && w.availableNow ? (
-                        <span style={{ fontSize: 10, background: "#22c55e", color: "#fff", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🟢 나 (대타 대기 중)</span>
-                      ) : w.availableNow ? (
-                        <span style={{ fontSize: 10, background: "rgba(34,197,94,0.2)", color: "#86efac", padding: "2px 6px", borderRadius: 10, fontWeight: 800 }}>🟢 대타 가능</span>
-                      ) : (
-                        <span style={{ fontSize: 10, background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>오프라인</span>
-                      )}
-                    </div>
-                    <p style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.6))", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {w.category} · 경력 {w.experienceMonths > 0 ? `${w.experienceMonths}개월` : "신입"} · {w.region || "지역미설정"}
-                    </p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSosClick(w);
-                    }}
-                    style={{
-                      background: w.isMe
-                        ? "var(--surface2, #27272a)"
-                        : w.availableNow
-                          ? "linear-gradient(135deg, #f97316, #ef4444)"
-                          : "var(--surface2, #27272a)",
-                      border: w.isMe
-                        ? "1px solid var(--border, rgba(255,255,255,0.25))"
-                        : w.availableNow
-                          ? "none"
-                          : "1px solid var(--border, rgba(255,255,255,0.25))",
-                      borderRadius: 10,
-                      padding: "8px 14px",
-                      color: w.availableNow && !w.isMe ? "#ffffff" : "var(--text, #ffffff)",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      flexShrink: 0,
-                      boxShadow: !w.isMe && w.availableNow ? "0 2px 10px rgba(249,115,22,0.4)" : "none",
-                    }}
-                  >
-                    {w.isMe ? "내 프로필" : w.availableNow ? "⚡ SOS 요청" : "프로필"}
-                  </button>
-                </div>
-              ))}
-
-              {!showAllWorkers && availableWorkers.length > 8 && (
-                <button
-                  onClick={() => setShowAllWorkers(true)}
-                  style={{ padding: "10px", background: "none", border: "1px dashed var(--border, rgba(255,255,255,0.2))", borderRadius: 14, color: "var(--text-muted, rgba(255,255,255,0.6))", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                  더보기 ({availableWorkers.length - 8}명 더)
-                </button>
-              )}
-            </div>
-          )}
+        {/* 공고 ⇄ 인력 탭 전환 — 지원(pull)할 공고와 직접 지목(push)할 인력은 액션이 달라 한 화면에 섞지 않음 */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "var(--surface, rgba(255,255,255,0.04))", borderRadius: 16, padding: 4 }}>
+          <button
+            onClick={() => setActiveTab("post")}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 12, border: "none", cursor: "pointer",
+              background: activeTab === "post" ? "linear-gradient(135deg, #f97316, #ef4444)" : "transparent",
+              color: activeTab === "post" ? "#fff" : "var(--text-muted, rgba(255,255,255,0.6))",
+              fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}
+          >
+            <i className="ti ti-clipboard-list" aria-hidden="true" /> 공고{postings.length > 0 ? ` (${postings.length})` : ""}
+          </button>
+          <button
+            onClick={() => setActiveTab("people")}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 12, border: "none", cursor: "pointer",
+              background: activeTab === "people" ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "transparent",
+              color: activeTab === "people" ? "#fff" : "var(--text-muted, rgba(255,255,255,0.6))",
+              fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}
+          >
+            <i className="ti ti-users" aria-hidden="true" /> 인력{availableWorkers.filter(w => w.availableNow).length > 0 ? ` (${availableWorkers.filter(w => w.availableNow).length})` : ""}
+          </button>
         </div>
 
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>불러오는 중...</div>
+        ) : activeTab === "post" ? (
+          postings.length === 0 ? (
+            <div style={{ background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.08))", borderRadius: 16, padding: "24px 16px", textAlign: "center", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13, marginBottom: 24 }}>
+              진행 중인 대타 공고가 없어요. 아래 버튼으로 등록해보세요.
+            </div>
+          ) : (
+            <div style={{ maxHeight: "70vh", overflowY: "auto", borderRadius: 18, border: "1px solid var(--border, rgba(255,255,255,0.1))", marginBottom: 24 }}>
+              {myPostings.length > 0 && (
+                <div style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--bg, #0a0a0f)", padding: "14px 14px 10px", borderBottom: "1px solid var(--border, rgba(255,255,255,0.1))" }}>
+                  <h3 style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted, rgba(255,255,255,0.5))", margin: "0 0 8px", textTransform: "uppercase", letterSpacing: 0.3 }}>내 공고</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {myPostings.map(p => (
+                      <PostingCard
+                        key={p.id}
+                        p={p}
+                        isMine
+                        urgent={false}
+                        meta={matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                        isApplied={false}
+                        isLoading={false}
+                        onEdit={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
+                        onCancel={() => cancelPosting(p)}
+                        onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ padding: 14 }}>
+                {urgentOthers.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 12, fontWeight: 800, color: "#f87171", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
+                      <i className="ti ti-flame" aria-hidden="true" /> 긴급
+                    </h3>
+                    <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
+                      {urgentOthers.map(p => (
+                        <div key={p.id} style={{ scrollSnapAlign: "start", flexShrink: 0 }}>
+                          <PostingCard
+                            p={p}
+                            isMine={false}
+                            urgent
+                            width={280}
+                            meta={matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                            isApplied={appliedIds.has(p.id)}
+                            isLoading={actionLoading === p.id}
+                            myBase={myBase}
+                            onApply={() => applyPosting(p)}
+                            onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                            onViewStore={(id) => router.push(`/store/${id}`)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {generalOthers.length > 0 && (
+                  <div>
+                    <h3 style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted, rgba(255,255,255,0.5))", margin: "0 0 8px" }}>다른 공고</h3>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {generalOthers.map(p => (
+                        <PostingCard
+                          key={p.id}
+                          p={p}
+                          isMine={false}
+                          urgent={false}
+                          meta={matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                          isApplied={appliedIds.has(p.id)}
+                          isLoading={actionLoading === p.id}
+                          myBase={myBase}
+                          onApply={() => applyPosting(p)}
+                          onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                          onViewStore={(id) => router.push(`/store/${id}`)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {urgentOthers.length === 0 && generalOthers.length === 0 && myPostings.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "16px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 12 }}>
+                    주변에 다른 대타 공고가 없어요.
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        ) : (
+          <div style={{ marginBottom: 24 }}>
+            {availableWorkers.length === 0 ? (
+              <div style={{ background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.08))", borderRadius: 16, padding: "20px 16px", textAlign: "center", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>
+                현재 등록된 대타 알바생이 없습니다.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(showAllWorkers ? availableWorkers : availableWorkers.slice(0, 8)).map(w => (
+                  <div
+                    key={w.id}
+                    onClick={() => router.push(`/worker/${w.userId}`)}
+                    style={{
+                      background: w.isMe && w.availableNow
+                        ? "rgba(34,197,94,0.12)"
+                        : "var(--surface, rgba(255,255,255,0.04))",
+                      border: w.isMe && w.availableNow
+                        ? "2px solid #22c55e"
+                        : `1px solid ${w.availableNow ? "rgba(34,197,94,0.4)" : "var(--border, rgba(255,255,255,0.08))"}`,
+                      borderRadius: 16,
+                      padding: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      cursor: "pointer",
+                      transition: "transform 0.15s ease",
+                    }}
+                  >
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--primary, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 18, overflow: "hidden", flexShrink: 0, border: w.availableNow ? "2px solid #22c55e" : "1px solid var(--border)" }}>
+                      {w.avatarUrl ? <img src={w.avatarUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>{w.nickname[0]?.toUpperCase()}</span>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)" }}>
+                          {w.nickname} {w.isMe && "(나)"}
+                        </span>
+                        {!w.isMe && w.tier && (
+                          <span style={{ fontSize: 9, background: `${TIER_LABEL[w.tier as "tier1" | "tier2"].color}22`, color: TIER_LABEL[w.tier as "tier1" | "tier2"].color, padding: "2px 6px", borderRadius: 8, fontWeight: 800, flexShrink: 0 }}>
+                            {TIER_LABEL[w.tier as "tier1" | "tier2"].emoji}{TIER_LABEL[w.tier as "tier1" | "tier2"].name}
+                          </span>
+                        )}
+                        {w.isMe && w.availableNow ? (
+                          <span style={{ fontSize: 10, background: "#22c55e", color: "#fff", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🟢 나 (대타 대기 중)</span>
+                        ) : w.availableNow ? (
+                          <span style={{ fontSize: 10, background: "rgba(34,197,94,0.2)", color: "#86efac", padding: "2px 6px", borderRadius: 10, fontWeight: 800 }}>🟢 대타 가능</span>
+                        ) : (
+                          <span style={{ fontSize: 10, background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>오프라인</span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.6))", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {w.category} · 경력 {w.experienceMonths > 0 ? `${w.experienceMonths}개월` : "신입"} · {w.region || "지역미설정"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSosClick(w);
+                      }}
+                      style={{
+                        background: w.isMe
+                          ? "var(--surface2, #27272a)"
+                          : w.availableNow
+                            ? "linear-gradient(135deg, #f97316, #ef4444)"
+                            : "var(--surface2, #27272a)",
+                        border: w.isMe
+                          ? "1px solid var(--border, rgba(255,255,255,0.25))"
+                          : w.availableNow
+                            ? "none"
+                            : "1px solid var(--border, rgba(255,255,255,0.25))",
+                        borderRadius: 10,
+                        padding: "8px 14px",
+                        color: w.availableNow && !w.isMe ? "#ffffff" : "var(--text, #ffffff)",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        boxShadow: !w.isMe && w.availableNow ? "0 2px 10px rgba(249,115,22,0.4)" : "none",
+                      }}
+                    >
+                      {w.isMe ? "내 프로필" : w.availableNow ? "⚡ SOS 요청" : "프로필"}
+                    </button>
+                  </div>
+                ))}
+
+                {!showAllWorkers && availableWorkers.length > 8 && (
+                  <button
+                    onClick={() => setShowAllWorkers(true)}
+                    style={{ padding: "10px", background: "none", border: "1px dashed var(--border, rgba(255,255,255,0.2))", borderRadius: 14, color: "var(--text-muted, rgba(255,255,255,0.6))", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    더보기 ({availableWorkers.length - 8}명 더)
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 보조 경로 — "직접 고르기"(카드덱)는 위 목록과 같은 후보를 다시 스와이프로 보여줘 중복이라 강등(코드는 유지, 진입 버튼만 제거) */}
         <div style={{ display: "flex", gap: 10 }}>
@@ -1036,6 +1254,14 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             </div>
           </div>
         </div>
+      )}
+
+      {showNeighborhoodSheet && (
+        <SetNeighborhoodSheet
+          userId={userId}
+          onClose={() => setShowNeighborhoodSheet(false)}
+          onSaved={(loc) => { setMyBase(loc); setNeighborhoodLabel(loc.label); }}
+        />
       )}
 
       {ToastUI}
