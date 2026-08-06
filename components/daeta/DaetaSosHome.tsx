@@ -2,7 +2,9 @@
 
 /**
  * DaetaSosHome — 사장님 대타 SOS 홈 (DESIGN_PLAN.md P1)
- * 원버튼 요청 → 진행 중 요청 카드(에스컬레이션 단계 표시) → 직접 고르기(카드덱)는 보조 경로
+ * 원버튼 요청 → 진행 중 요청 카드(에스컬레이션 단계 표시) → 실시간 인력 목록(Tier1 우선정렬, 8명+더보기)
+ * "직접 고르기"(카드덱, onOpenDeck)는 인력 목록과 같은 후보를 중복 노출해 2026-08-06 진입 버튼 제거 —
+ * 코드/prop은 유지(강등), 필요해지면 목록 옆에 다시 노출
  */
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -12,6 +14,7 @@ import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
+import { getWorkerTiers, TIER_LABEL } from "@/lib/daetaTier";
 
 
 interface SosPosting {
@@ -66,6 +69,8 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [editingPostingId, setEditingPostingId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [showAllWorkers, setShowAllWorkers] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
 
@@ -235,6 +240,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       region: string;
       experienceMonths: number;
       isMe: boolean;
+      tier?: "tier1" | "tier2";
     }
 
     let workerCardList: WorkerCardItem[] = (workers || []).map((w: any) => ({
@@ -276,7 +282,22 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       workerCardList = workerCardList.filter(w => w.userId !== userId);
     }
 
+    // STRATEGY.md 2-Tier 원칙 — 알바생 쪽 공고 피드에만 적용돼 있던 Tier1(✅검증) 우선노출을
+    // 사장님이 인력을 직접 보는 이 목록에도 동일하게 적용 (기존엔 가입 최신순으로만 나열됐음)
+    const tiers = await getWorkerTiers(supabase, workerCardList.map(w => w.userId));
+    workerCardList = workerCardList.map(w => ({ ...w, tier: tiers[w.userId] || "tier2" }));
+    workerCardList.sort((a, b) => (b.isMe ? 1 : 0) - (a.isMe ? 1 : 0) || (a.tier === "tier1" ? 0 : 1) - (b.tier === "tier1" ? 0 : 1));
+
     setAvailableWorkers(workerCardList);
+
+    // 대타 내역 버튼에 건수 표시 — 눌러보기 전엔 뭐가 들어있는지 알 수 없던 문제
+    const { count } = await supabase
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .eq("employer_id", userId)
+      .not("daeta_posting_id", "is", null);
+    setHistoryCount(count || 0);
+
     setLoading(false);
   }, [userId]);
 
@@ -699,7 +720,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {availableWorkers.map(w => (
+              {(showAllWorkers ? availableWorkers : availableWorkers.slice(0, 8)).map(w => (
                 <div
                   key={w.id}
                   onClick={() => router.push(`/worker/${w.userId}`)}
@@ -727,6 +748,11 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                       <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text, #fff)" }}>
                         {w.nickname} {w.isMe && "(나)"}
                       </span>
+                      {!w.isMe && w.tier && (
+                        <span style={{ fontSize: 9, background: `${TIER_LABEL[w.tier as "tier1" | "tier2"].color}22`, color: TIER_LABEL[w.tier as "tier1" | "tier2"].color, padding: "2px 6px", borderRadius: 8, fontWeight: 800, flexShrink: 0 }}>
+                          {TIER_LABEL[w.tier as "tier1" | "tier2"].emoji}{TIER_LABEL[w.tier as "tier1" | "tier2"].name}
+                        </span>
+                      )}
                       {w.isMe && w.availableNow ? (
                         <span style={{ fontSize: 10, background: "#22c55e", color: "#fff", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🟢 나 (대타 대기 중)</span>
                       ) : w.availableNow ? (
@@ -770,22 +796,24 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 </div>
               ))}
 
+              {!showAllWorkers && availableWorkers.length > 8 && (
+                <button
+                  onClick={() => setShowAllWorkers(true)}
+                  style={{ padding: "10px", background: "none", border: "1px dashed var(--border, rgba(255,255,255,0.2))", borderRadius: 14, color: "var(--text-muted, rgba(255,255,255,0.6))", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  더보기 ({availableWorkers.length - 8}명 더)
+                </button>
+              )}
             </div>
           )}
         </div>
 
 
-        {/* 보조 경로 */}
+        {/* 보조 경로 — "직접 고르기"(카드덱)는 위 목록과 같은 후보를 다시 스와이프로 보여줘 중복이라 강등(코드는 유지, 진입 버튼만 제거) */}
         <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={onOpenDeck}
-            style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            <i className="ti ti-eye" aria-hidden="true" /> 직접 고르기
-          </button>
           <button
             onClick={() => setShowHistory(true)}
             style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            <i className="ti ti-list" aria-hidden="true" /> 대타 내역
+            <i className="ti ti-list" aria-hidden="true" /> 대타 내역 {historyCount > 0 ? `(${historyCount}건)` : ""}
           </button>
         </div>
       </div>
