@@ -74,9 +74,9 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
 
   // 2. 대타 구인 정보 입력 상태
   const [workDate, setWorkDate] = useState("");
-  // 근무시간이 같은 날짜를 추가로 더 등록할 때 사용 (신규 등록에서만, 요일별로 시간이 다르면 각각 따로 등록해야 함)
-  const [extraDates, setExtraDates] = useState<string[]>([]);
-  const [showDateAdder, setShowDateAdder] = useState(false);
+  // 근무시간이 같은 기간을 한번에 등록할 때 사용 (신규 등록에서만, 요일별로 시간이 다르면 각각 따로 등록해야 함)
+  const [isSingleDay, setIsSingleDay] = useState(true);
+  const [endDate, setEndDate] = useState("");
   const [startHour, setStartHour] = useState("12");
   const [startMin, setStartMin] = useState("00");
   const [endHour, setEndHour] = useState("18");
@@ -395,6 +395,10 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       setErrMsg("대타 담당 업무를 선택하거나 입력해 주세요.");
       return;
     }
+    if (!postingId && !isSingleDay) {
+      if (!endDate) { setErrMsg("종료일을 선택해 주세요."); return; }
+      if (endDate < workDate) { setErrMsg("종료일은 시작일과 같거나 이후여야 합니다."); return; }
+    }
 
     // 확정된 대타를 취소한 이력이 있으면 정지 기간 동안 신규 SOS 등록 제한
     if (!postingId) {
@@ -446,9 +450,19 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         showToast("⚡ 대타 공고가 성공적으로 수정되었습니다!");
         setTimeout(() => onSuccess(postingId), 1500);
       } else {
-        // 근무시간이 같은 날짜를 여러 개 골랐으면(대타 필요 날짜 아래 "+ 날짜 추가") 날짜별로 각각 공고를 생성 —
+        // 기간(시작일~종료일)을 골랐으면 그 사이 날짜마다 각각 공고를 생성 —
         // 매칭/에스컬레이션이 공고 1건=시프트 1건 단위라 한 공고에 여러 날짜를 담지 않고 별개 공고로 나눔
-        const allDates = Array.from(new Set([workDate, ...extraDates])).sort();
+        const allDates: string[] = [];
+        if (isSingleDay || !endDate || endDate === workDate) {
+          allDates.push(workDate);
+        } else {
+          const cur = new Date(`${workDate}T00:00:00`);
+          const last = new Date(`${endDate}T00:00:00`);
+          while (cur <= last) {
+            allDates.push(cur.toISOString().split("T")[0]);
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
         const { data: insertedRows, error } = await supabase
           .from("daeta_postings")
           .insert(allDates.map(buildInsertData))
@@ -642,39 +656,26 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                     style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }} />
                   <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 대타 구인은 오늘 기준 3일 이내 긴급 일정만 가능합니다.</span>
 
-                  {/* 근무시간이 같은 날짜를 이어서 여러 건 등록 — 신규 등록에서만 노출(수정 중엔 1건만) */}
+                  {/* 근무시간이 같은 기간을 한번에 등록 — 신규 등록에서만 노출(수정 중엔 하루만) */}
                   {!postingId && (
                     <div style={{ marginTop: 10 }}>
-                      {extraDates.length > 0 && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                          {extraDates.map(d => (
-                            <span key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 20, padding: "5px 6px 5px 10px", color: "var(--text)" }}>
-                              {d}
-                              <button type="button" onClick={() => setExtraDates(prev => prev.filter(x => x !== d))}
-                                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}>
-                                <i className="ti ti-x" style={{ fontSize: 11 }} aria-hidden="true" />
-                              </button>
-                            </span>
-                          ))}
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+                        <input type="checkbox" checked={isSingleDay}
+                          onChange={e => { setIsSingleDay(e.target.checked); if (e.target.checked) setEndDate(""); }}
+                          style={{ width: 16, height: 16, cursor: "pointer" }} />
+                        하루만 진행
+                      </label>
+                      {!isSingleDay && (
+                        <div style={{ marginTop: 8 }}>
+                          <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>종료일</label>
+                          <input type="date" value={endDate} min={workDate || todayStr} max={maxDateStr}
+                            onChange={e => setEndDate(e.target.value)}
+                            style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }} />
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+                            시작일~종료일 사이 매일 같은 근무시간·시급으로 공고가 각각 등록돼요. 요일마다 시간이 다르면 체크박스를 켜고 하루씩 따로 등록해 주세요.
+                          </span>
                         </div>
                       )}
-                      {showDateAdder || extraDates.length > 0 ? (
-                        <input type="date" value="" min={todayStr} max={maxDateStr}
-                          onChange={e => {
-                            const d = e.target.value;
-                            if (!d || d === workDate || extraDates.includes(d)) return;
-                            setExtraDates(prev => [...prev, d].sort());
-                          }}
-                          style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px dashed var(--border)", borderRadius: 12, padding: "10px 12px", color: "var(--text)", fontSize: 13, outline: "none" }} />
-                      ) : (
-                        <button type="button" onClick={() => setShowDateAdder(true)}
-                          style={{ background: "none", border: "1px dashed var(--border)", borderRadius: 12, padding: "8px 12px", color: "var(--text-muted)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                          + 같은 시간대로 날짜 추가
-                        </button>
-                      )}
-                      <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
-                        여기서 추가한 날짜는 전부 아래 같은 근무시간·시급으로 공고가 각각 등록돼요. 요일마다 시간이 다르면 이 공고 등록 후 따로 하나씩 더 등록해 주세요.
-                      </span>
                     </div>
                   )}
                 </div>
