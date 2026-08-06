@@ -461,8 +461,14 @@ function WorkerProfileContent() {
     const { error } = existingProfileId
       ? await supabase.from("worker_profiles").update(mediaFields).eq("id", existingProfileId)
       : await supabase.from("worker_profiles").insert({ user_id: userId, ...mediaFields });
+    if (error) { setGalleryOnlySaving(false); setError("저장 중 오류: " + error.message); return; }
+
+    if (mediaFields.image_url) {
+      await supabase.from("users").update({ avatar_url: mediaFields.image_url }).eq("id", userId);
+      // 매장 사진이 아직 없는 경우에만 대체 채움 — 이미 매장 고유 사진이 있으면 덮어쓰지 않음
+      await supabase.from("employer_profiles").update({ image_url: mediaFields.image_url }).eq("user_id", userId).is("image_url", null);
+    }
     setGalleryOnlySaving(false);
-    if (error) { setError("저장 중 오류: " + error.message); return; }
     setSuccess(true);
     const decodedReturn = returnTo ? decodeURIComponent(returnTo) : "";
     setTimeout(() => router.replace(decodedReturn.startsWith("/") ? decodedReturn : "/mypage"), 1000);
