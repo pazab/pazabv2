@@ -670,23 +670,26 @@ export default function WorkerDetailPage() {
       )}
 
       {isWorkerRole && (hasWorkerProfile ? (<>
-        {/* 핵심 조건 */}
-        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[
-              { icon: "₩", label: "희망 시급", value: Number(w.desired_wage) > 0 ? `${Number(w.desired_wage).toLocaleString()}원` : "협의", sub: w.wage_negotiable ? "협의 가능" : null, color: "var(--danger)" },
-              { icon: "📅", label: "근무요일", value: String(w.work_days || "협의"), sub: null, color: null },
-              { icon: "⏰", label: "근무시간", value: String(w.work_hours || "협의"), sub: null, color: null },
-              { icon: "💼", label: "경력", value: w.experience === "있음" ? `${w.experience_months || 0}개월` : "신입", sub: null, color: null },
-            ].map(item => (
-              <div key={item.label} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px" }}>
-                <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>{item.icon} {item.label}</p>
-                <p style={{ fontSize: 16, fontWeight: 800, margin: 0, color: item.color || "var(--text)" }}>{item.value}</p>
-                {item.sub && <p style={{ fontSize: 10, color: "var(--purple-text)", margin: "3px 0 0" }}>💬 {item.sub}</p>}
-              </div>
-            ))}
+        {/* 구직 희망 조건 — 대타 SOS는 이 값들을 전혀 안 씀(available_now·팀이력만 봄), 일반 채용매칭 전용이라
+            실제로 입력한 적 있는 사람에게만 노출 — 대타만 켜둔 사람에게 무관한 "협의" placeholder를 안 보여줌 */}
+        {(Number(w.desired_wage) > 0 || w.work_days || w.work_hours) && (
+          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>📋 구직 희망 조건</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              {[
+                { icon: "₩", label: "희망 시급", value: Number(w.desired_wage) > 0 ? `${Number(w.desired_wage).toLocaleString()}원` : "협의", sub: w.wage_negotiable ? "협의 가능" : null, color: "var(--danger)" },
+                { icon: "📅", label: "근무요일", value: String(w.work_days || "협의"), sub: null, color: null },
+                { icon: "⏰", label: "근무시간", value: String(w.work_hours || "협의"), sub: null, color: null },
+              ].map(item => (
+                <div key={item.label} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px" }}>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>{item.icon} {item.label}</p>
+                  <p style={{ fontSize: 16, fontWeight: 800, margin: 0, color: item.color || "var(--text)" }}>{item.value}</p>
+                  {item.sub && <p style={{ fontSize: 10, color: "var(--purple-text)", margin: "3px 0 0" }}>💬 {item.sub}</p>}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 보유 자격증 & 실무기술 */}
         {credentials.length > 0 && (
