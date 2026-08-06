@@ -1057,20 +1057,24 @@ function DaetaPageContent() {
             setShowRegisterModal(false);
             setEditingPostingId(null);
           }}
-          onSuccess={async (newPostingId) => {
+          onSuccess={async (newPostingIdOrIds) => {
             const wasEditing = !!editingPostingId;
             setShowRegisterModal(false);
             setEditingPostingId(null);
-            // 신규 등록이면 SOS 에스컬레이션 발동 (팀 내 → 동네 Tier1)
-            if (!wasEditing && newPostingId) {
-              try {
-                await fetch("/api/daeta/sos", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ postingId: newPostingId }),
-                });
-              } catch (e) {
-                console.error("SOS 발동 실패:", e);
+            // 신규 등록이면 SOS 에스컬레이션 발동 (팀 내 → 동네 Tier1) — 같은 시간대로 여러 날짜를 한번에
+            // 등록했으면(공고가 여러 건 생성됨) 생성된 공고마다 각각 발동해야 함
+            if (!wasEditing && newPostingIdOrIds) {
+              const ids = Array.isArray(newPostingIdOrIds) ? newPostingIdOrIds : [newPostingIdOrIds];
+              for (const id of ids) {
+                try {
+                  await fetch("/api/daeta/sos", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ postingId: id }),
+                  });
+                } catch (e) {
+                  console.error("SOS 발동 실패:", e);
+                }
               }
             }
             startWithoutGps();

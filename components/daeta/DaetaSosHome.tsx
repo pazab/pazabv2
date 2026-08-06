@@ -380,7 +380,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     return { label, minutesLeft };
   }
 
-  const fireSos = async (postingId: string) => {
+  const fireSos = async (postingId: string, silent = false) => {
     try {
       const res = await fetch("/api/daeta/sos", {
         method: "POST",
@@ -389,16 +389,19 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "SOS 발동 실패");
+      if (silent) return;
       if (data.teamNotified > 0) {
         showToast(`⚡ 우리 팀 ${data.teamNotified}명에게 가장 먼저 알렸어요!`);
       } else {
         showToast(`⚡ 팀원이 없어 동네 ✅검증 인력 ${data.nearbyNotified}명에게 바로 공개했어요!`);
       }
     } catch (err) {
+      if (silent) return;
       const message = err instanceof Error ? err.message : "SOS 발동 중 오류";
       showToast(message, "error");
+    } finally {
+      if (!silent) await load();
     }
-    await load();
   };
 
   const applyPosting = async (posting: SosPosting) => {
@@ -823,12 +826,19 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
           userId={userId}
           postingId={editingPostingId}
           onClose={() => { setShowRegisterModal(false); setEditingPostingId(null); }}
-          onSuccess={async (postingId) => {
+          onSuccess={async (postingIdOrIds) => {
             const wasEditing = !!editingPostingId;
             setShowRegisterModal(false);
             setEditingPostingId(null);
-            if (!wasEditing && postingId) {
-              await fireSos(postingId);
+            if (!wasEditing && postingIdOrIds) {
+              const ids = Array.isArray(postingIdOrIds) ? postingIdOrIds : [postingIdOrIds];
+              if (ids.length > 1) {
+                for (const id of ids) await fireSos(id, true);
+                showToast(`⚡ SOS 발동! ${ids.length}일치 공고를 모두 알렸어요`);
+                await load();
+              } else {
+                await fireSos(ids[0]);
+              }
             } else {
               await load();
             }
