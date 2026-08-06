@@ -19,6 +19,8 @@ export interface DaetaPostingRow {
   work_date_end?: string | null;
   work_hours: string;
   wage: number;
+  base_wage: number;
+  max_urgent_pct: number;
   duty: string;
   status: string;
   escalation_stage: number;
@@ -35,6 +37,9 @@ export interface SosConfig {
   radius_km: number;
   urgent_pct_same_day: number;
   urgent_pct_3h: number;
+  stage2_pct: number;
+  stage3_pct: number;
+  stage4_pct: number;
 }
 
 const DEFAULT_CONFIG: SosConfig = {
@@ -44,7 +49,21 @@ const DEFAULT_CONFIG: SosConfig = {
   radius_km: 10,
   urgent_pct_same_day: 20,
   urgent_pct_3h: 30,
+  stage2_pct: 10,
+  stage3_pct: 20,
+  stage4_pct: 30,
 };
+
+// 안 잡히고 단계가 오를수록(escalation_stage) 사장님이 등록 시 동의한 상한(max_urgent_pct) 안에서만 자동 인상
+const STAGE_PCT_KEY: Record<number, keyof SosConfig> = { 2: "stage2_pct", 3: "stage3_pct", 4: "stage4_pct" };
+
+export function computeAutoWage(posting: DaetaPostingRow, nextStage: number, cfg: SosConfig): number {
+  const pctKey = STAGE_PCT_KEY[nextStage];
+  if (!pctKey) return posting.wage;
+  const appliedPct = Math.min(cfg[pctKey], posting.max_urgent_pct || 0);
+  if (appliedPct <= 0) return posting.wage;
+  return Math.round((posting.base_wage * (1 + appliedPct / 100)) / 10) * 10;
+}
 
 export async function getSosConfig(sb: SupabaseClient): Promise<SosConfig> {
   const cfg = { ...DEFAULT_CONFIG };
@@ -213,18 +232,30 @@ export async function advancePostingStage(
   else if (stage === 2) nextStage = posting.allow_new ? 3 : 4;
   else nextStage = 4;
 
+  const newWage = computeAutoWage(posting, nextStage, cfg);
+  const wageBumped = newWage !== posting.wage;
+
+  const updatePayload: { escalation_stage: number; stage_updated_at: string; wage?: number } = {
+    escalation_stage: nextStage,
+    stage_updated_at: now.toISOString(),
+  };
+  if (wageBumped) updatePayload.wage = newWage;
+
   const { error } = await sb
     .from("daeta_postings")
-    .update({ escalation_stage: nextStage, stage_updated_at: now.toISOString() })
+    .update(updatePayload)
     .eq("id", posting.id)
     .eq("escalation_stage", stage); // 동시 실행 가드
   if (error) return null;
 
+  // 알림 문구에 방금 오른 시급이 반영되도록 갱신된 posting을 사용
+  const updatedPosting: DaetaPostingRow = { ...posting, escalation_stage: nextStage, wage: newWage };
+
   // 단계별 알림 발송
   if (nextStage === 2) {
-    await notifyNearby(sb, posting, "tier1", cfg.radius_km);
+    await notifyNearby(sb, updatedPosting, "tier1", cfg.radius_km);
   } else if (nextStage === 3) {
-    await notifyNearby(sb, posting, "tier2", cfg.radius_km);
+    await notifyNearby(sb, updatedPosting, "tier2", cfg.radius_km);
   } else if (nextStage === 4) {
     // 공개 SOS 전환: 사장님에게 상태 알림 (공개글은 리스트 노출로 처리)
     await createNotification({
@@ -236,5 +267,17 @@ export async function advancePostingStage(
       data: { daetaPostingId: posting.id, stage: 4 },
     });
   }
+
+  if (wageBumped) {
+    await createNotification({
+      userId: posting.user_id,
+      type: "daeta",
+      title: "💰 시급이 자동으로 올랐어요",
+      body: `${posting.business_name} 대타가 안 잡혀서 시급이 ${posting.wage.toLocaleString()}원 → ${newWage.toLocaleString()}원으로 자동 인상됐어요. (등록 시 동의한 상한 ${posting.max_urgent_pct}% 이내)`,
+      url: "/daeta",
+      data: { daetaPostingId: posting.id, stage: nextStage },
+    });
+  }
+
   return nextStage;
 }

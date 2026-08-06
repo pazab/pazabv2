@@ -9,6 +9,7 @@ import {
   getSosConfig,
   notifyTeam,
   notifyNearby,
+  computeAutoWage,
 } from "@/lib/daetaEscalation";
 
 const getServiceClient = () =>
@@ -46,16 +47,18 @@ export async function POST(req: NextRequest) {
 
     let stage = 1;
     let nearbyNotified = 0;
+    let wage = p.wage;
 
     if (teamNotified === 0) {
-      // 팀원이 없으면 기다릴 이유가 없음 — 즉시 동네 Tier1 공개
+      // 팀원이 없으면 기다릴 이유가 없음 — 즉시 동네 Tier1 공개(2단계 자동 할증도 함께 적용)
       stage = 2;
-      nearbyNotified = await notifyNearby(sb, p, "tier1", cfg.radius_km);
+      wage = computeAutoWage(p, stage, cfg);
+      nearbyNotified = await notifyNearby(sb, { ...p, wage }, "tier1", cfg.radius_km);
     }
 
     await sb
       .from("daeta_postings")
-      .update({ escalation_stage: stage, stage_updated_at: new Date().toISOString() })
+      .update({ escalation_stage: stage, stage_updated_at: new Date().toISOString(), wage })
       .eq("id", postingId);
 
     return NextResponse.json({

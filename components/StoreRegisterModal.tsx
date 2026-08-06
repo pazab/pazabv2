@@ -201,6 +201,8 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
     if (!bizName.trim()) { setError("매장명을 입력해주세요"); return; }
     if (!bizType) { setError("업종을 선택해주세요"); return; }
     if (!address) { setError("주소를 입력해주세요"); return; }
+    // 주소 텍스트는 저장돼도 좌표(lat/lng) 지오코딩이 조용히 실패해 null로 남는 경우가 있음 — 동네 알림 반경 계산이 이 좌표 기준이라 여기서 막아야 함
+    if (lat == null || lng == null) { setError("주소 좌표를 확인하지 못했어요. 주소 검색 결과에서 다시 선택해 주세요."); return; }
     setSaving(true); setError("");
     // 시도, 시군구, 읍면동 세분화 파싱
     const addrParts = address.split(" ");
