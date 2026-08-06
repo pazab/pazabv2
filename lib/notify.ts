@@ -31,6 +31,7 @@ export type NotificationType =
   | "contract"      // 계약서
   | "feed_new_post" // 팔로우한 매장 새 소식
   | "store_follow"  // 매장 팔로우 알림
+  | "doc_expiry"    // 팀원 서류(보건증 등) 만료 임박/만료
   | "system";       // 시스템
 
 export interface CreateNotificationParams {

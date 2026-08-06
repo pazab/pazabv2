@@ -9,6 +9,8 @@ import {
   getSosConfig,
   advancePostingStage,
 } from "@/lib/daetaEscalation";
+import { createNotification } from "@/lib/notify";
+import { formatDaetaDateRange } from "@/lib/utils";
 
 const getServiceClient = () =>
   createClient(
@@ -51,5 +53,37 @@ export async function GET(req: Request) {
     if (to !== null) results.push({ id: posting.id, from, to });
   }
 
-  return NextResponse.json({ advanced: results.length, results });
+  // 근무 시작 시각(expires_at)이 지나도록 아무도 못 구한 pending 공고 — 예전엔 사용자가 대타 화면을 직접 열 때만
+  // 조용히 expired 처리돼서 아무도 안 열면 계속 방치되고, 사장님에게 실패 알림도 전혀 안 갔음. 크론에서 직접 처리.
+  const expired = await expirePendingPostings(sb, now);
+
+  return NextResponse.json({ advanced: results.length, results, expired: expired.length, expiredIds: expired });
+}
+
+async function expirePendingPostings(sb: ReturnType<typeof getServiceClient>, now: Date): Promise<string[]> {
+  const { data: expiredPostings } = await sb
+    .from("daeta_postings")
+    .select("id, user_id, business_name, work_date, work_date_end, work_hours, wage")
+    .eq("status", "pending")
+    .lte("expires_at", now.toISOString());
+
+  if (!expiredPostings || expiredPostings.length === 0) return [];
+
+  const ids = expiredPostings.map((p: { id: string }) => p.id);
+  await sb.from("daeta_postings").update({ status: "expired" }).in("id", ids);
+
+  await Promise.all(expiredPostings.map((p: {
+    id: string; user_id: string; business_name: string; work_date: string; work_date_end: string | null; work_hours: string; wage: number;
+  }) =>
+    createNotification({
+      userId: p.user_id,
+      type: "daeta",
+      title: "😢 이번 대타는 결국 못 구했어요",
+      body: `${p.business_name} ${formatDaetaDateRange(p.work_date, p.work_date_end)} ${p.work_hours} · 시급 ${p.wage.toLocaleString()}원 요청이 만료됐어요. 다시 등록하거나 아는 알바생에게 카톡으로 직접 요청해보세요.`,
+      url: "/daeta",
+      data: { daetaPostingId: p.id },
+    })
+  ));
+
+  return ids;
 }
