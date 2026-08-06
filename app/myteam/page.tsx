@@ -2766,7 +2766,7 @@ function MyTeamPageContent() {
                         )}
                       </div>
 
-                      {/* 2단계: 직원 초대 or 공고 */}
+                      {/* 2단계: 직원 초대 — 콜드 공고보다 "이미 일하는 사람" 카톡 초대가 마찰이 적어 기본 경로로 채택(STRATEGY.md 초대 공급 경로) */}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <div style={{
@@ -2778,28 +2778,18 @@ function MyTeamPageContent() {
                             {hasEmployee ? "✓" : "2"}
                           </div>
                           <span style={{ fontSize: 12, fontWeight: 600, color: hasEmployee ? "var(--text-muted)" : (hasStore ? "var(--text)" : "var(--text-muted)"), textDecoration: hasEmployee ? "line-through" : "none" }}>
-                            직원 초대 or 공고 올리기
+                            직원 초대하기
                           </span>
                         </div>
                         {hasStore && !hasEmployee && (
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <button onClick={() => router.push(`/employer/register?storeId=${activeStoreId || myStores[0]?.id}`)}
-                              style={{
-                                background: "var(--surface2)", border: "1px solid var(--border)",
-                                borderRadius: 20, padding: "4px 10px",
-                                color: "var(--text)", fontSize: 9, fontWeight: 700, cursor: "pointer"
-                              }}>
-                              공고 올리기
-                            </button>
-                            <button onClick={() => setInviteOpen(true)}
-                              style={{
-                                background: "var(--primary)",
-                                border: "none", borderRadius: 20, padding: "4px 10px",
-                                color: "#fff", fontSize: 9, fontWeight: 700, cursor: "pointer"
-                              }}>
-                              직원 초대
-                            </button>
-                          </div>
+                          <button onClick={() => setInviteOpen(true)}
+                            style={{
+                              background: "var(--primary)",
+                              border: "none", borderRadius: 20, padding: "4px 12px",
+                              color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer"
+                            }}>
+                            직원 초대
+                          </button>
                         )}
                       </div>
 
