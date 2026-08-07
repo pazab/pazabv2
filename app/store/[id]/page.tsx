@@ -9,6 +9,7 @@ import StoreRegisterModal from "@/components/StoreRegisterModal";
 import { useToast } from "@/lib/useToast";
 import { BADGE_DEFS, getBadgesByRole } from "@/lib/trustScore";
 import PostComposeModal from "@/components/feed/PostComposeModal";
+import { BusinessHours, ClosedDate, formatBusinessHours, getUpcomingClosedDate, formatClosedDate, daysUntil } from "@/lib/businessHours";
 
 interface StoreInfo {
   id: string;
@@ -18,8 +19,18 @@ interface StoreInfo {
   description: string | null;
   logo_url: string | null;
   image_url: string | null;
+  image_urls: string[] | null;
   region: string | null;
   address: string | null;
+  address_detail: string | null;
+  lat: number | null;
+  lng: number | null;
+  biz_tel: string | null;
+  video_url: string | null;
+  business_hours: BusinessHours | null;
+  closed_dates: ClosedDate[] | null;
+  perks: string[] | null;
+  created_at: string | null;
   owner?: { nickname: string | null; avatar_url: string | null; trust_score: number | null } | null;
 }
 
@@ -71,6 +82,7 @@ export default function StoreHomePage() {
   const [badges, setBadges] = useState<{ key: string; name: string; emoji: string }[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<string | null>(null);
   const [teamCount, setTeamCount] = useState<number | null>(null);
+  const [galleryIdx, setGalleryIdx] = useState(0);
   const [showCompose, setShowCompose] = useState(false);
   const { showToast, ToastUI } = useToast();
 
@@ -93,7 +105,7 @@ export default function StoreHomePage() {
 
     const { data: storeRaw } = await supabase
       .from("employer_profiles")
-      .select("id, user_id, business_name, business_type, description, logo_url, image_url, region, address")
+      .select("id, user_id, business_name, business_type, description, logo_url, image_url, image_urls, region, address, address_detail, lat, lng, biz_tel, video_url, business_hours, closed_dates, perks, created_at")
       .eq("id", storeId)
       .maybeSingle();
     if (storeRaw) {
@@ -322,11 +334,37 @@ export default function StoreHomePage() {
         {/* 매장 헤더 */}
         <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
           <div className="w-full aspect-[16/9] bg-surface2 flex items-center justify-center overflow-hidden relative">
-            {store.image_url ? (
-              <img src={store.image_url} alt={store.business_name} className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-5xl">🏪</span>
-            )}
+            {(() => {
+              const gallery = store.image_urls && store.image_urls.length > 0 ? store.image_urls : (store.image_url ? [store.image_url] : []);
+              if (gallery.length === 0) return <span className="text-5xl">🏪</span>;
+              const idx = Math.min(galleryIdx, gallery.length - 1);
+              return (
+                <>
+                  <img src={gallery[idx]} alt={store.business_name} className="w-full h-full object-cover" />
+                  {gallery.length > 1 && (
+                    <>
+                      {idx > 0 && (
+                        <button onClick={() => setGalleryIdx(idx - 1)}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white w-7 h-7 rounded-full flex items-center justify-center transition active:scale-90 z-10 focus:outline-none border border-white/10">
+                          <i className="ti ti-chevron-left text-sm" aria-hidden="true" />
+                        </button>
+                      )}
+                      {idx < gallery.length - 1 && (
+                        <button onClick={() => setGalleryIdx(idx + 1)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white w-7 h-7 rounded-full flex items-center justify-center transition active:scale-90 z-10 focus:outline-none border border-white/10">
+                          <i className="ti ti-chevron-right text-sm" aria-hidden="true" />
+                        </button>
+                      )}
+                      <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+                        {gallery.map((_, i) => (
+                          <span key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i === idx ? "#fff" : "rgba(255,255,255,0.4)" }} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
             {isOwner && (
               <button
                 onClick={() => setShowEditModal(true)}
@@ -337,7 +375,7 @@ export default function StoreHomePage() {
               </button>
             )}
           </div>
-          <div className="p-4 flex flex-col gap-2">
+          <div className="p-4 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h2 className="text-base font-black truncate">{store.business_name}</h2>
@@ -353,21 +391,62 @@ export default function StoreHomePage() {
                 </button>
               )}
             </div>
-            {(store.region || store.address) && (
-              <span className="text-xs text-text-muted">📍 {store.address || store.region}</span>
-            )}
+
+            {/* 기본 정보: 위치·영업시간·휴무 안내를 한 블록으로 묶어서 소개글/태그와 시각적으로 구분 */}
+            {(() => {
+              const hoursLabel = store.business_hours ? formatBusinessHours(store.business_hours) : "";
+              const upcoming = getUpcomingClosedDate(store.closed_dates);
+              const hasAny = !!(store.region || store.address) || !!store.biz_tel || !!hoursLabel || !!upcoming;
+              if (!hasAny) return null;
+              const soon = upcoming ? daysUntil(upcoming.date) <= 14 : false;
+              return (
+                <div className="bg-surface2 rounded-xl px-3 py-2.5 flex flex-col gap-1.5">
+                  {(store.region || store.address) && (
+                    <span className="text-xs text-text-muted">📍 {store.address || store.region}</span>
+                  )}
+                  {store.biz_tel && (
+                    <a href={`tel:${store.biz_tel}`} className="text-xs text-text-muted" style={{ width: "fit-content" }}>📞 {store.biz_tel}</a>
+                  )}
+                  {hoursLabel && (
+                    <span className="text-xs text-text-muted">🕐 {hoursLabel}</span>
+                  )}
+                  {upcoming && (
+                    soon
+                      ? <span className="text-xs font-bold" style={{ color: "#f59e0b" }}>⚠️ {formatClosedDate(upcoming)}</span>
+                      : <span className="text-xs text-text-muted">🗓 {formatClosedDate(upcoming)}</span>
+                  )}
+                </div>
+              );
+            })()}
+
             {store.description && (
               <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{store.description}</p>
             )}
 
+            {store.perks && store.perks.length > 0 && (
+              <div>
+                <span className="text-[11px] font-bold text-text-sub" style={{ display: "block", marginBottom: 6 }}>🎁 복지·근무환경</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {store.perks.map(p => (
+                    <span key={p} className="bg-surface2 border border-border rounded-full px-2.5 py-1 text-[11px] text-text-sub font-medium">
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {badges.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
-                {badges.map(b => (
-                  <button key={b.key} onClick={() => setSelectedBadge(selectedBadge === b.key ? null : b.key)}
-                    style={{ background: selectedBadge === b.key ? "var(--primary-light)" : "var(--card-inner)", border: `1px solid ${selectedBadge === b.key ? "var(--primary-border)" : "var(--card-inner-border)"}`, borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "var(--purple-text)", cursor: "pointer", fontWeight: 600 }}>
-                    {b.emoji} {b.name}
-                  </button>
-                ))}
+              <div>
+                <span className="text-[11px] font-bold text-text-sub" style={{ display: "block", marginBottom: 6 }}>🏅 신뢰 배지</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {badges.map(b => (
+                    <button key={b.key} onClick={() => setSelectedBadge(selectedBadge === b.key ? null : b.key)}
+                      style={{ background: selectedBadge === b.key ? "var(--primary-light)" : "var(--card-inner)", border: `1px solid ${selectedBadge === b.key ? "var(--primary-border)" : "var(--card-inner-border)"}`, borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "var(--purple-text)", cursor: "pointer", fontWeight: 600 }}>
+                      {b.emoji} {b.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {selectedBadge && BADGE_DEFS[selectedBadge] && (
@@ -377,12 +456,24 @@ export default function StoreHomePage() {
               </div>
             )}
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-              <span className="text-[11px] text-text-muted">
-                {followerCount > 0 ? `👥 팔로워 ${followerCount}명` : ""}
-                {followerCount > 0 && teamCount != null && teamCount > 0 ? " · " : ""}
-                {teamCount != null && teamCount > 0 ? `👷 함께 일하는 중 ${teamCount}명` : ""}
-              </span>
+            {/* 하단: 팔로워/활동 지표 + 운영자 */}
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              {(() => {
+                const parts: string[] = [];
+                if (followerCount > 0) parts.push(`👥 팔로워 ${followerCount}명`);
+                if (teamCount != null && teamCount > 0) parts.push(`👷 함께 일하는 중 ${teamCount}명`);
+                if (store.created_at) {
+                  const months = Math.floor((Date.now() - new Date(store.created_at).getTime()) / (1000 * 60 * 60 * 24 * 30));
+                  if (months >= 1) parts.push(`🗓 활동 ${months}개월차`);
+                }
+                if (jobs.length > 0) parts.push(`📢 공고 ${jobs.length}건`);
+                if (posts.length > 0) {
+                  const days = Math.floor((Date.now() - new Date(posts[0].created_at).getTime()) / (1000 * 60 * 60 * 24));
+                  parts.push(days <= 0 ? "📸 오늘 소식" : `📸 ${days}일전 소식`);
+                }
+                if (parts.length === 0) return <span />;
+                return <span className="text-[11px] text-text-muted leading-relaxed">{parts.join(" · ")}</span>;
+              })()}
               {store.owner && (
                 <EntityLink
                   href={`/worker/${store.user_id}`}

@@ -342,6 +342,15 @@ export async function GET(req: Request) {
           .eq("id", m.match_id);
       }
 
+      // 페이마스터: 임금 명세서 10회 이상 발행
+      const { count: payslipCount } = await supabase.from("payslips")
+        .select("id", { count: "exact", head: true }).eq("employer_id", m.employer_id);
+      if ((payslipCount || 0) >= 10) {
+        await supabase.from("user_badges").upsert(
+          { user_id: m.employer_id, badge_key: "boss_paymaster" },
+          { onConflict: "user_id,badge_key", ignoreDuplicates: true });
+      }
+
       results.push({ memberId: m.id, action: "auto_issue_success", payslipId: savedPayslip.id, year: calcYear, month: calcMonth });
 
     } catch (e: any) {

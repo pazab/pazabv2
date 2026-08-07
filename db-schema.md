@@ -105,6 +105,9 @@
 | bot_interview_done | boolean | YES | false | |
 | bot_last_checked_at | timestamptz | YES | | |
 | is_5_or_more_employees | boolean | YES | true | ✅ 상시근로자 5인 이상 여부 — 연장/야간 가산수당(근로기준법 제56조) 적용 대상 판정용. 미설정(null)은 안전하게 5인 이상으로 간주 |
+| business_hours | jsonb | YES | | ✅ 마이그레이션 완료(`patch_store_profile_extra.sql` + `patch_store_business_hours_v2.sql`) — 요일별 영업시간(브레이크타임 등 시간대 여러 개 가능), `lib/businessHours.ts` 타입 참조. jsonb라 구조 변경(단일 open/close → ranges[])에 추가 SQL 불필요했음 |
+| perks | text[] | YES | '{}' | ✅ 마이그레이션 완료(`patch_store_profile_extra.sql`) — 매장 홈 노출용 복지 태그, 사장님 자율 선택 |
+| closed_dates | jsonb | YES | '[]' | ✅ 마이그레이션 완료(`patch_store_closed_dates.sql`) — 명절/임시 휴무 등 특정 날짜 휴무, `lib/businessHours.ts` ClosedDate 타입 참조 |
 
 > 공고 레거시 컬럼 DROP 완료: `job_status`, `job_type`, `wage`, `wage_negotiable`, `work_days`, `days_negotiable`, `work_hours`, `work_start_hour`, `work_end_hour`, `work_start_date`, `work_end_date`, `expires_at`, `is_urgent`, `is_long_term`, `meal_provided`, `parking`, `staff_count`, `tags`, `required_credentials`, `hexaco_data`, `bio5_data`, `analyzed_mbti`, `tagline`, `best_matches`, `worst_matches`, `caution`, `employer_bot_knowledge`
 

@@ -4,6 +4,22 @@ import { supabase } from "@/lib/supabase";
 import { modalOverlay, modalSheet, btnPrimary, btnSecondary, inputStyle } from "@/lib/styles";
 import ImageCropModal from "@/components/ImageCropModal";
 import { convertHeicIfNeeded } from "@/lib/heicConvert";
+import { BusinessHours, ClosedDate, DayHours, DayKey, DAY_KEYS, mergeBusinessHours, splitBusinessHours, buildUniformBusinessHours } from "@/lib/businessHours";
+
+const PERKS = [
+  { emoji: "🍚", name: "식사제공" },
+  { emoji: "👕", name: "유니폼제공" },
+  { emoji: "🅿️", name: "주차가능" },
+  { emoji: "🚌", name: "통근버스" },
+  { emoji: "💳", name: "교통비지원" },
+  { emoji: "🛡️", name: "4대보험" },
+  { emoji: "💰", name: "주휴수당" },
+  { emoji: "🏦", name: "퇴직금" },
+  { emoji: "📈", name: "인센티브" },
+  { emoji: "🎁", name: "명절상여금" },
+  { emoji: "🔄", name: "정규직전환가능" },
+  { emoji: "📜", name: "경력증명서발급" },
+];
 
 const BIZ_CATEGORIES = [
   { emoji: "🍽️", name: "식당/음식점" },
@@ -57,6 +73,12 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
   const [lat, setLat] = useState<number | null>(existingStore?.lat || null);
   const [lng, setLng] = useState<number | null>(existingStore?.lng || null);
   const [bizTel, setBizTel] = useState(existingStore?.biz_tel || "");
+  const initialSplit = splitBusinessHours(mergeBusinessHours(existingStore?.business_hours));
+  const [perDayMode, setPerDayMode] = useState(initialSplit.exceptionDays.length > 0);
+  const [baseHours, setBaseHours] = useState<DayHours>(initialSplit.base);
+  const [dayHours, setDayHours] = useState<BusinessHours>(() => mergeBusinessHours(existingStore?.business_hours));
+  const [closedDates, setClosedDates] = useState<ClosedDate[]>(existingStore?.closed_dates || []);
+  const [perks, setPerks] = useState<string[]>(existingStore?.perks || []);
   const [description, setDescription] = useState(existingStore?.description || "");
   const [logoUrl, setLogoUrl] = useState<string | null>(existingStore?.logo_url || null);
   const [imageUrls, setImageUrls] = useState<string[]>(existingStore?.image_urls || (existingStore?.image_url ? [existingStore.image_url] : []));
@@ -94,6 +116,77 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
     const autoType = mapKakaoCategory(place.category_group_name || place.category_name || "");
     if (autoType) setBizType(autoType);
     setSearchResults([]);
+  };
+
+  const togglePerk = (name: string) => {
+    setPerks(p => p.includes(name) ? p.filter(v => v !== name) : [...p, name]);
+  };
+
+  const togglePerDayMode = () => {
+    setPerDayMode(prev => {
+      if (!prev) {
+        // 매일동일 → 요일별: 지금 기본 시간을 7일에 복사해서 시작
+        setDayHours(buildUniformBusinessHours(baseHours));
+      }
+      return !prev;
+    });
+  };
+
+  // 브레이크타임 등 시간대 여러 개 다루는 공통 로직 — day가 null이면 "매일동일" 기본 시간(baseHours) 대상
+  const updateRange = (day: DayKey | null, idx: number, patch: Partial<{ open: string; close: string }>) => {
+    const patcher = (h: DayHours): DayHours => ({ ...h, ranges: h.ranges.map((r, i) => i === idx ? { ...r, ...patch } : r) });
+    if (day === null) setBaseHours(patcher);
+    else setDayHours(prev => ({ ...prev, [day]: patcher(prev[day]) }));
+  };
+
+  const addRange = (day: DayKey | null) => {
+    const patcher = (h: DayHours): DayHours => {
+      if (h.ranges.length >= 3) return h;
+      const last = h.ranges[h.ranges.length - 1];
+      if (!last) return { ...h, ranges: [{ open: "10:00", close: "22:00" }] };
+      // 마지막 구간을 브레이크타임 기준으로 반으로 쪼갬 (예: 10:00-22:00 → 10:00-15:00 + 17:00-22:00)
+      // 그냥 뒤에 새 구간을 덧붙이면 기존 구간과 겹치는 시간이 생겨 혼란스러움
+      const toMinutes = (t: string) => { const [h2, m2] = t.split(":").map(Number); return h2 * 60 + m2; };
+      const toTime = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+      const openMin = toMinutes(last.open);
+      const closeMin = toMinutes(last.close);
+      const mid = openMin + Math.floor((closeMin - openMin) / 2);
+      const breakStart = Math.max(openMin, mid - 60);
+      const breakEnd = Math.min(closeMin, mid + 60);
+      const newRanges = [...h.ranges];
+      newRanges[newRanges.length - 1] = { open: last.open, close: toTime(breakStart) };
+      newRanges.push({ open: toTime(breakEnd), close: last.close });
+      return { ...h, ranges: newRanges };
+    };
+    if (day === null) setBaseHours(patcher);
+    else setDayHours(prev => ({ ...prev, [day]: patcher(prev[day]) }));
+  };
+
+  const removeRange = (day: DayKey | null, idx: number) => {
+    const patcher = (h: DayHours): DayHours => ({ ...h, ranges: h.ranges.filter((_, i) => i !== idx) });
+    if (day === null) setBaseHours(patcher);
+    else setDayHours(prev => ({ ...prev, [day]: patcher(prev[day]) }));
+  };
+
+  const toggleDayClosed = (day: DayKey | null, closed: boolean) => {
+    if (day === null) setBaseHours(h => ({ ...h, closed }));
+    else setDayHours(prev => ({ ...prev, [day]: { ...prev[day], closed } }));
+  };
+
+  const copyDayToAll = (day: DayKey) => {
+    setDayHours(prev => buildUniformBusinessHours(prev[day]));
+  };
+
+  const addClosedDate = () => {
+    setClosedDates(prev => [...prev, { date: "", reason: "" }]);
+  };
+
+  const updateClosedDate = (idx: number, patch: Partial<ClosedDate>) => {
+    setClosedDates(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
+  };
+
+  const removeClosedDate = (idx: number) => {
+    setClosedDates(prev => prev.filter((_, i) => i !== idx));
   };
 
   const openDaumPostcode = () => {
@@ -242,6 +335,9 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
       category_ids: categoryIds,
       lat, lng,
       biz_tel: bizTel,
+      business_hours: perDayMode ? dayHours : buildUniformBusinessHours(baseHours),
+      closed_dates: closedDates.filter(c => c.date),
+      perks,
       description: description.trim(),
       logo_url: logoUrl,
       image_url: imageUrls[0] || null,
@@ -405,6 +501,133 @@ export default function StoreRegisterModal({ userId, existingStore, onClose, onS
           <div>
             <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>📞 대표번호 (선택)</label>
             <input value={bizTel} onChange={e => setBizTel(e.target.value)} placeholder="02-0000-0000" style={inputStyle} />
+          </div>
+
+          {/* 영업시간 */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>🕐 영업시간 (선택)</label>
+              <button type="button" onClick={togglePerDayMode}
+                style={{ background: "none", border: "1px solid var(--border)", borderRadius: 20, padding: "4px 10px", fontSize: 11, cursor: "pointer",
+                  color: perDayMode ? "var(--purple-text)" : "var(--text-muted)", fontWeight: perDayMode ? 700 : 400 }}>
+                {perDayMode ? "✓ 요일별로 다르게" : "요일별로 다르게 설정"}
+              </button>
+            </div>
+
+            {!perDayMode ? (
+              <div>
+                {baseHours.ranges.map((r, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <input type="time" value={r.open} disabled={baseHours.closed}
+                      onChange={e => updateRange(null, i, { open: e.target.value })}
+                      style={{ ...inputStyle, padding: "8px", fontSize: 13, flex: 1, opacity: baseHours.closed ? 0.4 : 1 }} />
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>~</span>
+                    <input type="time" value={r.close} disabled={baseHours.closed}
+                      onChange={e => updateRange(null, i, { close: e.target.value })}
+                      style={{ ...inputStyle, padding: "8px", fontSize: 13, flex: 1, opacity: baseHours.closed ? 0.4 : 1 }} />
+                    {baseHours.ranges.length > 1 && (
+                      <button type="button" onClick={() => removeRange(null, i)}
+                        style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
+                    )}
+                  </div>
+                ))}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  {baseHours.ranges.length < 3 ? (
+                    <button type="button" onClick={() => addRange(null)} disabled={baseHours.closed}
+                      style={{ background: "none", border: "none", color: "var(--purple-text)", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: 0, opacity: baseHours.closed ? 0.4 : 1 }}>
+                      + 브레이크타임 추가
+                    </button>
+                  ) : <span />}
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-muted)", flexShrink: 0, cursor: "pointer" }}>
+                    <input type="checkbox" checked={baseHours.closed} onChange={e => toggleDayClosed(null, e.target.checked)} />
+                    휴무
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {DAY_KEYS.map(day => {
+                  const h = dayHours[day];
+                  return (
+                    <div key={day}>
+                      {h.ranges.map((r, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <span style={{ width: 16, fontSize: 12, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{i === 0 ? day : ""}</span>
+                          <input type="time" value={r.open} disabled={h.closed}
+                            onChange={e => updateRange(day, i, { open: e.target.value })}
+                            style={{ ...inputStyle, padding: "6px 8px", fontSize: 12, flex: 1, opacity: h.closed ? 0.4 : 1 }} />
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>~</span>
+                          <input type="time" value={r.close} disabled={h.closed}
+                            onChange={e => updateRange(day, i, { close: e.target.value })}
+                            style={{ ...inputStyle, padding: "6px 8px", fontSize: 12, flex: 1, opacity: h.closed ? 0.4 : 1 }} />
+                          {h.ranges.length > 1 && (
+                            <button type="button" onClick={() => removeRange(day, i)}
+                              style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
+                          )}
+                          {i === 0 && (
+                            <button type="button" onClick={() => copyDayToAll(day)} title="이 시간을 모든 요일에 복사"
+                              style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, flexShrink: 0 }}>
+                              <i className="ti ti-copy text-sm" aria-hidden="true" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingLeft: 22 }}>
+                        {h.ranges.length < 3 ? (
+                          <button type="button" onClick={() => addRange(day)} disabled={h.closed}
+                            style={{ background: "none", border: "none", color: "var(--purple-text)", cursor: "pointer", fontSize: 10, fontWeight: 700, padding: 0, opacity: h.closed ? 0.4 : 1 }}>
+                            + 브레이크타임
+                          </button>
+                        ) : <span />}
+                        <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: "var(--text-muted)", flexShrink: 0, cursor: "pointer" }}>
+                          <input type="checkbox" checked={h.closed} onChange={e => toggleDayClosed(day, e.target.checked)} />
+                          휴무
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 특정 날짜 휴무 */}
+          <div>
+            <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>🗓 특정 날짜 휴무 (선택, 명절 연휴·임시 휴무 등)</label>
+            {closedDates.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                {closedDates.map((c, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input type="date" value={c.date} onChange={e => updateClosedDate(i, { date: e.target.value })}
+                      style={{ ...inputStyle, padding: "6px 8px", fontSize: 12, flex: 1 }} />
+                    <input value={c.reason} onChange={e => updateClosedDate(i, { reason: e.target.value })}
+                      placeholder="사유 (예: 추석연휴)" style={{ ...inputStyle, padding: "6px 8px", fontSize: 12, flex: 1 }} />
+                    <button type="button" onClick={() => removeClosedDate(i)}
+                      style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button type="button" onClick={addClosedDate}
+              style={{ background: "none", border: "1px dashed var(--border)", borderRadius: 10, padding: "8px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer", width: "100%" }}>
+              + 휴무일 추가
+            </button>
+          </div>
+
+          {/* 복지 태그 */}
+          <div>
+            <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 8 }}>🎁 복지·근무환경 태그 (선택, 해당하는 것만 골라주세요)</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {PERKS.map(p => (
+                <button key={p.name} type="button" onClick={() => togglePerk(p.name)}
+                  style={{ padding: "7px 14px", borderRadius: 20, fontSize: 13, cursor: "pointer", border: "none",
+                    background: perks.includes(p.name) ? "linear-gradient(135deg,#7c3aed,#ec4899)" : "var(--surface2)",
+                    color: perks.includes(p.name) ? "#fff" : "var(--text-muted)",
+                    fontWeight: perks.includes(p.name) ? 700 : 400 }}>
+                  {p.emoji} {p.name}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 설명(소개글) */}

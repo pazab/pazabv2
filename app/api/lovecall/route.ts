@@ -626,6 +626,16 @@ export async function PATCH(req: NextRequest) {
               { user_id: hireMatchData.employer_id, badge_key: "boss_veteran" },
               { onConflict: "user_id,badge_key", ignoreDuplicates: true });
           }
+
+          // 단골사장: 같은 알바생을 재고용(과거에 이 매장에서 일하다 나간 이력이 있는 알바생을 다시 채용)
+          const { data: pastTeam } = await adminSb.from("team_members")
+            .select("id").eq("employer_id", hireMatchData.employer_id).eq("worker_id", hireMatchData.worker_id)
+            .eq("status", "left").limit(1);
+          if ((pastTeam?.length || 0) > 0) {
+            await adminSb.from("user_badges").upsert(
+              { user_id: hireMatchData.employer_id, badge_key: "boss_rehire" },
+              { onConflict: "user_id,badge_key", ignoreDuplicates: true });
+          }
         }
         if (hireMatchData) {
           // 알바생 구직 완료
