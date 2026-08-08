@@ -6,6 +6,7 @@
  * 대타 카드·탐색·프로필 전 화면에서 이 컴포넌트만 사용할 것.
  */
 import type { DaetaTier } from "@/lib/daetaTier";
+import InfoTip from "@/components/InfoTip";
 
 interface TierBadgeProps {
   tier: DaetaTier;
@@ -51,6 +52,11 @@ export default function TierBadge({ tier, size = "sm", noShowSafe = false }: Tie
           🛡️ 노쇼 위험 낮음
         </span>
       )}
+      <InfoTip title="대타 신뢰 배지란?" size={size === "sm" ? 13 : 15}>
+        <p style={{ margin: "0 0 8px" }}>✅ <b>검증</b> — 팀 이력이나 대타 완료 이력이 있는 사람이에요. 대타 요청 시 먼저 노출돼요.</p>
+        <p style={{ margin: "0 0 8px" }}>🔵 <b>신규</b> — 아직 이력이 없는 신규 등록자예요. 사장님이 "신규도 받기"를 켰을 때만 노출돼요.</p>
+        <p style={{ margin: 0 }}>🛡️ <b>노쇼 위험 낮음</b> — 성향 분석 결과를 바탕으로 노쇼 가능성이 낮게 예측된 검증 인력에게만 추가로 붙는 배지예요.</p>
+      </InfoTip>
     </span>
   );
 }

@@ -577,7 +577,7 @@ export default function StoreHomePage() {
         };
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-3">
             <div className="relative w-full max-w-md">
               {/* 이전 버튼 */}
               {hasPrev && (
@@ -598,7 +598,7 @@ export default function StoreHomePage() {
                 </button>
               )}
 
-              <div className="bg-surface rounded-xl border border-border shadow-2xl w-full overflow-hidden flex flex-col h-[94vh] max-h-[94vh]">
+              <div className="bg-surface rounded-xl border border-border shadow-2xl w-full overflow-hidden flex flex-col h-[80vh] max-h-[80vh]">
                 <div className="flex justify-between items-center px-4 py-3.5 border-b border-border bg-surface2/40">
                   <span className="font-bold text-xs text-text-sub">{store.business_name}</span>
                   <button onClick={() => setSelectedPost(null)} className="text-text-muted hover:text-text focus:outline-none">
@@ -608,7 +608,7 @@ export default function StoreHomePage() {
 
                 <div className="flex-1 overflow-y-auto">
                   {selectedPost.media_urls && selectedPost.media_urls.length > 0 && (
-                    <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
+                    <div className="relative w-full aspect-square flex-shrink-0 bg-black overflow-hidden flex items-center justify-center">
                       {selectedPost.media_type === "video" ? (
                         <video src={selectedPost.media_urls[0]} controls playsInline className="w-full h-full object-contain" />
                       ) : (
@@ -684,14 +684,14 @@ export default function StoreHomePage() {
                     </div>
                   </div>
 
-                  <div className="bg-surface2/30 p-4 border-t border-border flex flex-col gap-3">
+                  <div className="bg-surface2/30 p-3 border-t border-border flex flex-col gap-2">
                     <span className="font-bold text-[11px] text-text-muted">댓글 ({comments.length})</span>
                     {commentsLoading ? (
                       <span className="text-[10px] text-text-muted text-center py-1">댓글 로딩 중...</span>
                     ) : comments.length === 0 ? (
                       <span className="text-[10px] text-text-muted text-center py-1">댓글이 없습니다.</span>
                     ) : (
-                      <div className="flex flex-col gap-2.5 max-h-44 overflow-y-auto">
+                      <div className="flex flex-col gap-2 max-h-28 overflow-y-auto pr-0.5">
                         {comments.map(comment => (
                           <div key={comment.id} className="flex gap-2 items-start text-xs">
                             <div className="w-6 h-6 rounded-full overflow-hidden bg-surface flex-shrink-0 border border-border flex items-center justify-center">
@@ -715,7 +715,7 @@ export default function StoreHomePage() {
                 </div>
 
                 {myId && (
-                  <div className="p-3 border-t border-border bg-surface2 flex gap-1.5">
+                  <div className="p-3 border-t border-border bg-surface2 flex gap-1.5 flex-shrink-0" style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
                     <input type="text" placeholder="댓글을 입력하세요..."
                       value={newComment}
                       onChange={e => setNewComment(e.target.value)}

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { writeFile, readFile, unlink } from "fs/promises";
@@ -7,29 +9,25 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 const execAsync = promisify(exec);
-function getSupabaseClient(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (authHeader) {
-    const token = authHeader.replace("Bearer ", "");
-    return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      }
-    );
-  }
-  return createClient(
+
+const supabaseAdminForAuth = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+// 로그인 세션에서 요청자 확인 — 인증 안 되면 null (계약서는 당사자(사장님/알바생)만 조회 가능해야 함)
+async function getRequesterId(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll() } }
   );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id || null;
 }
 
-async function generatePdfResponse(supabase: any, matchId: string | null, contractId: string | null, extraData: any = {}) {
+async function generatePdfResponse(supabase: any, matchId: string | null, contractId: string | null, extraData: any = {}, requesterId: string | null = null) {
   try {
     let match: any = null;
     let contract: any = null;
@@ -66,6 +64,11 @@ async function generatePdfResponse(supabase: any, matchId: string | null, contra
 
     const employerId = contract.employer_id || match?.employer_id;
     const workerId = contract.worker_id || match?.worker_id;
+
+    // 계약 당사자(사장님/알바생) 본인만 조회 가능 — 그 외에는 임금·연락처·주소 등 개인정보 노출 차단
+    if (!requesterId || (requesterId !== employerId && requesterId !== workerId)) {
+      return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+    }
 
     let empProfileId = match?.employer_profile_id || null;
     if (!empProfileId && contract.team_member_id) {
@@ -591,11 +594,12 @@ print("OK")
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getSupabaseClient(req);
+    const requesterId = await getRequesterId();
+    if (!requesterId) return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
     const body = await req.json();
     const { matchId, contractId, ...extraData } = body;
     if (!matchId && !contractId) return NextResponse.json({ error: "matchId 또는 contractId 필수" }, { status: 400 });
-    return await generatePdfResponse(supabase, matchId || null, contractId || null, extraData);
+    return await generatePdfResponse(supabaseAdminForAuth, matchId || null, contractId || null, extraData, requesterId);
   } catch (error: any) {
     console.error("Contract generation error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -604,11 +608,12 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = getSupabaseClient(req);
+    const requesterId = await getRequesterId();
+    if (!requesterId) return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
     const matchId = req.nextUrl.searchParams.get("matchId");
     const contractId = req.nextUrl.searchParams.get("contractId");
     if (!matchId && !contractId) return NextResponse.json({ error: "matchId 또는 contractId 필수" }, { status: 400 });
-    return await generatePdfResponse(supabase, matchId || null, contractId || null, {});
+    return await generatePdfResponse(supabaseAdminForAuth, matchId || null, contractId || null, {}, requesterId);
   } catch (error: any) {
     console.error("Contract GET generation error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

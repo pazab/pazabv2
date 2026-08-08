@@ -84,6 +84,7 @@ function ExploreContent() {
   const [confirmItem, setConfirmItem] = useState<any | null>(null);
   const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
   const [hasWorkerProfile, setHasWorkerProfile] = useState(false);
+  const [guideDismissed, setGuideDismissed] = useState(true);
 
   interface SheetItem {
     id?: string; user_id?: string; image_url?: string;
@@ -152,6 +153,15 @@ function ExploreContent() {
   }, [bottomSheet]);
 
   useEffect(() => { init(); }, []);
+
+  useEffect(() => {
+    setGuideDismissed(localStorage.getItem("pazab_explore_worker_guide_dismissed") === "1");
+  }, []);
+
+  const dismissGuide = () => {
+    localStorage.setItem("pazab_explore_worker_guide_dismissed", "1");
+    setGuideDismissed(true);
+  };
 
   useEffect(() => {
     const handle = () => setFabScrolled(window.scrollY > 80);
@@ -652,6 +662,35 @@ function ExploreContent() {
           </div>
         ) : (
           <div style={{ padding: "16px 0" }}>
+
+            {/* 알바생 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸 */}
+            {isLoggedIn && viewMode === "worker" && !guideDismissed && (
+              <div style={{ padding: "0 16px", marginBottom: 16 }}>
+                <div style={{
+                  background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(236,72,153,0.05))",
+                  border: "1px solid var(--chip-purple-border)",
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  position: "relative",
+                }}>
+                  <button onClick={dismissGuide} aria-label="닫기"
+                    style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, cursor: "pointer", padding: 6, lineHeight: 1 }}>✕</button>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", margin: "0 0 8px", paddingRight: 20 }}>👋 이렇게 시작해보세요</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>💜 마음에 드는 공고에 하트를 누르면 바로 지원돼요</p>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>💕 성향분석(5분) 하면 궁합 좋은 공고부터 보여드려요</p>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>⚡ 급한 대타 자리는 "긴급순" 탭에서 바로 확인돼요</p>
+                  </div>
+                  <button onClick={() => router.push(hasWorkerProfile ? "/worker/profile?edit=true&return=explore" : "/worker/profile?edit=true&new=true&return=explore")}
+                    style={{
+                      marginTop: 10, width: "100%", background: "var(--surface2)", border: "1px solid var(--border)",
+                      borderRadius: 12, padding: "9px 0", color: "var(--text)", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    }}>
+                    🧑‍💼 내 파잡 프로필 채우기 (선택 · 채워두면 러브콜 받을 확률이 올라가요)
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 상단 가로 섹션 - 탭/정렬에 따라 1개만 */}
             {topSectionItems.length > 0 && (

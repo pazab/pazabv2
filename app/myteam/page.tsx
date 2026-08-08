@@ -2822,6 +2822,37 @@ function MyTeamPageContent() {
                           ) : null;
                         })()}
                       </div>
+
+                      {/* 보너스(선택): 매장 홈 꾸미기 — 영업시간/복지태그/휴무일. 필수 단계가 아니라 n/3 카운트엔 안 들어감 */}
+                      {(() => {
+                        const undecoratedStore = myStores.find((s: any) => !(Array.isArray(s.perks) && s.perks.length > 0));
+                        if (!hasStore || !undecoratedStore) return null;
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.03)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{
+                                width: 18, height: 18, borderRadius: "50%",
+                                background: "var(--surface2)", border: "1px dashed var(--border)",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 9, color: "var(--text-muted)", fontWeight: 700
+                              }}>
+                                +
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                                매장 홈 꾸미기 <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>(선택 · 영업시간·복지·휴무일)</span>
+                              </span>
+                            </div>
+                            <button onClick={() => { setEditingStore(undecoratedStore); setStoreModalOpen(true); }}
+                              style={{
+                                background: "var(--surface2)", border: "1px solid var(--border)",
+                                borderRadius: 20, padding: "4px 12px",
+                                color: "var(--text-muted)", fontSize: 10, fontWeight: 700, cursor: "pointer"
+                              }}>
+                              꾸미기
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

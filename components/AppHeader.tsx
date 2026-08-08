@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import NotificationBell from "@/components/NotificationBell";
+import { useRoleTint } from "@/lib/useRoleTint";
 
 interface AppHeaderProps {
   title?: string;
@@ -36,6 +37,7 @@ export default function AppHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const roleTint = useRoleTint();
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -50,10 +52,13 @@ export default function AppHeader({
   return (
     <div style={{
       ...(noSticky ? {} : { position: "sticky", top: 0, zIndex: 30 }),
-      background: "var(--nav-bg)",
+      background: roleTint
+        ? `linear-gradient(var(--role-${roleTint}-tint), var(--role-${roleTint}-tint)), var(--nav-bg)`
+        : "var(--nav-bg)",
       backdropFilter: "blur(20px)",
       WebkitBackdropFilter: "blur(20px)",
-      borderBottom: "1px solid var(--nav-border)",
+      borderBottom: roleTint ? `1px solid var(--role-${roleTint}-border)` : "1px solid var(--nav-border)",
+      transition: "background 0.25s ease, border-color 0.25s ease",
     }}>
       {/* 상단 바 */}
       <div style={{

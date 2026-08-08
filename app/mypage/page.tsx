@@ -14,6 +14,11 @@ import { cardStyle, cardGradientStyle, cardInnerStyle, btnPrimary, btnSecondary,
 import { JobCard } from "@/components/JobCard";
 import { useActiveRole } from "@/lib/useActiveRole";
 import RoleToggleButton from "@/components/RoleToggleButton";
+import InfoTip from "@/components/InfoTip";
+import ConfirmModal from "@/components/ConfirmModal";
+import LoveCallSection from "@/components/LoveCallSection";
+import MatchSuccessModal from "@/components/MatchSuccessModal";
+import { useLoveCalls } from "@/lib/useLoveCalls";
 
 const glassStyle: React.CSSProperties = {
   background: "var(--surface2)",
@@ -37,13 +42,6 @@ interface UserProfile {
   user_type: "employer" | "worker" | "both";
   trust_score: number; grade: string; profile_completed: boolean;
   avatar_url?: string;
-}
-interface LoveCall {
-  id: string; status: string; match_score: number; message: string;
-  created_at: string; counterpart: any;
-  employer_id: string; worker_id: string;
-  isSent: boolean;
-  myRole: string;
 }
 
 const GRADE_INFO: Record<string, { label: string; emoji: string; color: string }> = {
@@ -90,6 +88,10 @@ function UserGradeBadge({ userId, trustScore, mode }: { userId: string; trustSco
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-sub)", display: "flex", alignItems: "center", gap: 4 }}>
             🎯 종합 신뢰도
+            <InfoTip title="신뢰도 점수는 어떻게 정해지나요?">
+              <p style={{ margin: "0 0 8px" }}>노쇼·지각 없이 약속을 지키고, 계약을 완료하고, 좋은 평점을 받을 때마다 점수가 오르는 활동 기반 점수예요(0~100점).</p>
+              <p style={{ margin: 0 }}>점수 구간에 따라 등급이 자동으로 매겨져요: {GRADE_DEFS.map(g => `${g.emoji}${g.name}(${g.min}점~)`).join(" → ")}</p>
+            </InfoTip>
           </span>
           <span style={{ fontSize: 15, fontWeight: 900, color: scoreColor }}>{scorePercent}점</span>
         </div>
@@ -314,247 +316,6 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
   );
 }
 
-function ConfirmModal({ title, desc, confirmLabel, confirmColor, onConfirm, onCancel }: {
-  title: string; desc: string; confirmLabel: string; confirmColor?: string;
-  onConfirm: () => void; onCancel: () => void;
-}) {
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
-      <div style={{ background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: 24, width: "100%", maxWidth: 640, margin: "0 auto" }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>{title}</h3>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>{desc}</p>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onConfirm}
-            style={{ flex: 1, background: confirmColor || "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
-            {confirmLabel}
-          </button>
-          <button onClick={onCancel}
-            style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: 14, borderRadius: 12, cursor: "pointer", fontSize: 14 }}>
-            아니요
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoveCallSection({ title, calls, showRespond, respondingId, onRespond, onCancel, onNavigate, onDelete, router }: any) {
-  const [expanded, setExpanded] = useState(false);
-
-  const sorted = [...calls].sort((a, b) => {
-    const statusPriority = (lc: any) => {
-      const ps = lc.progress_status || lc.status;
-      if (ps === "interviewing") return 1;
-      if (ps === "accepted") return 2;
-      if (ps === "pending") return 3;
-      if (ps === "hired") return 4;
-      return 5;
-    };
-
-    const as = statusPriority(a);
-    const bs = statusPriority(b);
-    if (as !== bs) return as - bs;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
-
-  const visibleCalls = expanded ? sorted : sorted.slice(0, 1);
-  const hasMore = sorted.length > 1;
-
-  const getStatusInfo = (lc: any) => {
-    const ps = lc.progress_status || lc.status;
-    switch (ps) {
-      case "interviewing": return { label: "📅 면접 진행중", color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)" };
-      case "hired": return { label: "✅ 채용 확정", color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)" };
-      case "accepted": return { label: "🎉 매칭 성사", color: "var(--purple-text)", bg: "var(--chip-purple-bg)", border: "var(--chip-purple-border)" };
-      case "pending": return { label: "⏳ 대기중", color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--border)" };
-      case "rejected": return { label: "거절됨", color: "var(--danger)", bg: "transparent", border: "var(--border)" };
-      case "cancelled": return { label: "취소됨", color: "var(--text-muted)", bg: "transparent", border: "var(--border)" };
-      case "failed": return { label: "매칭 실패", color: "var(--text-muted)", bg: "transparent", border: "var(--border)" };
-      default: return { label: ps, color: "var(--text-muted)", bg: "transparent", border: "var(--border)" };
-    }
-  };
-
-  return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 20, marginBottom: 12 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          {title}
-          {calls.filter((lc: any) => (lc.progress_status || lc.status) === "pending").length > 0 && (
-            <span style={{ marginLeft: 8, background: "var(--primary)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 20 }}>
-              {calls.filter((lc: any) => (lc.progress_status || lc.status) === "pending").length}
-            </span>
-          )}
-        </div>
-        <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
-          총 {sorted.length}건
-        </span>
-      </h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {visibleCalls.map((lc: any) => {
-          const cp = lc.counterpart;
-          const statusInfo = getStatusInfo(lc);
-          const isWorkerRole = lc.myRole === "worker";
-          const name = isWorkerRole ? cp?.business_name || "매장" : cp?.name || "알바생";
-          const isActive = ["interviewing", "hired", "accepted"].includes(lc.progress_status || lc.status);
-          return (
-            <div key={lc.id} style={{ background: isActive ? statusInfo.bg : "var(--surface2)", borderRadius: 14, padding: 12, border: `1px solid ${statusInfo.border}`, transition: "all 0.2s", position: "relative" }}>
-              {/* cancelled/failed/rejected 상태 쓰레기통 */}
-              {["cancelled", "failed", "rejected"].includes(lc.progress_status || lc.status) && (
-                <button onClick={() => onDelete(lc.id)}
-                  style={{ width: "100%", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer", marginTop: 4 }}>
-                  🗑️ 기록 삭제
-                </button>
-              )}
-
-              {/* 상단: 이름 + 상태 (클릭하면 상세로) */}
-              <button onClick={() => onNavigate(lc)}
-                style={{ width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                <div>
-                  <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px", color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span>{isWorkerRole ? "🏪" : "⚡"} {name}</span>
-                    {lc.daeta_posting_id && (
-                      <span style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", background: "#f59e0b1a", padding: "2px 6px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                        🚨 대타에서 시작
-                      </span>
-                    )}
-                  </p>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
-                    궁합 {lc.match_score}점 · {new Date(lc.created_at).toLocaleDateString("ko-KR")} · 탭하면 상세 보기
-                  </p>
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: statusInfo.color, background: `${statusInfo.color}20`, padding: "3px 8px", borderRadius: 20, flexShrink: 0, whiteSpace: "nowrap" }}>
-                  {statusInfo.label}
-                </span>
-              </button>
-
-              {/* 공고 정보 */}
-              {isWorkerRole && cp && (
-                <div style={{ background: "var(--surface2)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {cp.business_type && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🏷️ {cp.business_type}</span>}
-                  {cp.region && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {cp.region}</span>}
-                  {cp.wage && <span style={{ fontSize: 11, color: "var(--purple-text)" }}>💰 {cp.wage.toLocaleString()}원</span>}
-                  {cp.work_days && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📅 {cp.work_days}</span>}
-                </div>
-              )}
-              {!isWorkerRole && cp && (
-                <div style={{ background: "var(--surface2)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {cp.desired_type && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>🏷️ {cp.desired_type}</span>}
-                  {cp.desired_region && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>📍 {cp.desired_region}</span>}
-                  {cp.desired_wage && <span style={{ fontSize: 11, color: "var(--pink-text)" }}>💰 {cp.desired_wage.toLocaleString()}원↑</span>}
-                </div>
-              )}
-
-              {/* 면접 일정 표시 */}
-              {lc.interview_at && (
-                <div style={{ background: "var(--warning-bg)", borderRadius: 8, padding: "6px 10px", marginBottom: 8, fontSize: 12, color: "var(--warning)" }}>
-                  📅 면접: {new Date(lc.interview_at).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  {lc.interview_memo && ` · ${lc.interview_memo}`}
-                </div>
-              )}
-
-              {lc.message && (
-                <p style={{ fontSize: 12, color: "var(--text-sub)", background: "var(--surface2)", borderRadius: 8, padding: "6px 10px", margin: "0 0 8px" }}>
-                  💬 {lc.message}
-                </p>
-              )}
-
-              {/* 수락/거절 버튼 */}
-              {showRespond && (lc.progress_status || lc.status) === "pending" && (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => onRespond(lc.id, "reject")} disabled={respondingId === lc.id}
-                    style={{ flex: 1, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
-                    거절하기
-                  </button>
-                  <button onClick={() => onRespond(lc.id, "accept")} disabled={respondingId === lc.id}
-                    style={{ flex: 2, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 800, padding: "10px", borderRadius: 12, cursor: "pointer", fontSize: 13 }}>
-                    {respondingId === lc.id ? "처리 중..." : "수락하기"}
-                  </button>
-                </div>
-              )}
-
-              {/* 진행 단계 버튼 */}
-              {(() => {
-                const ps = lc.progress_status || lc.status;
-                if (ps === "accepted") return (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => router.push(`/chat/${lc.id}`)}
-                      style={{ flex: 1, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-                      💬 채팅하기
-                    </button>
-                    {/* (Optional logic for onProgress) */}
-                  </div>
-                );
-                if (ps === "interviewing") return (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => router.push(`/chat/${lc.id}`)}
-                      style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-                      💬 채팅
-                    </button>
-                  </div>
-                );
-                if (ps === "hired") return (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => router.push(`/chat/${lc.id}`)}
-                      style={{ flex: 1, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 600, padding: "8px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-                      💬 채팅하기
-                    </button>
-                    <button onClick={() => onDelete(lc.id)}
-                      style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 10, cursor: "pointer" }}>
-                      🗑️
-                    </button>
-                  </div>
-                );
-                return null;
-              })()}
-
-              {/* 보낸것 취소 버튼 - 취소/실패/거절 상태 제외. 대타 기원 매칭은 수락 즉시 자동계약이 체결돼서
-                  여기서 그냥 취소하면 페널티(정지·감점) 없이 파기돼버림 — 채팅의 페널티 확인 절차로 유도 */}
-              {!showRespond && !["cancelled", "failed", "rejected", "hired"].includes(lc.progress_status || lc.status) && (
-                lc.daeta_posting_id ? (
-                  <button onClick={() => router.push(`/chat/${lc.id}`)}
-                    style={{ width: "100%", background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
-                    채팅에서 대타 취소하기 (페널티 안내)
-                  </button>
-                ) : (
-                  <button onClick={() => onCancel(lc.id)}
-                    style={{ width: "100%", background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, padding: "7px", borderRadius: 10, cursor: "pointer" }}>
-                    {lc.myRole === "worker" ? "지원 취소하기" : "채용제안 취소하기"}
-                  </button>
-                )
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {hasMore && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          style={{
-            width: "100%",
-            marginTop: 10,
-            padding: "10px",
-            borderRadius: 12,
-            background: "var(--surface2)",
-            border: "1px solid var(--border)",
-            color: "var(--primary, #8b5cf6)",
-            fontSize: 12,
-            fontWeight: 800,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6
-          }}
-        >
-          <span>{expanded ? "접기" : `펼치기 (전체 ${sorted.length}개 보기)`}</span>
-          <i className={`ti ${expanded ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 14 }} aria-hidden="true" />
-        </button>
-      )}
-    </div>
-  );
-}
-
 function MyPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -571,13 +332,15 @@ function MyPageContent() {
 
   const [user, setUser] = useState<UserProfile | null>(null);
   const { activeRole, setActiveRole, isBoth } = useActiveRole(user?.user_type);
+
+  // ?tab=worker|employer 딥링크(예: 채팅방 "대타 관리하기") — both 계정의 활성 모드를 강제 전환
+  useEffect(() => {
+    if (isBoth && (tabParam === "worker" || tabParam === "employer")) setActiveRole(tabParam);
+  }, [isBoth, tabParam, setActiveRole]);
   const [userId, setUserId] = useState<string | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const viewType = "worker";
-  const [loveCalls, setLoveCalls] = useState<LoveCall[]>([]);
-  const [loveCallLoading, setLoveCallLoading] = useState(false);
-  const [respondingId, setRespondingId] = useState<string | null>(null);
   const [basicResult, setBasicResult] = useState<any>(null);
   const [advancedResult, setAdvancedResult] = useState<any>(null);
   const [hasWorkerInterview, setHasWorkerInterview] = useState(false);
@@ -593,6 +356,11 @@ function MyPageContent() {
   const [confirmModal, setConfirmModal] = useState<{
     title: string; desc: string; confirmLabel: string; confirmColor?: string; onConfirm: () => void;
   } | null>(null);
+  const {
+    loveCalls, loveCallLoading, respondingId,
+    matchModal, setMatchModal,
+    fetchLoveCalls, handleRespond, handleCancel, handleDelete,
+  } = useLoveCalls(userId, setConfirmModal);
 
   const handleCropComplete = async (croppedBlob: Blob) => {
     if (!user) return;
@@ -617,8 +385,6 @@ function MyPageContent() {
 
   const [myWorkerProfile, setMyWorkerProfile] = useState<any>(null);
   const [myEmployerProfile, setMyEmployerProfile] = useState<any>(null);
-  const [showWorkerCalls, setShowWorkerCalls] = useState(true);
-  const [showEmployerCalls, setShowEmployerCalls] = useState(true);
 
   // 피드 및 북마크 탭 관련 상태
   const [myPosts, setMyPosts] = useState<any[]>([]);
@@ -887,89 +653,6 @@ function MyPageContent() {
     });
   };
 
-  const handleCancel = async (matchId: string) => {
-    setConfirmModal({
-      title: "지원을 취소할까요?",
-      desc: "취소 기록은 남아있고, 나중에 삭제할 수 있어요.",
-      confirmLabel: "네, 취소할게요",
-      confirmColor: "var(--danger)",
-      onConfirm: async () => {
-        try {
-          const res = await fetch("/api/lovecall", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ matchId, action: "cancel" }),
-          });
-          const data = await res.json();
-          if (data.success) {
-            setLoveCalls(prev => prev.map(lc => lc.id === matchId ? { ...lc, status: "cancelled", progress_status: "cancelled" } : lc));
-          } else {
-            alert("취소 실패: " + (data.error || "알 수 없는 오류"));
-          }
-        } catch (err) { console.error(err); }
-        setConfirmModal(null);
-      },
-    });
-  };
-
-  const handleDelete = async (matchId: string) => {
-    setConfirmModal({
-      title: "기록을 삭제할까요?",
-      desc: "삭제하면 복구할 수 없어요.",
-      confirmLabel: "삭제하기",
-      confirmColor: "var(--danger)",
-      onConfirm: async () => {
-        try {
-          const res = await fetch(`/api/lovecall?matchId=${matchId}`, {
-            method: "DELETE",
-          });
-          const data = await res.json();
-          if (data.success) {
-            setLoveCalls(prev => prev.filter(lc => lc.id !== matchId));
-          } else {
-            alert("삭제 실패: " + (data.error || "알 수 없는 오류"));
-          }
-        } catch (err) { console.error(err); }
-        setConfirmModal(null);
-      },
-    });
-  };
-
-  const handleProgress = async (matchId: string, action: string) => {
-    try {
-      const res = await fetch("/api/lovecall", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchId, action }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setLoveCalls(prev => prev.map(lc =>
-          lc.id === matchId ? { ...lc, progress_status: action === "interview" ? "interviewing" : action === "hire" ? "hired" : "failed" } : lc
-        ));
-      }
-    } catch (err) { console.error(err); }
-  };
-
-  const fetchLoveCalls = async (uid: string, uType: string) => {
-    setLoveCallLoading(true);
-    try {
-      const res = await fetch(`/api/lovecall?userId=${uid}&userType=${uType}`);
-      const data = await res.json();
-      if (data.success) {
-        const list = data.data || [];
-        setLoveCalls(list);
-
-        const wList = list.filter((lc: any) => lc.myRole === "worker");
-        const eList = list.filter((lc: any) => lc.myRole === "employer");
-        if (wList.length > 0) setShowWorkerCalls(true);
-        if (eList.length > 0) setShowEmployerCalls(true);
-      }
-    } catch (err) { console.error(err); }
-    finally { setLoveCallLoading(false); }
-  };
-
-  const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
   const [toastMsg, setToastMsg] = useState("");
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -986,48 +669,14 @@ function MyPageContent() {
       if (res.ok) {
         await supabase.auth.signOut();
         router.replace("/");
+        return;
       }
+      setToastMsg("탈퇴 처리 중 오류가 발생했어요. 다시 시도해주세요.");
     } catch (e) {
       console.error("탈퇴 오류:", e);
+      setToastMsg("탈퇴 처리 중 오류가 발생했어요. 다시 시도해주세요.");
     }
     setWithdrawing(false);
-  };
-
-  const handleRespond = async (matchId: string, action: "accept" | "reject") => {
-    setRespondingId(matchId);
-    try {
-      const res = await fetch("/api/lovecall", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchId, action }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        const nextStatus = action === "accept" ? "accepted" : "rejected";
-        setLoveCalls(prev => prev.map(lc =>
-          lc.id === matchId ? { ...lc, status: nextStatus, progress_status: nextStatus } : lc
-        ));
-        if (action === "accept") {
-          // 시스템 메시지 전송
-          const lc = loveCalls.find(l => l.id === matchId);
-          if (lc) {
-            await fetch("/api/chat", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                matchId,
-                senderId: userId,
-                receiverId: lc.myRole === "worker" ? lc.employer_id : lc.worker_id,
-                message: "🎉 매칭이 성사됐어요! 서로 인사를 나눠보세요 😊",
-                messageType: "system",
-              }),
-            });
-          }
-          setMatchModal({ matchId });
-        }
-      }
-    } catch (err) { console.error(err); }
-    finally { setRespondingId(null); }
   };
 
   const loadResultsForType = async (uType: string, uid?: string) => {
@@ -1140,68 +789,52 @@ function MyPageContent() {
           </div>
         </div>
 
-        {/* 내 공개 프로필 바로가기 (소셜+커리어 통합 프로필) */}
-        <div style={{ marginBottom: 12 }}>
-          <button
-            onClick={() => router.push(`/worker/${user.id}`)}
-            style={{
-              width: "100%",
-              background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(236,72,153,0.08) 100%)",
-              border: "1px solid var(--primary-border)",
-              borderRadius: 16,
-              padding: "14px",
-              textAlign: "left",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              cursor: "pointer"
-            }}
-          >
-            <span style={{ fontSize: 22 }}>👤</span>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>내 프로필</p>
-              <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>경력·신뢰도·뱃지·활동을 한 곳에서</p>
-            </div>
+        {/* 바로가기 모음 — 전부 정적 링크라 글자수 상관없이 균일한 카드 그리드로. 팀원 초대는 사장님 모드에서만 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+          <button onClick={() => router.push(`/worker/${user.id}`)}
+            style={{ minHeight: 82, background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(236,72,153,0.08) 100%)", border: "1px solid var(--primary-border)", borderRadius: 16, padding: "12px 8px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 20 }}>👤</span>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>내 프로필</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>경력·신뢰도·활동</p>
           </button>
-        </div>
-
-        {/* 팀·소속 바로가기 — 팀원 초대는 사장님 모드에서만 (초대 자체가 매장 보유 전제) */}
-        <div style={{ display: "grid", gridTemplateColumns: mode === "employer" ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 12 }}>
           <button onClick={() => router.push("/myteam")}
-            style={{ background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
-            <span style={{ fontSize: 22 }}>👥</span>
+            style={{ minHeight: 82, background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "12px 8px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 20 }}>👥</span>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>내 팀 · 소속</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>소속 매장 및 팀원 관리</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>매장·팀원 관리</p>
           </button>
           {mode === "employer" && (
             <button onClick={() => setInviteOpen(true)}
-              style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "14px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
-              <span style={{ fontSize: 22 }}>🎫</span>
+              style={{ minHeight: 82, background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "12px 8px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+              <span style={{ fontSize: 20 }}>🎫</span>
               <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--pink-text)" }}>팀원 초대</p>
-              <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대하기</p>
+              <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>닉네임으로 초대</p>
             </button>
           )}
-        </div>
-
-        {/* 전체 채팅 보관함 바로가기 */}
-        <button onClick={() => router.push("/chat")}
-          style={{ width: "100%", background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 10 }}>
-          <span style={{ fontSize: 22 }}>💬</span>
-          <div style={{ flex: 1 }}>
+          <button onClick={() => router.push("/chat")}
+            style={{ minHeight: 82, background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "12px 8px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 20 }}>💬</span>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--purple-text)" }}>전체 채팅 보관함</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>진행 중인 모든 대화방 전체 목록</p>
-          </div>
-        </button>
-
-        {/* 임금 명세서 바로가기 */}
-        <button onClick={() => router.push("/payslip/list")}
-          style={{ width: "100%", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 16, padding: "14px 16px", textAlign: "left", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 20 }}>
-          <span style={{ fontSize: 22 }}>📋</span>
-          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>전체 대화 목록</p>
+          </button>
+          <button onClick={() => router.push("/payslip/list")}
+            style={{ minHeight: 82, background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 16, padding: "12px 8px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 20 }}>📋</span>
             <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--success)" }}>임금 명세서 보관함</p>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>발행했거나 수령한 임금 명세서 전체 목록</p>
-          </div>
-        </button>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>발행·수령 내역</p>
+          </button>
+          <button onClick={() => router.push(`/mypage/daeta-history?tab=${mode}`)}
+            style={{ minHeight: 82, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", borderRadius: 16, padding: "12px 8px", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+            <span style={{ fontSize: 20 }}>🔄</span>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0, color: "var(--warning)" }}>대타 이력</p>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0 }}>정산 완료 기록</p>
+          </button>
+          {mode === "worker" && (
+            <div style={{ minHeight: 82, border: "1px dashed var(--border)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src="/icon-192.png" alt="" style={{ width: 28, height: 28, borderRadius: 8, opacity: 0.25 }} />
+            </div>
+          )}
+        </div>
 
         {/* ── 알바생 섹션 (알바생 모드일 때만) ── */}
         {mode === "worker" && (() => {
@@ -1222,24 +855,19 @@ function MyPageContent() {
                     {myWorkerProfile ? "구직 정보 수정" : "+ 구직 정보"}
                   </button>
                 </div>
-                {/* 지원 현황 배지 버튼 */}
+                {/* 지원 현황 — 대기중인 건 배지로 바로 눈에 띄게, 목록 자체는 전용 페이지로 */}
                 {!loveCallLoading && (
-                  <button onClick={() => setShowWorkerCalls(v => !v)}
+                  <button onClick={() => router.push("/mypage/applications?tab=worker")}
                     style={{
                       width: "100%",
-                      background: showWorkerCalls
-                        ? "var(--surface2, rgba(255,255,255,0.08))"
-                        : "var(--surface, rgba(255,255,255,0.04))",
-                      border: showWorkerCalls
-                        ? "1.5px solid var(--primary, #8b5cf6)"
-                        : "1px solid var(--border, rgba(255,255,255,0.12))",
+                      background: "var(--surface, rgba(255,255,255,0.04))",
+                      border: "1px solid var(--border, rgba(255,255,255,0.12))",
                       borderRadius: 14,
                       padding: "12px 16px",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
                       cursor: "pointer",
-                      transition: "all 0.2s ease"
                     }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 14, fontWeight: 900, color: "var(--text, #fff)" }}>📋 지원 현황</span>
@@ -1247,10 +875,7 @@ function MyPageContent() {
                       {wPending === 0 && wTotal > 0 && <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{wTotal}건</span>}
                       {wTotal === 0 && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>없음</span>}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: showWorkerCalls ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800 }}>
-                      <span>{showWorkerCalls ? "접기" : "펼치기"}</span>
-                      <i className={`ti ${showWorkerCalls ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
-                    </div>
+                    <span style={{ fontSize: 12, color: "var(--primary, #8b5cf6)", fontWeight: 800 }}>전체보기 →</span>
                   </button>
                 )}
               </div>
@@ -1258,49 +883,6 @@ function MyPageContent() {
               <div style={{ background: "var(--surface)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "16px", marginBottom: 10 }}>
                 <WorkerProfileStatus userId={user.id} router={router} onUpdate={(p) => setMyWorkerProfile(p)} />
               </div>
-
-              {showWorkerCalls && (
-                <div>
-                  {wReceived.length === 0 && wSent.length === 0 ? (
-                    <div style={{ background: "var(--surface)", border: "1px solid var(--chip-pink-border)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
-                      <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 10px" }}>아직 지원 내역이 없어요</p>
-                      <button onClick={() => router.push("/explore?type=worker")}
-                        style={{ background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", padding: "7px 18px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
-                        매장 둘러보기 →
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      {wReceived.length > 0 && (
-                        <LoveCallSection 
-                          title="📥 받은 채용 제안" 
-                          calls={wReceived} 
-                          showRespond={true} 
-                          respondingId={respondingId} 
-                          onRespond={handleRespond} 
-                          onCancel={handleCancel} 
-                          onNavigate={(lc: any) => router.push(lc.counterpart?.job_id ? `/job/${lc.counterpart.job_id}` : `/store/${lc.counterpart?.id}`)}
-                          onDelete={handleDelete}
-                          router={router}
-                        />
-                      )}
-                      {wSent.length > 0 && (
-                        <LoveCallSection
-                          title="📤 보낸 지원"
-                          calls={wSent}
-                          showRespond={false}
-                          respondingId={respondingId}
-                          onRespond={handleRespond}
-                          onCancel={handleCancel}
-                          onNavigate={(lc: any) => router.push(lc.counterpart?.job_id ? `/job/${lc.counterpart.job_id}` : `/store/${lc.counterpart?.id}`)}
-                          onDelete={handleDelete} 
-                          router={router} 
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
             </section>
           );
         })()}
@@ -1325,22 +907,17 @@ function MyPageContent() {
                 </button>
               </div>
               {!loveCallLoading && (
-                <button onClick={() => setShowEmployerCalls(v => !v)}
+                <button onClick={() => router.push("/mypage/applications?tab=employer")}
                   style={{
                     width: "100%",
-                    background: showEmployerCalls
-                      ? "var(--surface2, rgba(255,255,255,0.08))"
-                      : "var(--surface, rgba(255,255,255,0.04))",
-                    border: showEmployerCalls
-                      ? "1.5px solid var(--primary, #8b5cf6)"
-                      : "1px solid var(--border, rgba(255,255,255,0.12))",
+                    background: "var(--surface, rgba(255,255,255,0.04))",
+                    border: "1px solid var(--border, rgba(255,255,255,0.12))",
                     borderRadius: 14,
                     padding: "12px 16px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
                     cursor: "pointer",
-                    transition: "all 0.2s ease"
                   }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 14, fontWeight: 900, color: "var(--text, #fff)" }}>📋 채용 제안</span>
@@ -1348,10 +925,7 @@ function MyPageContent() {
                     {ePending === 0 && eTotal > 0 && <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{eTotal}건</span>}
                     {eTotal === 0 && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>없음</span>}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: showEmployerCalls ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800 }}>
-                    <span>{showEmployerCalls ? "접기" : "펼치기"}</span>
-                    <i className={`ti ${showEmployerCalls ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
-                  </div>
+                  <span style={{ fontSize: 12, color: "var(--primary, #8b5cf6)", fontWeight: 800 }}>전체보기 →</span>
                 </button>
               )}
             </div>
@@ -1425,21 +999,6 @@ function MyPageContent() {
                 </div>
               )}
             </div>
-
-            {showEmployerCalls && (
-              <div>
-                {eReceived.length === 0 && eSent.length === 0 ? (
-                  <div style={{ background: "var(--surface)", border: "1px solid var(--chip-purple-border)", borderRadius: 16, padding: "20px 16px", textAlign: "center" }}>
-                    <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>아직 지원/제안 내역이 없어요</p>
-                  </div>
-                ) : (
-                  <>
-                    {eReceived.length > 0 && <LoveCallSection title="📥 받은 지원" calls={eReceived} showRespond={true} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/worker/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
-                    {eSent.length > 0 && <LoveCallSection title="📤 보낸 채용 제안" calls={eSent} showRespond={false} respondingId={respondingId} onRespond={handleRespond} onCancel={handleCancel} onNavigate={(lc: any) => router.push(`/worker/${lc.worker_id}`)} onDelete={handleDelete} router={router} />}
-                  </>
-                )}
-              </div>
-            )}
           </section>
           );
         })()}
@@ -1564,33 +1123,12 @@ function MyPageContent() {
       )}
 
         {matchModal && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-            <div style={{ background: "var(--surface)", borderRadius: 24, padding: 28, width: "100%", maxWidth: 360, textAlign: "center" }}>
-              <div style={{ fontSize: 56, marginBottom: 12 }}>🎉</div>
-              <h3 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 8px" }}>매칭 성사!</h3>
-              <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 24px", lineHeight: 1.6 }}>
-                본격적인 채팅 전에<br />AI 사전미팅으로 먼저 알아가볼까요? 😊
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <button onClick={() => { setMatchModal(null); router.push(`/pre-meet/${matchModal.matchId}`); }}
-                  style={{ width: "100%", background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: 14, borderRadius: 14, fontSize: 15, cursor: "pointer" }}>
-                  🤖 AI 사전미팅 하기
-                </button>
-                <button onClick={() => { setMatchModal(null); router.push(`/chat/${matchModal.matchId}`); }}
-                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontWeight: 600, padding: 12, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>
-                  💬 바로 채팅하기
-                </button>
-                <button onClick={() => {
-                  setMatchModal(null);
-                  setToastMsg("💬 채팅 탭에서 AI 사전미팅 또는 채팅을 시작할 수 있어요!");
-                  setTimeout(() => setToastMsg(""), 3000);
-                }}
-                  style={{ width: "100%", background: "none", border: "none", color: "var(--text-muted)", fontSize: 13, cursor: "pointer", padding: 8 }}>
-                  나중에
-                </button>
-              </div>
-            </div>
-          </div>
+          <MatchSuccessModal
+            matchId={matchModal.matchId}
+            router={router}
+            onClose={() => setMatchModal(null)}
+            onToast={(msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); }}
+          />
         )}
 
         {/* 다시하기 모달 */}
@@ -1707,8 +1245,8 @@ function MyPageContent() {
 
       {/* 피드 라이트박스 상세 모달 */}
       {selectedPost && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-3xl border border-border shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-surface rounded-3xl border border-border shadow-2xl w-full max-w-sm overflow-hidden flex flex-col h-[80vh] max-h-[80vh]">
             {/* 헤더 */}
             <div className="flex justify-between items-center px-4 py-3 border-b border-border bg-surface2/40">
               <span className="font-bold text-xs text-text-sub">상세 보기</span>
@@ -1728,7 +1266,7 @@ function MyPageContent() {
             <div className="flex-1 overflow-y-auto">
               {/* 미디어 */}
               {selectedPost.media_urls && selectedPost.media_urls.length > 0 && (
-                <div className="relative w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center">
+                <div className="relative w-full aspect-square flex-shrink-0 bg-black overflow-hidden flex items-center justify-center">
                   <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-none">
                     {selectedPost.media_urls.map((url: string, idx: number) => {
                       const isVid = isVideoUrl(url);
@@ -1774,14 +1312,14 @@ function MyPageContent() {
               </div>
 
               {/* 댓글 섹션 */}
-              <div className="bg-surface2/30 p-4 border-t border-border flex flex-col gap-3">
+              <div className="bg-surface2/30 p-3 border-t border-border flex flex-col gap-2">
                 <span className="font-bold text-[11px] text-text-muted">댓글 ({comments.length})</span>
                 {commentsLoading ? (
                   <span className="text-[10px] text-text-muted text-center py-1">댓글 로딩 중...</span>
                 ) : comments.length === 0 ? (
                   <span className="text-[10px] text-text-muted text-center py-1">댓글이 없습니다.</span>
                 ) : (
-                  <div className="flex flex-col gap-2.5 max-h-44 overflow-y-auto">
+                  <div className="flex flex-col gap-2 max-h-28 overflow-y-auto pr-0.5">
                     {comments.map(comment => (
                       <div key={comment.id} className="flex gap-2 items-start text-xs">
                         <div className="w-6 h-6 rounded-full overflow-hidden bg-surface flex-shrink-0 border border-border flex items-center justify-center">
@@ -1817,7 +1355,7 @@ function MyPageContent() {
 
             {/* 댓글 작성 푸터 */}
             {userId && (
-              <div className="p-3 border-t border-border bg-surface2 flex gap-1.5">
+              <div className="p-3 border-t border-border bg-surface2 flex gap-1.5 flex-shrink-0" style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
                 <input type="text" placeholder="댓글을 입력하세요..."
                   value={newComment}
                   onChange={e => setNewComment(e.target.value)}

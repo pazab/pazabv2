@@ -12,7 +12,6 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
 import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
-import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import SetNeighborhoodSheet from "@/components/daeta/SetNeighborhoodSheet";
 import { getWorkerTiers, TIER_LABEL } from "@/lib/daetaTier";
@@ -46,6 +45,7 @@ const STAGE_WAIT_MIN: Record<number, number> = { 1: 10, 2: 30, 3: 30 };
 
 interface PostingMatchMeta {
   total: number;
+  notified: number;
   acceptedMatchId: string | null;
   acceptedWorkerName: string | null;
 }
@@ -115,9 +115,10 @@ interface PostingCardProps {
   onApply?: () => void;
   onGoToChat: (matchId: string) => void;
   onViewStore?: (employerProfileId: string) => void;
+  expansionInfo?: { label: string; minutesLeft: number } | null;
 }
 
-function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore }: PostingCardProps) {
+function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore, expansionInfo }: PostingCardProps) {
   const stage = p.escalation_stage || 1;
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
@@ -262,9 +263,14 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
                 {stage === 4 && "전체 공개 중"}
               </span>
               <span style={{ fontSize: 10, fontWeight: 800, color: meta.total > 0 ? "#4ade80" : "var(--text-muted, rgba(255,255,255,0.45))" }}>
-                응답 {meta.total}건
+                {meta.notified > 0 ? `${meta.notified}명에게 알림 · ` : ""}응답 {meta.total}건
               </span>
             </div>
+            {expansionInfo && (
+              <div style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.4))", marginTop: 4, textAlign: "right" }}>
+                ⏳ {expansionInfo.minutesLeft > 0 ? `${expansionInfo.label}까지 ${expansionInfo.minutesLeft}분` : `곧 ${expansionInfo.label}`}
+              </div>
+            )}
           </div>
         )
       ) : null}
@@ -291,7 +297,6 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [workerProfile, setWorkerProfile] = useState<{ id: string; available_now: boolean } | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [editingPostingId, setEditingPostingId] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
   const [showAllWorkers, setShowAllWorkers] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
@@ -396,7 +401,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         .in("progress_status", ["pending", "accepted", "hired"]);
 
       const meta: Record<string, PostingMatchMeta> = {};
-      ids.forEach(id => { meta[id] = { total: 0, acceptedMatchId: null, acceptedWorkerName: null }; });
+      ids.forEach(id => { meta[id] = { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }; });
 
       const acceptedWorkerIds: string[] = [];
       (matches || []).forEach((m: { id: string; daeta_posting_id: string; worker_id: string; progress_status: string }) => {
@@ -420,7 +425,31 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
           if (wid) entry.acceptedWorkerName = nameMap[wid] || "알바생";
         });
       }
+
       setMatchMeta(meta);
+
+      // 내 공고에만 필요한 "알림 간 인원" — 응답건수(meta.total)의 분모. notifications RLS(본인만 SELECT)상
+      // 사장님이 직접 못 읽으므로 서버 라우트(서비스롤+소유권검증) 경유해서 근사치를 채운다(비동기, 실패해도 무시)
+      const myIds = ids.filter(id => postingList.find(p => p.id === id)?.user_id === userId);
+      if (myIds.length > 0) {
+        fetch("/api/daeta/notified-count", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ postingIds: myIds }),
+        })
+          .then(res => res.json())
+          .then((data: { counts?: Record<string, number> }) => {
+            if (!data.counts) return;
+            setMatchMeta(prev => {
+              const next = { ...prev };
+              Object.entries(data.counts!).forEach(([pid, count]) => {
+                if (next[pid]) next[pid] = { ...next[pid], notified: count };
+              });
+              return next;
+            });
+          })
+          .catch(() => {});
+      }
     } else {
       setMatchMeta({});
     }
@@ -694,18 +723,6 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     });
   };
 
-  if (showHistory) {
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 500, overflowY: "auto" }}>
-        <DaetaHistoryView
-          userId={userId}
-          userType={userType as "worker" | "employer" | "both"}
-          onBack={() => setShowHistory(false)}
-        />
-      </div>
-    );
-  }
-
   // 공고 정렬: 내 공고(고정) → 긴급(시작임박·확대공지, 임박한 순) → 다른 공고(거리순→최신순)
   const myPostings = postings.filter(p => p.user_id === userId);
   const othersPostings = postings.filter(p => p.user_id !== userId);
@@ -861,12 +878,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                         p={p}
                         isMine
                         urgent={false}
-                        meta={matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                        meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }}
                         isApplied={false}
                         isLoading={false}
                         onEdit={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
                         onCancel={() => cancelPosting(p)}
                         onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                        expansionInfo={nextExpansionInfo(p)}
                       />
                     ))}
                   </div>
@@ -887,7 +905,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                             isMine={false}
                             urgent
                             width={280}
-                            meta={matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                            meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }}
                             isApplied={appliedIds.has(p.id)}
                             isLoading={actionLoading === p.id}
                             myBase={myBase}
@@ -911,7 +929,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           p={p}
                           isMine={false}
                           urgent={false}
-                          meta={matchMeta[p.id] || { total: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                          meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }}
                           isApplied={appliedIds.has(p.id)}
                           isLoading={actionLoading === p.id}
                           myBase={myBase}
@@ -1031,7 +1049,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         {/* 보조 경로 — "직접 고르기"(카드덱)는 위 목록과 같은 후보를 다시 스와이프로 보여줘 중복이라 강등(코드는 유지, 진입 버튼만 제거) */}
         <div style={{ display: "flex", gap: 10 }}>
           <button
-            onClick={() => setShowHistory(true)}
+            onClick={() => router.push(`/mypage?tab=${roleView || (userType === "employer" ? "employer" : "worker")}`)}
             style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             <i className="ti ti-list" aria-hidden="true" /> 대타 내역 {historyCount > 0 ? `(${historyCount}건)` : ""}
           </button>

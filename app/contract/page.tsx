@@ -6,6 +6,7 @@ import { getMinWageForDate, isUnderMinWage } from "@/lib/minWage";
 import { supabase } from "@/lib/supabase";
 import ContractOfficialForm, { getOfficialFormHTML } from "@/components/ContractOfficialForm";
 import { sendPushNotification } from "@/lib/usePush";
+import { encryptBankFields, decryptBankFields } from "@/lib/bankCryptoClient";
 import {
   inputStyle,
   btnPrimary,
@@ -357,6 +358,12 @@ function ContractContent() {
     }
     const { data } = await q.maybeSingle();
     if (data?.contract_data) {
+      if (data.contract_data.bankAccount || data.contract_data.bankNumber) {
+        try {
+          const [decAccount, decNumber] = await decryptBankFields([data.contract_data.bankAccount, data.contract_data.bankNumber]);
+          data.contract_data = { ...data.contract_data, bankAccount: decAccount || null, bankNumber: decNumber || null };
+        } catch (e) { console.error("계좌정보 복호화 실패:", e); }
+      }
       setPrevContractData(data.contract_data);
     } else {
       setPrevContractData(null);
@@ -502,6 +509,13 @@ function ContractContent() {
         .select("*").eq("match_id", matchId)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
+      if (existing?.contract_data && (existing.contract_data.bankAccount || existing.contract_data.bankNumber)) {
+        try {
+          const [decAccount, decNumber] = await decryptBankFields([existing.contract_data.bankAccount, existing.contract_data.bankNumber]);
+          existing.contract_data = { ...existing.contract_data, bankAccount: decAccount || null, bankNumber: decNumber || null };
+        } catch (e) { console.error("계좌정보 복호화 실패:", e); }
+      }
+
       let epData: any = null;
       if (existing?.employer_profile_id) {
         const { data } = await supabase.from("employer_profiles")
@@ -591,6 +605,13 @@ function ContractContent() {
         .neq("status", "superseded")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
+      if (existing?.contract_data && (existing.contract_data.bankAccount || existing.contract_data.bankNumber)) {
+        try {
+          const [decAccount, decNumber] = await decryptBankFields([existing.contract_data.bankAccount, existing.contract_data.bankNumber]);
+          existing.contract_data = { ...existing.contract_data, bankAccount: decAccount || null, bankNumber: decNumber || null };
+        } catch (e) { console.error("계좌정보 복호화 실패:", e); }
+      }
+
       let epData: any = null;
       if (existing?.employer_profile_id) {
         const { data } = await supabase.from("employer_profiles")
@@ -644,6 +665,12 @@ function ContractContent() {
     const { data: existing } = await supabase.from("contracts")
       .select("*").eq("match_id", m.id)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (existing?.contract_data && (existing.contract_data.bankAccount || existing.contract_data.bankNumber)) {
+      try {
+        const [decAccount, decNumber] = await decryptBankFields([existing.contract_data.bankAccount, existing.contract_data.bankNumber]);
+        existing.contract_data = { ...existing.contract_data, bankAccount: decAccount || null, bankNumber: decNumber || null };
+      } catch (e) { console.error("계좌정보 복호화 실패:", e); }
+    }
     if (existing?.contract_data) {
       const mergedData = {
         ...existing.contract_data,
@@ -874,6 +901,14 @@ function ContractContent() {
     setShowSaveModal(false);
     setSaving(true);
     const payload = buildPayload();
+    const cdForSave = payload.contract_data as { bankAccount?: string; bankNumber?: string };
+    if (cdForSave.bankAccount || cdForSave.bankNumber) {
+      try {
+        const [encAccount, encNumber] = await encryptBankFields([cdForSave.bankAccount, cdForSave.bankNumber]);
+        cdForSave.bankAccount = encAccount || undefined;
+        cdForSave.bankNumber = encNumber || undefined;
+      } catch (e) { console.error("계좌정보 암호화 실패:", e); }
+    }
     let error = null;
 
     if (saveMode === "overwrite" && existingContract) {

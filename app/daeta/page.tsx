@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
-import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
 import DaetaSosHome from "@/components/daeta/DaetaSosHome";
 import DaetaWorkerHome from "@/components/daeta/DaetaWorkerHome";
 import TierBadge from "@/components/TierBadge";
@@ -73,8 +72,6 @@ async function getDbBase(userId: string): Promise<{ lat: number; lng: number; so
 function DaetaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const focusMatchId = searchParams.get("matchId") || undefined;
-
   // SOS 홈 우선 구조 (DESIGN_PLAN.md P1): 로그인 유저는 역할별 홈, 카드덱은 "직접 고르기" 보조 경로
   const [view, setView] = useState<"boot" | "home" | "deck">("boot");
   const [roleView, setRoleView] = useState<"employer" | "worker">("worker"); // userType이 both일 때 전환용
@@ -91,15 +88,9 @@ function DaetaPageContent() {
   const [isEmployer, setIsEmployer] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [showHistory, setShowHistory] = useState(searchParams.get("history") === "1");
   const [userType, setUserType] = useState<string>("worker");
   const { showToast, ToastUI } = useToast();
   const [pendingConfirm, setPendingConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
-
-  // 채팅방의 "대타 관리하기" 링크(?history=1&matchId=)로 들어온 경우 히스토리 화면을 바로 염
-  useEffect(() => {
-    if (searchParams.get("history") === "1") setShowHistory(true);
-  }, [searchParams]);
 
   // New states for real-time Daeta matching & editing
   const [activePosting, setActivePosting] = useState<any | null>(null);
@@ -503,21 +494,6 @@ function DaetaPageContent() {
     </div>
   );
 
-  // ── 대타 기록/관리 (채팅방 "대타 관리하기" 딥링크 등) — view가 "home"으로 전환되기 전에 먼저 체크해야
-  // 링크로 들어와도 SOS 홈에 밀리지 않고 실제로 이 화면이 뜬다.
-  if (showHistory && currentUserId) {
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 500, overflowY: "auto" }}>
-        <DaetaHistoryView
-          userId={currentUserId}
-          userType={userType as any}
-          onBack={() => setShowHistory(false)}
-          focusMatchId={focusMatchId}
-        />
-      </div>
-    );
-  }
-
   // ── 단일 통합 대타 허브 홈 ──
   if (view === "home" && currentUserId) {
     return (
@@ -768,7 +744,7 @@ function DaetaPageContent() {
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               {currentUserId && (
                 <button
-                  onClick={() => setShowHistory(true)}
+                  onClick={() => router.push(`/mypage?tab=${isEmployer ? "employer" : "worker"}`)}
                   style={{
                     background: "rgba(255,255,255,0.15)",
                     border: "1px solid rgba(255,255,255,0.2)",

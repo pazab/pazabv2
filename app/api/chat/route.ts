@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 // 모두 service_role 사용 — server-side anon은 auth.uid()=null이라 RLS 통과 불가
 const supabaseAdmin = createClient(
@@ -7,15 +9,33 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// 로그인 세션에서 요청자 확인 (service_role로 RLS를 우회하는 만큼, 요청자 검증은 앱 레벨에서 직접 해야 함)
+async function getRequesterId(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll() } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id || null;
+}
+
 // 채팅 메시지 목록 조회 (GET)
 export async function GET(req: NextRequest) {
   try {
+    const requesterId = await getRequesterId();
+    if (!requesterId) return NextResponse.json({ error: "인증이 필요합니다.", success: false }, { status: 401 });
+
     const { searchParams } = new URL(req.url);
     const matchId = searchParams.get("matchId");
     const userId = searchParams.get("userId");
 
     if (!matchId || !userId) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
+    }
+    if (requesterId !== userId) {
+      return NextResponse.json({ error: "권한이 없습니다.", success: false }, { status: 403 });
     }
 
     // 현재 match 정보
@@ -26,6 +46,9 @@ export async function GET(req: NextRequest) {
       .single();
 
     if (!match) return NextResponse.json({ error: "매칭 없음", success: false }, { status: 404 });
+    if (match.employer_id !== requesterId && match.worker_id !== requesterId) {
+      return NextResponse.json({ error: "권한이 없습니다.", success: false }, { status: 403 });
+    }
 
     const { data: messages, error } = await supabaseAdmin
       .from("chats")
@@ -83,10 +106,27 @@ export async function GET(req: NextRequest) {
 // 메시지 전송 (POST)
 export async function POST(req: NextRequest) {
   try {
+    const requesterId = await getRequesterId();
+    if (!requesterId) return NextResponse.json({ error: "인증이 필요합니다.", success: false }, { status: 401 });
+
     const { matchId, senderId, receiverId, message, messageType } = await req.json();
 
     if (!matchId || !senderId || !receiverId || !message) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
+    }
+    if (requesterId !== senderId) {
+      return NextResponse.json({ error: "권한이 없습니다.", success: false }, { status: 403 });
+    }
+
+    const { data: match } = await supabaseAdmin
+      .from("matches")
+      .select("employer_id, worker_id")
+      .eq("id", matchId)
+      .single();
+    if (!match) return NextResponse.json({ error: "매칭 없음", success: false }, { status: 404 });
+    const participants = [match.employer_id, match.worker_id];
+    if (!participants.includes(senderId) || !participants.includes(receiverId)) {
+      return NextResponse.json({ error: "권한이 없습니다.", success: false }, { status: 403 });
     }
 
     const { data, error } = await supabaseAdmin

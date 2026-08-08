@@ -1,16 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+async function getRequesterId(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const supabaseSession = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll() } }
+  );
+  const { data: { user } } = await supabaseSession.auth.getUser();
+  return user?.id || null;
+}
+
 export async function GET(req: NextRequest) {
   try {
+    const requesterId = await getRequesterId();
+    if (!requesterId) return NextResponse.json({ error: "인증이 필요합니다.", success: false }, { status: 401 });
+
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId");
     if (!userId) return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
+    if (requesterId !== userId) {
+      return NextResponse.json({ error: "권한이 없습니다.", success: false }, { status: 403 });
+    }
 
     const [workerRes, employerRes] = await Promise.all([
       supabase.from("matches").select("id, employer_id, worker_id, progress_status, worker_left, created_at, updated_at")

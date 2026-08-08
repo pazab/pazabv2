@@ -9,7 +9,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
 import AppHeader from "@/components/AppHeader";
-import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import TierBadge from "@/components/TierBadge";
 import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
@@ -76,7 +75,6 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
   const [nearby, setNearby] = useState<NearbyPosting[]>([]);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [userInfo, setUserInfo] = useState<{ nickname?: string; avatar_url?: string; birth_date?: string | null } | null>(null);
   const [showBirthModal, setShowBirthModal] = useState(false);
   const [birthInput, setBirthInput] = useState("");
@@ -321,13 +319,6 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
     }
   };
 
-  if (showHistory) {
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 500, overflowY: "auto" }}>
-        <DaetaHistoryView userId={userId} userType="worker" onBack={() => setShowHistory(false)} />
-      </div>
-    );
-  }
 
   const available = !!profile?.available_now;
 
@@ -569,7 +560,7 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
         </div>
 
         <button
-          onClick={() => setShowHistory(true)}
+          onClick={() => router.push("/mypage?tab=worker")}
           style={{ width: "100%", padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
           <i className="ti ti-list" aria-hidden="true" /> 내 대타 내역
         </button>

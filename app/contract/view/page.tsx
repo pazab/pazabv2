@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import ContractOfficialForm from "@/components/ContractOfficialForm";
+import { encryptBankFields, decryptBankFields } from "@/lib/bankCryptoClient";
 
 function ContractViewContent() {
   const router = useRouter();
@@ -79,6 +80,12 @@ function ContractViewContent() {
 
     const { data } = await query.limit(1).maybeSingle();
     if (data) {
+      if (data.contract_data && (data.contract_data.bankAccount || data.contract_data.bankNumber)) {
+        try {
+          const [decAccount, decNumber] = await decryptBankFields([data.contract_data.bankAccount, data.contract_data.bankNumber]);
+          data.contract_data = { ...data.contract_data, bankAccount: decAccount || null, bankNumber: decNumber || null };
+        } catch (e) { console.error("계좌정보 복호화 실패:", e); }
+      }
       setContract(data);
       setUserRole(data.employer_id === user.id ? "employer" : "worker");
 
@@ -145,6 +152,9 @@ function ContractViewContent() {
       const updatedBankAcc = (finalBankName || bankNumberInput.trim())
         ? `${finalBankName} ${bankNumberInput.trim()}`.trim()
         : cd.bankAccount || "";
+      const finalBankNumber = bankNumberInput.trim() || cd.bankNumber || "";
+
+      const [encBankNumber, encBankAccount] = await encryptBankFields([finalBankNumber, updatedBankAcc]);
 
       const updatedContractData = {
         ...cd,
@@ -154,8 +164,8 @@ function ContractViewContent() {
         workerAddrDetail: workerAddrDetailInput || cd.workerAddrDetail || null,
         workerPostcode: workerPostcodeInput || cd.workerPostcode || null,
         bankName: finalBankName || cd.bankName || null,
-        bankNumber: bankNumberInput.trim() || cd.bankNumber || null,
-        bankAccount: updatedBankAcc || null,
+        bankNumber: encBankNumber || null,
+        bankAccount: encBankAccount || null,
         ...(cd.contractType === "minor" ? {
           parentName: parentNameInput || cd.parentName || null,
           parentRel: parentRelInput || cd.parentRel || null,

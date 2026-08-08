@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       type: "daeta",
       title: "⚠️ 임금 미지급 신고 접수",
       body: `${workerName}님이 대타 근무 임금 미지급을 신고했어요. 명세서/정산 내역을 확인해 주세요.`,
-      url: `/daeta?history=1&matchId=${matchId}`,
+      url: `/mypage/daeta-history?tab=employer&matchId=${matchId}`,
       data: { matchId },
     });
 

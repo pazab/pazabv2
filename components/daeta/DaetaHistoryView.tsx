@@ -9,9 +9,11 @@ interface DaetaHistoryViewProps {
   userType: "worker" | "employer" | "both";
   onBack?: () => void;
   focusMatchId?: string;
+  /** true면 마이페이지 섹션 등 다른 화면에 끼워넣는 용도 — 전체화면 헤더/최소높이를 생략 */
+  embedded?: boolean;
 }
 
-export default function DaetaHistoryView({ userId, userType, onBack, focusMatchId }: DaetaHistoryViewProps) {
+export default function DaetaHistoryView({ userId, userType, onBack, focusMatchId, embedded }: DaetaHistoryViewProps) {
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<any[]>([]);
   const [selectedPayslip, setSelectedPayslip] = useState<any>(null);
@@ -27,17 +29,17 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
 
   useEffect(() => {
     loadDaetaRecords();
-  }, [userId]);
+  }, [userId, userType]);
 
   const loadDaetaRecords = async () => {
     setLoading(true);
     try {
-      // 1. Fetch matches
-      const { data: matches, error: matchesErr } = await supabase
-        .from("matches")
-        .select("*")
-        .or(`employer_id.eq.${userId},worker_id.eq.${userId}`)
-        .order("created_at", { ascending: false });
+      // 1. Fetch matches — userType이 명확하면(both가 아니면) 그 역할로 참여한 것만, 아니면 양쪽 다
+      let matchQuery = supabase.from("matches").select("*").order("created_at", { ascending: false });
+      if (userType === "employer") matchQuery = matchQuery.eq("employer_id", userId);
+      else if (userType === "worker") matchQuery = matchQuery.eq("worker_id", userId);
+      else matchQuery = matchQuery.or(`employer_id.eq.${userId},worker_id.eq.${userId}`);
+      const { data: matches, error: matchesErr } = await matchQuery;
 
       if (matchesErr) throw matchesErr;
 
@@ -218,15 +220,18 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   };
 
   return (
-    <div style={{ padding: "16px", color: "#fff", background: "var(--bg)", minHeight: "100vh" }}>
-      
-      {/* 헤더 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        {onBack && (
-          <button onClick={onBack} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 16 }}>← 뒤로</button>
-        )}
-        <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>📋 내 대타 매칭 및 정산 관리</h2>
-      </div>
+    <div style={embedded
+      ? { color: "#fff" }
+      : { padding: "16px", color: "#fff", background: "var(--bg)", minHeight: "100vh", maxWidth: 480, margin: "0 auto" }}>
+
+      {!embedded && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          {onBack && (
+            <button onClick={onBack} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 16 }}>← 뒤로</button>
+          )}
+          <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>📋 내 대타 매칭 및 정산 관리</h2>
+        </div>
+      )}
 
       {focusMatchId && !showAllRecords && (
         <button onClick={() => setShowAllRecords(true)}

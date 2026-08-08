@@ -36,6 +36,12 @@
   --search-bg: rgba(0, 0, 0, 0.05);
   --search-border: rgba(0, 0, 0, 0.08);
 
+  /* both 계정 모드 전환 시 헤더/네비 틴트 — 은은하게, 텍스트 대비 안 깨지는 선에서 */
+  --role-worker-tint: rgba(139, 92, 246, 0.07);
+  --role-worker-border: rgba(139, 92, 246, 0.22);
+  --role-employer-tint: rgba(236, 72, 153, 0.07);
+  --role-employer-border: rgba(236, 72, 153, 0.22);
+
   /* ─── 방향 A: 플랫 미니멀 토큰 ───────────────────────
      그라데이션은 --gradient-hero 하나만, 나머지는 전부 단색.
      새 화면/컴포넌트는 색상 하드코딩 대신 이 토큰만 참조할 것. */
@@ -114,6 +120,12 @@
     --nav-border: rgba(255, 255, 255, 0.06);
     --search-bg: rgba(255, 255, 255, 0.06);
     --search-border: rgba(255, 255, 255, 0.08);
+
+    /* both 계정 모드 전환 시 헤더/네비 틴트 — 다크는 조금 더 진하게 (연하면 안 보임) */
+    --role-worker-tint: rgba(139, 92, 246, 0.14);
+    --role-worker-border: rgba(139, 92, 246, 0.32);
+    --role-employer-tint: rgba(236, 72, 153, 0.14);
+    --role-employer-border: rgba(236, 72, 153, 0.32);
 
     /* 방향 A 토큰 — 다크 재정의 */
     --warning: #f59e0b;

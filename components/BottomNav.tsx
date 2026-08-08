@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRoleTint } from "@/lib/useRoleTint";
 
 export default function BottomNav() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export default function BottomNav() {
   const shownPending = useRef<Set<string>>(new Set());
   const [toast, setToast] = useState<string>("");
   const [userId, setUserId] = useState<string | null>(null);
+  const roleTint = useRoleTint();
 
   const checkUnread = useCallback(async (uid: string) => {
     try {
@@ -292,12 +294,14 @@ export default function BottomNav() {
       <div style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50,
         transform: hidden ? "translateY(100%)" : "translateY(0)",
-        transition: "transform 0.3s ease",
+        transition: "transform 0.3s ease, background 0.25s ease, border-color 0.25s ease",
         display: "flex", justifyContent: "center",
-        background: "var(--nav-bg)",
+        background: roleTint
+          ? `linear-gradient(var(--role-${roleTint}-tint), var(--role-${roleTint}-tint)), var(--nav-bg)`
+          : "var(--nav-bg)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
-        borderTop: "1px solid var(--nav-border)",
+        borderTop: roleTint ? `1px solid var(--role-${roleTint}-border)` : "1px solid var(--nav-border)",
       }}>
         <div style={{ width: "100%", maxWidth: 480 }}>
           <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", padding: "8px 4px calc(8px + env(safe-area-inset-bottom))" }}>

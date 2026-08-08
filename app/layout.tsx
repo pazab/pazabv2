@@ -30,7 +30,7 @@ export const viewport: Viewport = {
 
 import AuthGuard from "@/components/AuthGuard";
 import BottomNav from "@/components/BottomNav";
-import PazFloatingButton from "@/components/PazFloatingButton";
+// PazFloatingButton: 전역 노출 중단(2026-08-08) — 코드는 유지, 필요해지면 아래 렌더만 복원
 
 export default function RootLayout({
   children,
@@ -43,7 +43,6 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col font-sans antialiased">
         <AuthGuard />
         {children}
-        <PazFloatingButton />
         <BottomNav />
       </body>
     </html>

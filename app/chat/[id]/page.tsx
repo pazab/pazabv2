@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { getTrustGrade } from "@/lib/utils";
 import { chipStyle, chipSuccess, chipWarning, chipDanger, chipPrimary } from "@/lib/styles";
 import { useToast } from "@/lib/useToast";
+import { encryptBankFields, decryptBankFields } from "@/lib/bankCryptoClient";
 
 const mutedChip: CSSProperties = {
   ...chipStyle,
@@ -374,6 +375,12 @@ export default function ChatRoomPage() {
       .eq(tm ? "team_member_id" : "employer_id", tm ? tm.id : "")
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (data) {
+      if (data.contract_data && (data.contract_data.bankAccount || data.contract_data.bankNumber)) {
+        try {
+          const [decAccount, decNumber] = await decryptBankFields([data.contract_data.bankAccount, data.contract_data.bankNumber]);
+          data.contract_data = { ...data.contract_data, bankAccount: decAccount || null, bankNumber: decNumber || null };
+        } catch (e) { console.error("계좌정보 복호화 실패:", e); }
+      }
       setContractData(data);
       if (data.status === "cancelled") {
         setContractStatus("cancelled");
@@ -1093,7 +1100,7 @@ export default function ChatRoomPage() {
               {daetaContract?.wage ? ` · 시급 ${Number(daetaContract.wage).toLocaleString()}원` : ""}
             </span>
           </div>
-          <button onClick={() => router.push(`/daeta?history=1&matchId=${matchId}`)}
+          <button onClick={() => router.push(`/mypage/daeta-history?tab=${isEmployer ? "employer" : "worker"}&matchId=${matchId}`)}
             style={{ background: "var(--surface)", border: "1px solid var(--success-border)", borderRadius: 12, padding: "8px 14px", color: "var(--success)", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
             🗂 대타 관리하기 →
           </button>
@@ -1999,8 +2006,14 @@ export default function ChatRoomPage() {
                   bankAccount: updatedBankAcc || cd.bankAccount || null,
                 };
 
+                // DB에는 계좌번호/계좌 암호화 버전만 저장 — 로컬 state(updatedContractData)는 평문 유지해 화면 표시에 사용
+                let [encBankNumber, encBankAccount] = [updatedContractData.bankNumber, updatedContractData.bankAccount];
+                try {
+                  [encBankNumber, encBankAccount] = await encryptBankFields([updatedContractData.bankNumber, updatedContractData.bankAccount]);
+                } catch (e) { console.error("계좌정보 암호화 실패:", e); }
+
                 await supabase.from("contracts").update({
-                  contract_data: updatedContractData,
+                  contract_data: { ...updatedContractData, bankNumber: encBankNumber || null, bankAccount: encBankAccount || null },
                   worker_signed: true,
                   worker_signed_at: new Date().toISOString(),
                   status: "active",
