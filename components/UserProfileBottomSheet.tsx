@@ -294,15 +294,6 @@ export default function UserProfileBottomSheet({
                 )}
               </div>
 
-              {/* 전체 프로필 보기 (팀원 = 항상 알바생이므로 구직카드로) */}
-              <button onClick={() => { onClose(); router.push(`/worker/${userId}`); }}
-                style={{
-                  width: "100%", background: "var(--surface2)", border: "1px solid var(--border)",
-                  borderRadius: 12, padding: 12, color: "var(--text)", fontSize: 13, fontWeight: 700, cursor: "pointer"
-                }}>
-                전체 프로필 보기 →
-              </button>
-
               {/* 닫기 */}
               <button onClick={onClose}
                 style={{

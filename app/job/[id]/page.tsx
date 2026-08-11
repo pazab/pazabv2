@@ -529,43 +529,11 @@ export default function JobDetailPage() {
         {/* 궁합 */}
         {matchScore != null && <MatchScoreSection score={matchScore} />}
 
-        {/* 사장님 성향 */}
-        {!!job.employer_type && typeInfo && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--border)" }}>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>👔 사장님 성향</p>
-            <div style={{ background: `${typeInfo.color}12`, border: `1px solid ${typeInfo.color}30`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <span style={{ fontSize: 30 }}>{typeInfo.emoji}</span>
-                <div>
-                  <p style={{ fontSize: 16, fontWeight: 800, margin: "0 0 2px", color: typeInfo.color }}>{String(job.employer_type)}</p>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{String(job.tagline || typeInfo.desc || typeInfo.tagline || "")}</p>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                {typeInfo.traits.map((t: string) => <span key={t} style={{ fontSize: 11, background: "rgba(0,0,0,0.2)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 20 }}>{t}</span>)}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <p style={{ fontSize: 12, color: "var(--success)", margin: 0 }}>✓ 잘 맞아요: {typeInfo.good}</p>
-                <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>· 이런 환경: {typeInfo.bad}</p>
-              </div>
-            </div>
-            {hexacoData && <HexacoSection hexacoData={hexacoData} />}
-            {!existingMatch && (
-              <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                <span>📌</span>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>지원하면 찰떡 알바생 유형이 공개돼요</p>
-              </div>
-            )}
-            <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              🤖 AI 봇에게 물어보기
-            </button>
-          </div>
-        )}
-
-        {/* 팀 궁합 */}
-        {teamCompat && !isOwner && (
-          <TeamCompatSection teamCompat={teamCompat} />
-        )}
+        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--border)" }}>
+          <button onClick={openBotChat} style={{ width: "100%", background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            🤖 AI 봇에게 물어보기
+          </button>
+        </div>
 
         {/* 사장님 뱃지 */}
         {Array.isArray(job.employer_badges) && job.employer_badges.length > 0 && (

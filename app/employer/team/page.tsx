@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
+import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
 import { getTrustGrade } from "@/lib/utils";
 
@@ -11,6 +12,7 @@ export default function TeamPage() {
   const router = useRouter();
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then((res) => {
@@ -136,23 +138,21 @@ export default function TeamPage() {
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
             {members.map(m => {
-              const pType = m.worker?.worker_result?.personalityType;
-              const pEmoji = emoji[pType] || "👤";
               const name = m.worker?.nickname || m.worker?.name || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
               const trust = m.worker?.trust_score;
               const trustGrade = trust != null ? getTrustGrade(trust) : null;
               return (
                 <div key={m.id} onClick={() => router.push(`/employer/team/${m.id}`)}
                   style={{ background:"var(--surface)", borderRadius:16, padding:16, border:"1px solid var(--border)", cursor:"pointer", display:"flex", gap:14, alignItems:"center" }}>
-                  <div style={{ width:52, height:52, borderRadius:"50%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>
+                  <div onClick={(e) => { e.stopPropagation(); if (m.worker_id) setActiveQuickProfile(m.worker_id); }}
+                    style={{ width:52, height:52, borderRadius:"50%", background:"linear-gradient(135deg,#7c3aed,#ec4899)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, cursor:"pointer" }}>
                     {m.worker?.avatar_url
                       ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                      : <span style={{ color:"#fff", fontWeight:700 }}>{pEmoji !== "👤" ? pEmoji : name[0]?.toUpperCase()}</span>}
+                      : <span style={{ color:"#fff", fontWeight:700 }}>{name[0]?.toUpperCase()}</span>}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
                       <span style={{ fontSize:15, fontWeight:700, color:"var(--text)" }}>{name}</span>
-                      {pType && <span style={{ fontSize:10, background:"var(--surface2)", borderRadius:8, padding:"2px 6px", color:"var(--text-muted)" }}>{pEmoji} {pType}</span>}
                       {trustGrade && <span style={{ fontSize:11, color:trustGrade.color, fontWeight:700 }}>{trustGrade.emoji}</span>}
                     </div>
                     <p style={{ fontSize:12, color:"var(--text-muted)", margin:"0 0 6px" }}>
@@ -178,7 +178,13 @@ export default function TeamPage() {
           </div>
         )}
       </div>
-      
+
+      {activeQuickProfile && (
+        <UserProfileBottomSheet
+          userId={activeQuickProfile}
+          onClose={() => setActiveQuickProfile(null)}
+        />
+      )}
     </main>
   );
 }

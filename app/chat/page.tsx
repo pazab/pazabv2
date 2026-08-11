@@ -10,6 +10,9 @@ import { btnPrimary, chipStyle, chipSuccess, chipWarning, chipPrimary } from "@/
 
 const GRADE_EMOJI: Record<string, string> = { bronze: "🥉", silver: "🥈", gold: "🥇", platinum: "💎" };
 
+// PAZ 채팅방 노출 일단 해제 — 코드/데이터는 그대로 두고 목록에만 안 보이게
+const PAZ_CHAT_ENABLED = false;
+
 const mutedChip: CSSProperties = {
   ...chipStyle,
   background: "var(--surface2)",
@@ -109,7 +112,7 @@ export default function ChatListPage() {
         unreadCount: 0,
       };
 
-      setChatrooms([pazRoom, ...normalRooms]);
+      setChatrooms(PAZ_CHAT_ENABLED ? [pazRoom, ...normalRooms] : normalRooms);
     } catch (e) {
       console.error("General error in fetchChatrooms:", e);
     }

@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getEmployerContext } from "@/lib/permissions";
+import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
 type Member = {
   id: string;
@@ -15,6 +17,7 @@ type Member = {
   work_hours: string | null;
   member_role: string;
   match_id: string | null;
+  contract_status: string | null;
   payslip_auto_issue: boolean;
   payslip_auto_issue_offset: number;
   payslip_payday_fallback: number;
@@ -23,6 +26,8 @@ type Member = {
   attendance_count: number;
   retention_expires: string | null; // hire_date + 3년
   team_documents?: any[];
+  today_attendance: { status: string; check_in: string | null } | null;
+  payslip_issued_this_month: boolean;
 };
 
 type Contract = {
@@ -47,6 +52,15 @@ function formatDate(str: string | null): string {
   return str.slice(0, 10).replace(/-/g, ".");
 }
 
+function todayAttendanceStatus(att: { status: string; check_in: string | null } | null): { label: string; color: string } {
+  if (!att) return { label: "미출근", color: "var(--text-muted)" };
+  if (att.status === "absent") return { label: "결근", color: "#f87171" };
+  if (att.status === "off") return { label: "휴무", color: "var(--text-muted)" };
+  if (att.status === "late") return { label: "지각 출근", color: "#fb923c" };
+  const time = att.check_in ? new Date(att.check_in).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+  return { label: time ? `출근 ${time}` : "출근", color: "#4ade80" };
+}
+
 function retentionStatus(expiresStr: string | null): { label: string; color: string } {
   if (!expiresStr) return { label: "기간 불명", color: "var(--text-muted)" };
   const now = new Date();
@@ -61,7 +75,8 @@ export default function EmployerRecordsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<Member[]>([]);
-  const [filter, setFilter] = useState<"all" | "active" | "left">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "left">("active");
+  const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [attData, setAttData] = useState<Record<string, unknown>[]>([]);
   const [attLoading, setAttLoading] = useState(false);
@@ -90,13 +105,23 @@ export default function EmployerRecordsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
 
-    // 전·현직 팀원 전체
-    const { data: tm } = await supabase.from("team_members")
-      .select(`id, worker_id, match_id, status, hire_date, work_days, wage, work_hours, member_role,
+    const ctx = await getEmployerContext(supabase, user.id);
+    if (!ctx) { router.push("/"); return; }
+    const employerId = ctx.employerId;
+
+    // 전·현직 팀원 전체 (매니저가 특정 매장에만 소속된 경우 그 매장만)
+    let tmQuery = supabase.from("team_members")
+      .select(`id, worker_id, match_id, status, hire_date, work_days, wage, work_hours, member_role, employer_profile_id, contract_status,
         payslip_auto_issue, payslip_auto_issue_offset, payslip_payday_fallback,
         users!team_members_worker_id_fkey (nickname, email, avatar_url)`)
-      .eq("employer_id", user.id)
+      .eq("employer_id", employerId)
       .order("created_at", { ascending: false });
+    if (ctx.isManager) {
+      if (ctx.employerProfileId) tmQuery = tmQuery.eq("employer_profile_id", ctx.employerProfileId);
+      // 매니저는 본인 스스로를 관리 대상으로 볼 필요가 없음 — 자기 정보는 myteam "내 직장"에서 확인
+      tmQuery = tmQuery.neq("worker_id", user.id);
+    }
+    const { data: tm } = await tmQuery;
 
     if (!tm) { setLoading(false); return; }
 
@@ -106,8 +131,8 @@ export default function EmployerRecordsPage() {
     // 계약서 일괄 조회
     const { data: contracts } = workerIds.length > 0
       ? await supabase.from("contracts")
-          .select("id, created_at, start_date, end_date, worker_signed, employer_signed, status, contract_data, worker_id, wage, wage_type, work_days, work_hours")
-          .eq("employer_id", user.id).in("worker_id", workerIds)
+          .select("id, created_at, start_date, end_date, worker_signed, employer_signed, status, contract_data, worker_id, team_member_id, wage, wage_type, work_days, work_hours")
+          .eq("employer_id", employerId).in("worker_id", workerIds)
           .neq("status", "cancelled")
           .order("created_at", { ascending: false })
       : { data: [] };
@@ -131,8 +156,44 @@ export default function EmployerRecordsPage() {
           .in("team_member_id", tmIds)
       : { data: [] };
 
+    // 오늘 근태 상태 일괄 (KST 기준)
+    const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const todayStr = kstNow.toISOString().split("T")[0];
+    const currentYear = kstNow.getUTCFullYear();
+    const currentMonth = kstNow.getUTCMonth() + 1;
+    const { data: todayAtt } = tmIds.length > 0
+      ? await supabase.from("attendance")
+          .select("team_member_id, status, check_in")
+          .in("team_member_id", tmIds)
+          .eq("work_date", todayStr)
+      : { data: [] };
+    const todayAttMap: Record<string, { status: string; check_in: string | null }> = {};
+    (todayAtt || []).forEach((a: any) => { todayAttMap[a.team_member_id] = { status: a.status, check_in: a.check_in }; });
+
+    // 이번달 명세서 발행 여부 일괄
+    const { data: monthPayslips } = tmIds.length > 0
+      ? await supabase.from("payslips")
+          .select("team_member_id")
+          .in("team_member_id", tmIds)
+          .eq("year", currentYear).eq("month", currentMonth)
+      : { data: [] };
+    const payslipIssuedSet = new Set((monthPayslips || []).map((p: any) => p.team_member_id));
+
+    // /contract 페이지가 매칭(marketplace) 플로우로 들어왔을 때 team_member_id 자리에
+    // team_members.id가 아니라 matches.id를 잘못 저장해온 레거시 계약서가 있어서,
+    // team_member_id가 "지금 로드된 team_members 중 실제로 존재하는 id"일 때만 신뢰한다.
+    const validTmIds = new Set(tm.map((t: any) => t.id));
     const enriched: Member[] = tm.map((m: any) => {
-      const mContracts = (contracts || []).filter((c: any) => c.worker_id === m.worker_id);
+      // team_member_id로 정확히 매칭되는 계약서가 하나라도 있으면 그것만 쓴다 — 같은 worker_id가
+      // (재입사·다른 매장 이력 등으로) 여러 team_members 행을 가질 때, worker_id 폴백까지 같이 섞으면
+      // 다른 재직 건의 계약서(다른 근무요일·시급)가 끼어들어온다. 정확매칭이 하나도 없을 때만
+      // (team_member_id가 아예 없거나 matches.id처럼 유효하지 않은 레거시 계약서) worker_id로 폴백.
+      const exactMatches = (contracts || []).filter((c: any) => c.team_member_id === m.id);
+      const mContracts = exactMatches.length > 0
+        ? exactMatches
+        : (contracts || []).filter((c: any) =>
+            (!c.team_member_id || !validTmIds.has(c.team_member_id)) && c.worker_id === m.worker_id
+          );
       
       let wage = m.wage;
       let wage_type = "hourly";
@@ -177,6 +238,8 @@ export default function EmployerRecordsPage() {
         attendance_count: countMap[m.id] || 0,
         retention_expires: hireDate ? addYears(hireDate, 3) : null,
         team_documents: (teamDocs || []).filter((d: any) => d.team_member_id === m.id),
+        today_attendance: todayAttMap[m.id] || null,
+        payslip_issued_this_month: payslipIssuedSet.has(m.id),
       };
     });
 
@@ -224,8 +287,8 @@ export default function EmployerRecordsPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <button onClick={() => router.back()} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
             <div>
-              <h1 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>📂 직원 서류 보관함</h1>
-              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>근로기준법 3년 · 원천징수 5년 보존 의무</p>
+              <h1 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>👥 팀원 관리</h1>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>근태·시급·계약서·명세서 · 서류는 근로기준법 3년/원천징수 5년 보존</p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -255,13 +318,21 @@ export default function EmployerRecordsPage() {
             {filtered.map(m => {
               const name = m.worker?.nickname || m.worker?.email?.split("@")[0] || "팀원";
               const ret = retentionStatus(m.retention_expires);
-              const hasContract = m.contracts.length > 0;
-              const signedContract = m.contracts.find(c => c.worker_signed && c.employer_signed);
+              const att = todayAttendanceStatus(m.today_attendance);
+              // 계약서 상태는 team_members.contract_status(myteam 홈과 동일하게 참조하는 authoritative 컬럼)를
+              // 그대로 신뢰한다 — contracts 테이블 join 매칭은 레거시 데이터 때문에 어긋날 수 있어 뱃지 판단엔 안 씀.
+              const contractBadge = m.contract_status === "active"
+                ? { label: "서명완료", color: "#4ade80" }
+                : m.contract_status === "pending"
+                ? { label: "서명대기", color: "#fb923c" }
+                : { label: "미작성", color: "#f87171" };
+              const isActive = m.status === "active";
               return (
                 <div key={m.id} onClick={() => router.push(`/employer/team/${m.id}`)}
                   style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "14px 16px", cursor: "pointer" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: m.worker?.avatar_url ? `url(${m.worker.avatar_url}) center/cover` : "linear-gradient(135deg,#7c3aed,#ec4899)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+                    <div onClick={(e) => { e.stopPropagation(); if (m.worker_id) setActiveQuickProfile(m.worker_id); }}
+                      style={{ width: 40, height: 40, borderRadius: "50%", background: m.worker?.avatar_url ? `url(${m.worker.avatar_url}) center/cover` : "linear-gradient(135deg,#7c3aed,#ec4899)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, cursor: "pointer" }}>
                       {!m.worker?.avatar_url && "👤"}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -273,34 +344,38 @@ export default function EmployerRecordsPage() {
                         {m.member_role === "manager" && <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700 }}>매니저</span>}
                       </div>
                       <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "2px 0 0" }}>
-                        입사 {formatDate(m.hire_date)} · 근태 {m.attendance_count}건
+                        {m.wage ? `시급 ${m.wage.toLocaleString()}원` : "시급 미정"}{m.work_days ? ` · ${m.work_days}` : ""}
                       </p>
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: ret.color, textAlign: "right", flexShrink: 0 }}>
-                      🗄️ {ret.label}
-                    </span>
+                    {!isActive && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: ret.color, textAlign: "right", flexShrink: 0 }}>
+                        🗄️ {ret.label}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
-                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
-                      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>계약서</p>
-                      <p style={{ fontSize: 12, fontWeight: 700, margin: 0, color: signedContract ? "#4ade80" : hasContract ? "#fb923c" : "#f87171" }}>
-                        {signedContract ? "✅ 완료" : hasContract ? "⏳ 서명대기" : "❌ 없음"}
-                      </p>
+                  {isActive ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
+                        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>오늘 근태</p>
+                        <p style={{ fontSize: 12, fontWeight: 700, margin: 0, color: att.color }}>{att.label}</p>
+                      </div>
+                      <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
+                        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>이번달 명세서</p>
+                        <p style={{ fontSize: 12, fontWeight: 700, margin: 0, color: m.payslip_issued_this_month ? "#4ade80" : "#fb923c" }}>
+                          {m.payslip_issued_this_month ? "발행완료" : "미발행"}
+                        </p>
+                      </div>
                     </div>
-                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
-                      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>서류함</p>
-                      <p style={{ fontSize: 12, fontWeight: 700, margin: 0, color: (m.team_documents?.length || 0) > 0 ? "#4ade80" : "var(--text-muted)" }}>
-                        {(m.team_documents?.length || 0) > 0 ? `📁 ${m.team_documents?.length}건` : "미제출"}
-                      </p>
-                    </div>
-                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
-                      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>시급</p>
-                      <p style={{ fontSize: 12, fontWeight: 700, margin: 0 }}>{m.wage ? m.wage.toLocaleString() + "원" : "-"}</p>
-                    </div>
-                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "7px 10px" }}>
-                      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 2px" }}>보존만료</p>
-                      <p style={{ fontSize: 12, fontWeight: 700, margin: 0 }}>{m.retention_expires ? formatDate(m.retention_expires) : "-"}</p>
-                    </div>
+                  ) : null}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: isActive ? 8 : 0, paddingTop: isActive ? 8 : 0, borderTop: isActive ? "1px solid var(--border)" : "none" }}>
+                    <span style={{ fontSize: 11, color: contractBadge.color, fontWeight: 600 }}>
+                      📄 계약서 {contractBadge.label}
+                    </span>
+                    {!isActive && (
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        서류함 {(m.team_documents?.length || 0) > 0 ? `${m.team_documents?.length}건` : "미제출"}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -544,6 +619,13 @@ export default function EmployerRecordsPage() {
           />
         );
       })()}
+
+      {activeQuickProfile && (
+        <UserProfileBottomSheet
+          userId={activeQuickProfile}
+          onClose={() => setActiveQuickProfile(null)}
+        />
+      )}
     </main>
   );
 }

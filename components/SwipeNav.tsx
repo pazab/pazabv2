@@ -7,12 +7,11 @@ import { useEffect, useRef } from "react";
 const TABS = [
   "/explore",
   "/chat",
-  "/personality",
   "/mypage",
 ];
 
 // 스와이프 적용할 경로 (정확히 이 경로들만)
-const SWIPEABLE = ["/explore", "/chat", "/personality", "/mypage", "/team"];
+const SWIPEABLE = ["/explore", "/chat", "/mypage"];
 
 export default function SwipeNav() {
   const router = useRouter();

@@ -6,6 +6,7 @@ import AppHeader from "@/components/AppHeader";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 import { calcWeeklyHolidayPay, getOvertimePremiumMultiplier } from "@/lib/utils";
 import PayslipOfficialForm, { PayslipFormData } from "@/components/PayslipOfficialForm";
+import { getEmployerContext, EmployerContext } from "@/lib/permissions";
 
 function PayslipContent() {
   const router = useRouter();
@@ -15,6 +16,7 @@ function PayslipContent() {
 
   const [user, setUser] = useState<any>(null);
   const [userType, setUserType] = useState<string>("");
+  const [actorCtx, setActorCtx] = useState<EmployerContext | null>(null);
   const [member, setMember] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,6 +81,7 @@ function PayslipContent() {
       setUser(user);
       const { data: ud } = await supabase.from("users").select("user_type").eq("id", user.id).single();
       setUserType(ud?.user_type || "worker");
+      setActorCtx(await getEmployerContext(supabase, user.id));
       if (payslipId) {
         await loadExistingPayslip(payslipId);
       } else if (teamMemberId) {
@@ -243,7 +246,13 @@ function PayslipContent() {
   }
 
   // "both" 계정은 userType만으로 판단하면 안 됨 — 이 임금 명세서에서 내가 실제로 사장님/알바생 중 어느 쪽인지로 판정
-  const isEmployer = member ? member.employer_id === user?.id : (userType === "employer" || userType === "both");
+  // 매니저는 payroll_confirm 권한이 있을 때만 사장님과 동일하게 취급
+  // 매니저가 자기 자신의 명세서를 스스로 발행하는 셀프딜링 방지
+  const isSelfRecord = !!(member && user?.id && member.worker_id === user.id);
+  const isManagerHereForPayslip = !!(member && actorCtx?.isManager && actorCtx.employerId === member.employer_id && !isSelfRecord && actorCtx.permissions.payroll_confirm);
+  const isEmployer = member
+    ? (member.employer_id === user?.id || isManagerHereForPayslip)
+    : (userType === "employer" || userType === "both");
   const isWorker = member ? member.worker_id === user?.id : (userType === "worker" || userType === "both");
 
   const wage = member?.wage || 0;
@@ -475,6 +484,23 @@ function PayslipContent() {
     }
 
     showToast(`✅ ${year}년 ${month}월 임금 명세서가 발행됐어요!`);
+
+    // 매니저가 발행한 경우 사장님에게 알림
+    if (isManagerHereForPayslip) {
+      const workerName = member.worker?.nickname || "팀원";
+      fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: member.employer_id,
+          type: "system",
+          title: `🛠 매니저가 ${workerName}님 ${year}년 ${month}월 명세서를 발행했어요`,
+          body: `실수령액 ${netPay.toLocaleString()}원. 확인해 주세요.`,
+          data: { url: `/employer/team/${member.id}` },
+        }),
+      }).catch(() => {});
+    }
+
     router.replace(`/employer/team/${member.id}`);
     setSaving(false);
   }

@@ -186,6 +186,7 @@
 | nickname | text | YES | | 팀 내 별명 |
 | role_desc | text | YES | | 직책 설명 |
 | member_role | text | YES | 'staff' | 'staff'\|'manager' |
+| permissions | jsonb | YES | '{}'::jsonb | 2026-08-11 추가. 매니저 세분화 권한 — `attendance_approve`/`wage_edit`/`payroll_confirm`/`sos_request` 4개 boolean 키. `member_role='manager'`일 때만 의미 있음. RLS/트리거는 `supabase/patch_manager_permissions*.sql`, `patch_manager_no_self_deal.sql` 참조 — `is_active_manager_of(employer_id, permission?)` SECURITY DEFINER 함수로 attendance/payslips/team_members RLS 재귀 없이 체크, `guard_team_member_update()` 트리거가 매니저의 자기 자신 대상 wage/권한 수정을 차단 |
 | status | text | YES | 'active' | 'active'\|'inactive'\|'left' |
 | contract_status | text | YES | 'none' | 'none'\|'pending'\|'active' |
 | invite_status | text | YES | 'none' | 'none'\|'invited'\|'joined' |

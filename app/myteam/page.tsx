@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import InviteBottomSheet from "@/components/InviteBottomSheet";
+import ManagerPermissionSheet from "@/components/ManagerPermissionSheet";
 import StoreRegisterModal from "@/components/StoreRegisterModal";
 import UserProfileBottomSheet from "@/components/UserProfileBottomSheet";
 
@@ -1050,6 +1051,25 @@ function WorkerMemberScroll({ m, userId, router, onRefresh, forceOpenDocs, accen
           </div>
         </div>
 
+        {/* 매니저 지정된 매장이면 사장님 업무 대행 도구 진입 버튼 노출 — 눈에 확 띄게 */}
+        {m.member_role === "manager" && (
+          <button onClick={() => router.push("/employer/records")}
+            style={{
+              width:"100%", background:"linear-gradient(135deg,#f59e0b,#f97316)", border:"none",
+              padding:"16px 18px", cursor:"pointer", display:"flex", alignItems:"center", gap:12, textAlign:"left",
+              boxShadow:"0 4px 14px rgba(245,158,11,0.35)",
+            }}>
+            <div style={{ width:38, height:38, borderRadius:12, background:"rgba(255,255,255,0.22)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <i className="ti ti-shield-star" style={{ fontSize:20, color:"#fff" }} aria-hidden="true" />
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ fontSize:15, fontWeight:900, color:"#fff", margin:0 }}>🛠 매니저 도구</p>
+              <p style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.9)", margin:"2px 0 0" }}>팀원 관리하기 — 근태·시급·정산 처리</p>
+            </div>
+            <i className="ti ti-chevron-right" style={{ fontSize:20, color:"#fff", flexShrink:0 }} aria-hidden="true" />
+          </button>
+        )}
+
         {/* 급여 + 요일별 근무 시간표 — 중립 배경 */}
         <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
@@ -1405,6 +1425,7 @@ function MyTeamPageContent() {
   const [editingStore, setEditingStore] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ store: any; members: any[] } | null>(null);
   const [cancelContractTarget, setCancelContractTarget] = useState<{ memberId: string; contractId: string; name: string } | null>(null);
+  const [managerPermTarget, setManagerPermTarget] = useState<{ id: string; name: string; role: string; permissions: any } | null>(null);
   const [toastMsg, setToastMsg] = useState("");
   const [activeQuickProfile, setActiveQuickProfile] = useState<string | null>(null);
   const showToast = (msg: string, _type?: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
@@ -1617,11 +1638,12 @@ function MyTeamPageContent() {
     }
 
     // 모든 팀원 로드 (employer_profile_id 포함)
-    const { data } = await supabase.from("team_members")
-      .select(`id, worker_id, employer_id, employer_profile_id, hire_date, status, wage, work_days, work_hours, member_role, contract_status,
+    const { data, error: teamError } = await supabase.from("team_members")
+      .select(`id, worker_id, employer_id, employer_profile_id, hire_date, status, wage, work_days, work_hours, member_role, permissions, contract_status,
         users!team_members_worker_id_fkey (nickname, real_name, avatar_url, worker_result, email, trust_score)`)
       .eq("employer_id", uid).eq("status", "active")
       .order("hire_date", { ascending: false });
+    if (teamError) console.error("팀원 로드 실패:", teamError);
     if (!data) return;
 
     // 각 팀원의 최신 계약서 로드
@@ -1841,7 +1863,7 @@ function MyTeamPageContent() {
 
   async function loadMyWork(uid: string) {
     const { data: activeData } = await supabase.from("team_members")
-      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, employer_profile_id, role_desc, invite_status, created_at, contract_status,
+      .select(`id, wage, work_hours, work_days, hire_date, status, employer_id, employer_profile_id, role_desc, invite_status, created_at, contract_status, member_role, permissions,
         users!team_members_employer_id_fkey (nickname, avatar_url)`)
       .eq("worker_id", uid).eq("status", "active")
       .order("created_at", { ascending: false });
@@ -2131,6 +2153,26 @@ function MyTeamPageContent() {
         <div style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", background:"#1a1a2e", color:"#fff", borderRadius:20, padding:"10px 20px", fontSize:13, zIndex:2000, whiteSpace:"nowrap", pointerEvents:"none" }}>
           {toastMsg}
         </div>
+      )}
+
+      {managerPermTarget && (
+        <ManagerPermissionSheet
+          isOpen={!!managerPermTarget}
+          onClose={() => setManagerPermTarget(null)}
+          teamMemberId={managerPermTarget.id}
+          memberName={managerPermTarget.name}
+          currentRole={managerPermTarget.role}
+          currentPermissions={managerPermTarget.permissions}
+          onSaved={(role, permissions) => {
+            setMembersByStore(prev => {
+              const u = { ...prev };
+              for (const storeId of Object.keys(u)) {
+                u[storeId] = u[storeId].map((tm: any) => tm.id === managerPermTarget.id ? { ...tm, member_role: role, permissions } : tm);
+              }
+              return u;
+            });
+          }}
+        />
       )}
 
       {cancelContractTarget && (
@@ -3277,7 +3319,6 @@ function MyTeamPageContent() {
                               <p style={{ color:"var(--text-muted)", fontSize:13, margin:0 }}>아직 팀원이 없어요</p>
                             </div>
                           ) : activeMembers.map((m: any) => {
-                            const pType = m.worker?.worker_result?.personalityType;
                             const badge = contractBadge(m.contractStatus);
                             const name = m.worker?.nickname || (m.worker?.email ? m.worker.email.split("@")[0] : "팀원");
                             return (
@@ -3296,7 +3337,7 @@ function MyTeamPageContent() {
                                 }}>
                                 <div onClick={(e) => { e.stopPropagation(); setActiveQuickProfile(m.worker_id); }}
                                   style={{ width:40, height:40, borderRadius:"50%", background:"var(--accent)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, cursor:"pointer" }}>
-                                  {m.worker?.avatar_url ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : PERSONALITY_EMOJI[pType] ? PERSONALITY_EMOJI[pType] : <i className="ti ti-user" aria-hidden="true" />}
+                                  {m.worker?.avatar_url ? <img src={m.worker.avatar_url} style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <i className="ti ti-user" aria-hidden="true" />}
                                 </div>
                                 <div style={{ flex:1, minWidth:0 }}>
                                   <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:2 }}>
@@ -3338,17 +3379,16 @@ function MyTeamPageContent() {
                                   </span>
                                 </div>
                                 <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5 }}>
-                                  <button onClick={async e => {
+                                  <button onClick={e => {
                                     e.stopPropagation();
-                                    const newRole = m.member_role === "manager" ? "staff" : "manager";
-                                    await supabase.from("team_members").update({ member_role: newRole }).eq("id", m.id);
-                                    setMembersByStore(prev => {
-                                      const u = { ...prev };
-                                      u[activeStore.id] = (u[activeStore.id]||[]).map((tm: any) => tm.id === m.id ? { ...tm, member_role: newRole } : tm);
-                                      return u;
+                                    setManagerPermTarget({
+                                      id: m.id,
+                                      name: m.worker?.nickname || "팀원",
+                                      role: m.member_role,
+                                      permissions: m.permissions,
                                     });
                                   }} style={{ background:m.member_role==="manager"?"#f59e0b20":"var(--surface2)", border:`1px solid ${m.member_role==="manager"?"#f59e0b":"var(--border)"}`, borderRadius:7, padding:"3px 7px", fontSize:10, color:m.member_role==="manager"?"#f59e0b":"var(--text-muted)", cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>
-                                    {m.member_role === "manager" ? "해제" : "매니저"}
+                                    {m.member_role === "manager" ? "권한설정" : "매니저"}
                                   </button>
                                   <button onClick={async e => {
                                     e.stopPropagation();

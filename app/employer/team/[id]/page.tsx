@@ -10,6 +10,7 @@ import DateWheelPicker from "@/components/DateWheelPicker";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 import { sendPushNotification } from "@/lib/usePush";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
+import { getEmployerContext, EmployerContext } from "@/lib/permissions";
 
 const PHONE_REGEX = /^01[016789]-\d{3,4}-\d{4}$/;
 function formatPhone(v: string): string {
@@ -132,7 +133,7 @@ function AttendanceLogs({ memberId, refreshKey = 0 }: { memberId: string; refres
     delete:   { label: "근태 삭제", color: "#ef4444" },
     batch_register: { label: "일괄 등록", color: "#7c3aed" },
   };
-  const roleLabel: Record<string, string> = { employer: "사장님", worker: "알바생", system: "시스템" };
+  const roleLabel: Record<string, string> = { employer: "사장님", manager: "매니저", worker: "알바생", system: "시스템" };
   const statusLabel: Record<string, string> = { normal: "정상출근", late: "지각", early_leave: "조퇴", absent: "결근", off: "휴무" };
 
   if (loading) return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "10px 0" }}>이력 불러오는 중...</div>;
@@ -314,6 +315,8 @@ export default function TeamMemberPage() {
   const { showToast, ToastUI } = useToast();
 
   const [member, setMember] = useState<any>(null);
+  const [actorCtx, setActorCtx] = useState<EmployerContext | null>(null);
+  const [actorUserId, setActorUserId] = useState<string | null>(null);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
   const [is5OrMore, setIs5OrMore] = useState(true);
@@ -400,6 +403,27 @@ export default function TeamMemberPage() {
   useEffect(() => {
     if (memberId) loadMember();
   }, [memberId]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }: { data: any }) => {
+      const uid = data?.user?.id;
+      if (!uid) return;
+      setActorUserId(uid);
+      const ctx = await getEmployerContext(supabase, uid);
+      setActorCtx(ctx);
+    });
+  }, []);
+
+  // 이 팀원의 employer에 대해 현재 로그인 유저가 갖는 실권한 — 사장님 본인이거나, 해당 4개 권한을 부여받은 매니저
+  const isOwnerHere = !!(actorCtx?.isOwner && actorCtx.employerId === member?.employer_id);
+  // 매니저가 "자기 자신"의 근태/시급을 스스로 승인·수정하는 셀프딜링 방지 — 사장님이 보는 자기 매장은 예외 없음
+  const isSelfRecord = !!(actorUserId && member?.worker_id && actorUserId === member.worker_id);
+  const isManagerHere = !!(actorCtx?.isManager && actorCtx.employerId === member?.employer_id && !isSelfRecord);
+  const canEditWage = isOwnerHere || (isManagerHere && !!actorCtx?.permissions.wage_edit);
+  const canApproveAttendance = isOwnerHere || (isManagerHere && !!actorCtx?.permissions.attendance_approve);
+  // 근태 기록 감사로그(attendance_logs)에 남길 실제 작성자 — 매니저가 처리했으면 매니저 본인으로 남긴다
+  const logActorId = actorUserId || member?.employer_id;
+  const logActorRole = isOwnerHere ? "employer" : "manager";
 
   useEffect(() => {
     if (member?.id) loadAttendance(member.id, viewYear, viewMonth);
@@ -563,7 +587,10 @@ export default function TeamMemberPage() {
       .neq("status", "cancelled")
       .order("created_at", { ascending: false });
     if (tmId) {
-      q = q.eq("team_member_id", tmId);
+      // 계약서 생성 화면이 매칭(marketplace) 플로우로 들어왔을 때 team_member_id 자리에
+      // team_members.id가 아니라 matches.id를 잘못 저장한 레거시 계약서가 있어서,
+      // team_member_id 정확매칭뿐 아니라 employer_id+worker_id 조합도 같이 봐서 놓치지 않게 한다.
+      q = q.or(`team_member_id.eq.${tmId},and(employer_id.eq.${empId},worker_id.eq.${wrkId})`);
     } else {
       q = q.eq("employer_id", empId).eq("worker_id", wrkId);
     }
@@ -587,6 +614,7 @@ export default function TeamMemberPage() {
 
   async function saveWorkCondition() {
     if (!member) return;
+    if (!canEditWage) { showToast("시급/근무조건 수정 권한이 없어요", "error"); return; }
     setWorkSaving(true);
     const wage = editWage ? parseInt(editWage.replace(/,/g, "")) : null;
     const { error } = await supabase.from("team_members").update({
@@ -599,6 +627,21 @@ export default function TeamMemberPage() {
     setShowWorkModal(false);
     setWorkSaving(false);
     showToast("근무조건이 수정됐어요");
+
+    // 매니저가 수정한 경우 사장님에게 알림
+    if (isManagerHere && !isOwnerHere) {
+      fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: member.employer_id,
+          type: "system",
+          title: `🛠 매니저가 ${workerName}님 근무조건을 수정했어요`,
+          body: `시급/근무조건이 변경됐어요. 확인해 주세요.`,
+          data: { url: `/employer/team/${member.id}` },
+        }),
+      }).catch(() => {});
+    }
   }
 
   async function loadTeamDocuments(tmId: string) {
@@ -741,6 +784,7 @@ export default function TeamMemberPage() {
 
   async function saveAttendance(overrideEnd?: string) {
     if (!member) return;
+    if (!canApproveAttendance) { showToast("근태 승인/수정 권한이 없어요", "error"); return; }
     const effectiveEnd = overrideEnd ?? attEnd;
     // 퇴근시간이 출근시간보다 이르면(자정을 넘긴 새벽 퇴근) 다음날로 처리
     const crossesMidnight = !!(attStart && effectiveEnd && effectiveEnd < attStart);
@@ -779,8 +823,8 @@ export default function TeamMemberPage() {
       attendance_id: savedAtt?.id,
       team_member_id: member.id,
       action: "update",
-      actor_id: member.employer_id,
-      actor_role: "employer",
+      actor_id: logActorId,
+      actor_role: logActorRole,
       after_data: { status: attStatus, check_in: attStart, check_out: effectiveEnd, actual_hours: actualHours, memo: attNote, work_date: attDate },
     });
 
@@ -982,7 +1026,6 @@ export default function TeamMemberPage() {
   const statusShort: Record<string, string> = { normal: "출근", late: "지각", early_leave: "조퇴", absent: "결근", off: "휴무" };
 
   const workerName = member?.worker?.nickname || (member?.worker?.email ? member.worker.email.split("@")[0] : "팀원");
-  const pType = member?.worker?.worker_result?.personalityType;
   const trustScore = member?.worker?.trust_score;
   const trustGrade = trustScore != null ? getTrustGrade(trustScore) : null;
 
@@ -1008,17 +1051,21 @@ export default function TeamMemberPage() {
               <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(255,255,255,0.2)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, border: "2px solid rgba(255,255,255,0.4)" }}>
                 {member.worker?.avatar_url
                   ? <img src={member.worker.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  : <span style={{ color: "#fff", fontWeight: 700 }}>{(PERSONALITY_EMOJI[pType] || workerName[0]?.toUpperCase() || "?")}</span>}
+                  : <span style={{ color: "#fff", fontWeight: 700 }}>{workerName[0]?.toUpperCase() || "?"}</span>}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                  <p style={{ fontSize: 17, fontWeight: 800, color: "#fff", margin: 0 }}>{workerName}</p>
+                  <button onClick={(e) => { e.stopPropagation(); if (member.worker_id) router.push(`/worker/${member.worker_id}`); }}
+                    title="파잡 커리어 페이지로 이동"
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, cursor: member.worker_id ? "pointer" : "default" }}>
+                    <i className="ti ti-home" style={{ fontSize: 15, color: "#fff" }} aria-hidden="true" />
+                    <p style={{ fontSize: 17, fontWeight: 800, color: "#fff", margin: 0, textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.4)", textUnderlineOffset: 3 }}>{workerName}</p>
+                  </button>
                   {trustGrade && <span style={{ fontSize: 11, color: "#fff", opacity: 0.9, fontWeight: 700 }}>{trustGrade.emoji}</span>}
                   <span style={{ fontSize: 11, background: member.status === "active" ? "rgba(16,185,129,0.25)" : "rgba(239,68,68,0.25)", color: "#fff", borderRadius: 20, padding: "2px 8px", fontWeight: 600 }}>
                     {member.status === "active" ? "재직중" : "퇴직"}
                   </span>
                 </div>
-                {pType && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", margin: "0 0 2px" }}>{PERSONALITY_EMOJI[pType]} {pType}</p>}
                 <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
                   입사일 {member.hire_date || "미설정"}{" "}
                   {!isResigned && (
@@ -1096,20 +1143,24 @@ export default function TeamMemberPage() {
                 🔒 퇴직한 팀원으로 근무조건 및 계약서 수정 불가
               </div>
             ) : member.contract_status === "none" ? (
-              <button onClick={() => {
-                setEditWage(member.wage ? String(member.wage) : "");
-                setEditWorkDays(member.work_days || "");
-                setEditWorkHours(member.work_hours ? String(member.work_hours) : "");
-                setShowWorkModal(true);
-              }}
-                style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
-                ✏️ 근무조건 수정
-              </button>
+              canEditWage && (
+                <button onClick={() => {
+                  setEditWage(member.wage ? String(member.wage) : "");
+                  setEditWorkDays(member.work_days || "");
+                  setEditWorkHours(member.work_hours ? String(member.work_hours) : "");
+                  setShowWorkModal(true);
+                }}
+                  style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+                  ✏️ 근무조건 수정
+                </button>
+              )
             ) : (
-              <button onClick={() => router.push(`/contract?memberId=${member.id}&mode=update`)}
-                style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
-                📄 계약서 수정
-              </button>
+              isOwnerHere && (
+                <button onClick={() => router.push(`/contract?memberId=${member.id}&mode=update`)}
+                  style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "6px", fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+                  📄 계약서 수정
+                </button>
+              )
             )}
           </div>
  
@@ -1138,31 +1189,6 @@ export default function TeamMemberPage() {
           <SectionHeader title="기본 정보" open={infoOpen} onToggle={() => setInfoOpen(v => !v)} />
           {infoOpen && (
             <div style={{ paddingBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-              {/* PAZ 호칭 */}
-              <div style={{ background: "var(--surface)", borderRadius: 14, padding: 14, border: "1px solid var(--border)" }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", margin: "0 0 4px" }}>🤖 PAZ 호칭</p>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 10px" }}>음성으로 PAZ에게 말할 때 쓸 이름이에요</p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    defaultValue={member.nickname || ""}
-                    id="member-nickname-input"
-                    disabled={isResigned}
-                    placeholder={`${workerName} (기본값)`}
-                    style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", color: "var(--text)", fontSize: 13, outline: "none", opacity: isResigned ? 0.6 : 1 }}
-                  />
-                  <button onClick={async () => {
-                    if (isResigned) return;
-                    const val = (document.getElementById("member-nickname-input") as HTMLInputElement)?.value || "";
-                    const { error } = await supabase.from("team_members").update({ nickname: val || null }).eq("id", member.id);
-                    if (!error) showToast(val ? `"${val}"로 호칭 저장됐어요!` : "호칭이 초기화됐어요");
-                  }}
-                    disabled={isResigned}
-                    style={{ background: isResigned ? "var(--border)" : "linear-gradient(135deg,#7c3aed,#ec4899)", border: "none", borderRadius: 10, padding: "8px 14px", color: isResigned ? "var(--text-muted)" : "#fff", fontSize: 12, fontWeight: 700, cursor: isResigned ? "not-allowed" : "pointer", flexShrink: 0 }}>
-                    저장
-                  </button>
-                </div>
-              </div>
-
               {/* 개인정보 (생년월일/연락처/주소) — users 프로필과 계약서 스냅샷(contract_data) 중 있는 쪽으로 자동 채움, 오탈자 정정용 */}
               {(() => {
                 const personalInfoContract = contracts.find(c => c.status === "active") || contracts[0];
@@ -1183,7 +1209,7 @@ export default function TeamMemberPage() {
                             style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "3px 10px", fontSize: 11, color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                             {revealPersonalInfo ? "🙈 가리기" : "👁 보기"}
                           </button>
-                          {!isResigned && (
+                          {!isResigned && isOwnerHere && (
                             <button onClick={() => {
                               setPersonalBirth(mergedBirth);
                               setPersonalPhone(mergedPhone);
@@ -1290,16 +1316,6 @@ export default function TeamMemberPage() {
                 ))}
               </div>
 
-              {/* 성향 */}
-              {member.worker?.worker_result && (
-                <div style={{ background: "var(--surface)", borderRadius: 14, padding: 14, border: "1px solid var(--border)" }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", margin: "0 0 8px" }}>성향 분석</p>
-                  <p style={{ fontSize: 13, color: "#7c3aed", fontWeight: 600, margin: "0 0 4px" }}>{PERSONALITY_EMOJI[pType]} {pType}</p>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
-                    {member.worker.worker_result.description?.slice(0, 120)}...
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1454,7 +1470,7 @@ export default function TeamMemberPage() {
                 return (
                   <div key={day}
                     onClick={() => {
-                      if (isFuture || isResigned) return;
+                      if (isFuture || isResigned || !canApproveAttendance) return;
                       setAttDate(dateStr);
                       const status = att?.status || "normal";
                       setAttStatus(status);
@@ -1482,10 +1498,10 @@ export default function TeamMemberPage() {
                       setShowAttModal(true);
                     }}
                     style={{
-                      borderRadius: 7, cursor: (isFuture || isResigned) ? "default" : "pointer", overflow: "hidden",
+                      borderRadius: 7, cursor: (isFuture || isResigned || !canApproveAttendance) ? "default" : "pointer", overflow: "hidden",
                       background: isResignDay ? "rgba(239, 68, 68, 0.15)" : (status ? status.bg : isToday ? "#7c3aed20" : isScheduled ? "#7c3aed10" : "none"),
                       border: isResignDay ? "1.5px solid #ef4444" : (isToday ? "1.5px solid #7c3aed" : att ? `1px solid ${status?.color}40` : isScheduled && !isFuture ? "1px dashed #7c3aed40" : "1px solid transparent"),
-                      opacity: isFuture && !isScheduled ? 0.2 : isFuture && isScheduled ? 0.5 : 1,
+                      opacity: !canApproveAttendance ? 0.55 : isFuture && !isScheduled ? 0.2 : isFuture && isScheduled ? 0.5 : 1,
                       padding: "3px 2px 2px",
                     }}>
                     <div style={{ textAlign: "center", fontSize: 10, fontWeight: isToday || isResignDay ? 700 : 500, color: isResignDay ? "#ef4444" : (isToday ? "#7c3aed" : isSunday ? "#ef4444" : isSaturday ? "#3b82f6" : "var(--text)") }}>{day}</div>
@@ -1550,13 +1566,13 @@ export default function TeamMemberPage() {
                     <div key={att.id} style={{ background: "var(--surface)", border: `1px solid ${isEditing ? "#7c3aed60" : "var(--border)"}`, borderRadius: 10, overflow: "hidden" }}>
                       <div
                         onClick={() => {
-                          if (isResigned) return;
+                          if (isResigned || !canApproveAttendance) return;
                           if (isEditing) { setInlineEditDate(null); return; }
                           setInlineEditDate(att.work_date);
                           setInlineStart(ciTime);
                           setInlineEnd(coTime);
                         }}
-                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", cursor: isResigned ? "default" : "pointer" }}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", cursor: (isResigned || !canApproveAttendance) ? "default" : "pointer" }}
                       >
                         <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 72 }}>{dayLabel}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: statusMeta?.color || "var(--text-muted)", minWidth: 32 }}>{statusMeta?.label || att.status}</span>
@@ -1568,7 +1584,7 @@ export default function TeamMemberPage() {
                             {att.actual_hours ? <span style={{ color: "var(--text-muted)", marginLeft: 4 }}>({att.actual_hours}h)</span> : null}
                           </span>
                         )}
-                        {!isResigned && <span style={{ fontSize: 11, color: "#7c3aed" }}>{isEditing ? "▴" : "✏️"}</span>}
+                        {!isResigned && canApproveAttendance && <span style={{ fontSize: 11, color: "#7c3aed" }}>{isEditing ? "▴" : "✏️"}</span>}
                       </div>
                       {isEditing && !["absent", "off"].includes(att.status) && (
                         <div style={{ borderTop: "1px solid var(--border)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1594,6 +1610,7 @@ export default function TeamMemberPage() {
                               disabled={inlineSaving}
                               onClick={async () => {
                                 if (!member) return;
+                                if (!canApproveAttendance) { showToast("근태 승인/수정 권한이 없어요", "error"); return; }
                                 setInlineSaving(true);
                                 const [sh, sm] = inlineStart.split(":").map(Number);
                                 const [eh, em] = inlineEnd.split(":").map(Number);
@@ -1614,8 +1631,8 @@ export default function TeamMemberPage() {
                                   attendance_id: att.id,
                                   team_member_id: member.id,
                                   action: "update",
-                                  actor_id: member.employer_id,
-                                  actor_role: "employer",
+                                  actor_id: logActorId,
+                                  actor_role: logActorRole,
                                   after_data: { status: att.status, check_in: inlineStart, check_out: inlineEnd, actual_hours: actualHours, work_date: att.work_date },
                                 });
                                 await loadAttendance(member.id);
@@ -2000,7 +2017,7 @@ export default function TeamMemberPage() {
                   );
                 })
               )}
-              {!isResigned && (
+              {!isResigned && isOwnerHere && (
                 <button onClick={() => {
                   router.push(`/contract?memberId=${member.id}`);
                 }}
@@ -2012,8 +2029,8 @@ export default function TeamMemberPage() {
           )}
         </div>
 
-        {/* ── 퇴직 처리 ── */}
-        {!isResigned && (
+        {/* ── 퇴직 처리 (사장님 전용) ── */}
+        {!isResigned && isOwnerHere && (
           <div style={{ paddingTop: 20 }}>
             <button onClick={() => setShowResignModal(true)}
               style={{ width: "100%", background: "none", border: "1px solid #ef444430", borderRadius: 12, padding: "12px", color: "#ef4444", fontSize: 13, cursor: "pointer" }}>
@@ -2068,7 +2085,7 @@ export default function TeamMemberPage() {
               <div style={{ display: "flex", gap: 6 }}>
                 {getAttStatus(parseInt(attDate.split("-")[2])) ? (
                   <>
-                    <span style={{ fontSize: 11, background: "#f59e0b20", color: "#f59e0b", borderRadius: 6, padding: "3px 8px" }}>✏️ 수정</span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>기존 기록 수정 중</span>
                     <button onClick={() => setShowDeleteConfirm(true)}
                       style={{ fontSize: 11, background: "#ef444420", color: "#ef4444", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
                       🗑️ 삭제
@@ -2201,12 +2218,25 @@ export default function TeamMemberPage() {
                   </div>
                   {!attEnd && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "6px 0 0" }}>퇴근시간을 비워두면 알바생이 앱에서 직접 퇴근 처리해요</p>}
                   {attStart && attEnd && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>휴게시간(분)</span>
-                      <input type="number" inputMode="numeric" value={attBreakMin}
-                        onChange={e => setAttBreakMin(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                        style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontSize: 13, outline: "none" }} />
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>계약서 기준 자동 반영 — 필요시 수정</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>휴게시간(분)</span>
+                        <input type="number" inputMode="numeric" value={attBreakMin}
+                          onChange={e => setAttBreakMin(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontSize: 13, outline: "none" }} />
+                        <span style={{ fontSize: 12, color: "#7c3aed", fontWeight: 700 }}>
+                          = {attBreakMin > 0 ? `${Math.round(attBreakMin / 60 * 10) / 10}시간` : "0시간"}
+                        </span>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {[30, 60, 90].map(v => (
+                            <button key={v} type="button" onClick={() => setAttBreakMin(v)}
+                              style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: attBreakMin === v ? "#7c3aed20" : "var(--surface2)", color: attBreakMin === v ? "#7c3aed" : "var(--text-muted)", cursor: "pointer" }}>
+                              {v}분
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>단위는 분이에요 (1시간 쉬었으면 60을 입력) · 계약서 기준 자동 반영 — 필요시 수정</span>
                     </div>
                   )}
                   {attStart && attEnd && (() => {
@@ -2556,6 +2586,7 @@ export default function TeamMemberPage() {
                 취소
               </button>
               <button onClick={async () => {
+                if (!canApproveAttendance) { showToast("근태 승인/수정 권한이 없어요", "error"); setShowDeleteConfirm(false); return; }
                 const dayStr = attDate.split("-")[2];
                 const existing = getAttStatus(parseInt(dayStr));
                 if (existing?.id) {
@@ -2568,8 +2599,8 @@ export default function TeamMemberPage() {
                       attendance_id: existing.id,
                       team_member_id: member.id,
                       action: "delete",
-                      actor_id: member.employer_id,
-                      actor_role: "employer",
+                      actor_id: logActorId,
+                      actor_role: logActorRole,
                       before_data: { status: existing.status, work_date: existing.work_date, check_in: existing.check_in, check_out: existing.check_out },
                     });
                     await loadAttendance(member.id);

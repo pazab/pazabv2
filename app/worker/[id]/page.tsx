@@ -389,9 +389,6 @@ export default function WorkerDetailPage() {
 
   const w = worker || {};
   const name = String(profileUser.nickname || "알바생");
-  const typeInfo = WORKER_TYPE_INFO[String(w.worker_type || "")];
-  const workerResult = (profileUser as Record<string, unknown>).worker_result as Record<string, unknown> | null;
-  const noShowSafe = workerResult?.noShowRisk === "낮음";
   const credentials = Array.isArray(w.credentials) ? w.credentials as { name: string; is_mandatory_by_law?: boolean; is_preset?: boolean }[] : [];
   const desiredTypes = w.category_ids && Array.isArray(w.custom_categories) && w.custom_categories.length > 0
     ? w.custom_categories as string[]
@@ -528,7 +525,7 @@ export default function WorkerDetailPage() {
           {/* 히어로 하단 */}
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-              {workerTier && <TierBadge tier={workerTier} noShowSafe={noShowSafe} />}
+              {workerTier && <TierBadge tier={workerTier} />}
               {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "var(--success)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
               {desiredTypes.length > 0 && <span style={{ fontSize: 10, background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>{desiredTypes[0]}</span>}
               <span style={{ fontSize: 10, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", padding: "3px 8px", borderRadius: 8 }}>{grade.emoji} {grade.name}</span>
@@ -723,56 +720,7 @@ export default function WorkerDetailPage() {
         {/* 궁합 */}
         {matchScore != null && <MatchScoreSection score={matchScore} />}
 
-        {/* 알바생 성향 */}
-        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>⚡ 알바생 성향</p>
-          {!!w.worker_type && typeInfo ? (
-            <>
-              <div style={{ background: `${typeInfo.color}12`, border: `1px solid ${typeInfo.color}30`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <span style={{ fontSize: 30 }}>{typeInfo.emoji}</span>
-                  <div>
-                    <p style={{ fontSize: 16, fontWeight: 800, margin: "0 0 2px", color: typeInfo.color }}>{String(w.worker_type)}</p>
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>{typeInfo.tagline}</p>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                  {typeInfo.traits.map((t: string) => <span key={t} style={{ fontSize: 11, background: "var(--progress-track)", color: "var(--text-muted)", padding: "3px 8px", borderRadius: 20 }}>{t}</span>)}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <p style={{ fontSize: 12, color: "var(--success)", margin: 0 }}>✓ 잘 맞아요: {typeInfo.good}</p>
-                  <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>· 이런 환경: {typeInfo.bad}</p>
-                </div>
-              </div>
-              {!existingMatch && (
-                <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span>📌</span>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>채용 제안하면 찰떡 사장님 유형이 공개돼요</p>
-                </div>
-              )}
-            </>
-          ) : (
-            isOwner && (
-              <div style={{ padding: "14px 16px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>⚡ 아직 성향 검사를 안 하셨어요</p>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>2분이면 끝나요 · 매칭률이 올라가요</p>
-                </div>
-                <button onClick={() => router.push("/personality")} style={{ flexShrink: 0, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                  검사하기 →
-                </button>
-              </div>
-            )
-          )}
-          <button onClick={openBotChat} style={{ width: "100%", marginTop: 12, background: "var(--primary-light)", border: "1px solid var(--primary-border)", color: "var(--purple-text)", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            🤖 AI 봇에게 물어보기
-          </button>
-        </div>
 
-        {/* 팀 궁합 */}
-        {teamCompat && !isOwner && (
-          <TeamCompatSection teamCompat={teamCompat} />
-        )}
       </>) : (
         isOwner && (
           <div style={{ padding: "20px 0" }}>

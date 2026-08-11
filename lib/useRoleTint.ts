@@ -13,7 +13,10 @@ function readTint(): ActiveRole | null {
 }
 
 export function useRoleTint(): ActiveRole | null {
-  const [tint, setTint] = useState<ActiveRole | null>(readTint);
+  // 초기값을 readTint()로 즉시 계산하면 서버는 항상 null, 클라이언트는 localStorage 값을
+  // 곧바로 읽어와서 첫 렌더 결과가 달라져 hydration mismatch가 남 — 서버/클라이언트 모두
+  // null로 시작하고, 마운트 후 useEffect에서만 실제 값을 반영한다.
+  const [tint, setTint] = useState<ActiveRole | null>(null);
 
   useEffect(() => {
     const read = () => setTint(readTint());

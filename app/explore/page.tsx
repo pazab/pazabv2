@@ -70,7 +70,6 @@ function ExploreContent() {
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("추천순");
-  const [hasHexaco, setHasHexaco] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [fabScrolled, setFabScrolled] = useState(false);
   const [userType, setUserType] = useState<string | null>(null);
@@ -179,8 +178,6 @@ function ExploreContent() {
       const { data: userData } = await supabase.from("users").select("user_type").eq("id", uid).single();
       const dbType = userData?.user_type;
       setUserType(dbType || null);
-      const { data: hexacoData } = await supabase.from("hexaco_results").select("id").eq("user_id", uid).limit(1);
-      setHasHexaco(!!(hexacoData && hexacoData.length > 0));
       setShowBothTabs(true);
       const mode = (typeParam as "worker" | "employer") || "worker";
       setViewMode(mode);
@@ -628,9 +625,8 @@ function ExploreContent() {
                       setSortBy(opt.key);
                       setShowAllSection(null);
                     }}
-                      style={{ padding: "6px 10px", background: isActive ? (isGunghap ? "var(--chip-pink-bg)" : viewMode === "worker" ? "var(--chip-purple-bg)" : "var(--chip-pink-bg)") : "var(--surface2)", border: `1px solid ${isActive ? (isGunghap ? "var(--chip-pink-border)" : viewMode === "worker" ? "var(--chip-purple-border)" : "var(--chip-pink-border)") : "var(--border)"}`, borderRadius: 10, color: isActive ? (isGunghap ? "var(--pink-text)" : viewMode === "worker" ? "var(--purple-text)" : "var(--pink-text)") : isGunghap && !hasHexaco ? "var(--pink-text)" : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s", position: "relative" as const }}>
+                      style={{ padding: "6px 10px", background: isActive ? (isGunghap ? "var(--chip-pink-bg)" : viewMode === "worker" ? "var(--chip-purple-bg)" : "var(--chip-pink-bg)") : "var(--surface2)", border: `1px solid ${isActive ? (isGunghap ? "var(--chip-pink-border)" : viewMode === "worker" ? "var(--chip-purple-border)" : "var(--chip-pink-border)") : "var(--border)"}`, borderRadius: 10, color: isActive ? (isGunghap ? "var(--pink-text)" : viewMode === "worker" ? "var(--purple-text)" : "var(--pink-text)") : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s", position: "relative" as const }}>
                       {opt.key === "긴급순" && !isActive ? <span style={{ color: "var(--danger)" }}>{opt.icon} {opt.key}</span> : `${opt.icon} ${opt.key}`}
-                      {isGunghap && !hasHexaco && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--accent)", borderRadius: "50%", width: 8, height: 8, display: "block" }} />}
                     </button>
                   );
                 })}
@@ -678,7 +674,6 @@ function ExploreContent() {
                   <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text)", margin: "0 0 8px", paddingRight: 20 }}>👋 이렇게 시작해보세요</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>💜 마음에 드는 공고에 하트를 누르면 바로 지원돼요</p>
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>💕 성향분석(5분) 하면 궁합 좋은 공고부터 보여드려요</p>
                     <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>⚡ 급한 대타 자리는 "긴급순" 탭에서 바로 확인돼요</p>
                   </div>
                   <button onClick={() => router.push(hasWorkerProfile ? "/worker/profile?edit=true&return=explore" : "/worker/profile?edit=true&new=true&return=explore")}
@@ -992,30 +987,6 @@ function ExploreContent() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setSuccessMatchId(null)} style={{ ...btnPrimary, flex: 1 }}>확인</button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {isLoggedIn && !hasHexaco && sortBy === "궁합순" && !loading && (
-        <div style={{ position: "fixed", bottom: 70, left: 0, right: 0, padding: "0 16px", zIndex: 40 }}>
-          <div style={{ maxWidth: 480, margin: "0 auto", background: "var(--accent)", borderRadius: 16, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "var(--shadow-elevate)" }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "#fff" }}>💕 성향 분석하면 궁합 점수가 생겨요!</p>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0 }}>5분 분석으로 딱 맞는 공고 찾기</p>
-            </div>
-            <button onClick={() => router.push("/interview?type=worker&from=explore_sort")} style={{ background: "#fff", border: "none", color: "var(--primary)", fontWeight: 800, padding: "8px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12 }}>시작 →</button>
-          </div>
-        </div>
-      )}
-
-      {!isLoggedIn && !loading && (
-        <div style={{ position: "fixed", bottom: 70, left: 0, right: 0, padding: "0 16px", zIndex: 40 }}>
-          <div style={{ maxWidth: 480, margin: "0 auto", background: "var(--primary)", borderRadius: 16, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "var(--shadow-elevate)" }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 2px", color: "#fff" }}>궁합 점수 보고 싶어요?</p>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", margin: 0 }}>성향 분석하고 딱 맞는 공고 찾기</p>
-            </div>
-            <button onClick={() => router.push("/interview?type=worker")} style={{ background: "#fff", border: "none", color: "var(--primary)", fontWeight: 800, padding: "8px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12 }}>시작 →</button>
           </div>
         </div>
       )}

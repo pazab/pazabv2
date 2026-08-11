@@ -125,8 +125,6 @@ export async function POST(req: NextRequest) {
     if (userType === "worker") {
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
-      const { data: hexacoRow } = await supabaseAdmin.from("hexaco_results").select("id").eq("user_id", userId).limit(1);
-      const hasMyHexaco = !!(hexacoRow && hexacoRow.length > 0);
       if (myUser?.worker_result?.hexaco) myHexaco = parseHexaco(myUser.worker_result.hexaco);
       else if (myUser?.worker_result) myHexaco = parseHexaco(myUser.worker_result);
       myRegion = String(wp?.desired_region || "");
@@ -171,9 +169,9 @@ export async function POST(req: NextRequest) {
 
         const regionWeight = regionBonus >= 10 ? 12 : regionBonus >= 7 ? 4 : -15;
 
+        // 성향분석(HEXACO) 가중치는 매칭 스코어에서 제외 — calcHexacoScore는 유지하되 finalScore엔 미반영
         const finalScore = Math.round(
           70 +
-          (hexacoScore - 70) * 0.40 +
           condScore * 0.40 +
           popScore * 0.20 +
           trustBonus * 0.50 +
@@ -192,7 +190,7 @@ export async function POST(req: NextRequest) {
           employer_avatar: empUser?.avatar_url,
           employer_name: empUser?.nickname || empUser?.real_name,
           trust_score: trustScore,
-          match_score: hasMyHexaco ? finalScoreWithNoise : null,
+          match_score: finalScoreWithNoise,
           is_liked: false,
           hexaco_score: hexacoScore,
           condition_score: condScore,
@@ -210,8 +208,6 @@ export async function POST(req: NextRequest) {
       const latestJob = latestJobs?.[0] || null;
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("desired_region").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
-      const { data: hexacoRowEmp } = await supabaseAdmin.from("hexaco_results").select("id").eq("user_id", userId).limit(1);
-      const hasMyHexaco = !!(hexacoRowEmp && hexacoRowEmp.length > 0);
       if (latestJob?.hexaco_data) myHexaco = parseHexaco(latestJob.hexaco_data);
       else if (myUser?.employer_result) myHexaco = parseHexaco(myUser.employer_result);
       myRegion = String(latestJob?.employer_profiles?.region || wp?.desired_region || "");
@@ -274,9 +270,9 @@ export async function POST(req: NextRequest) {
           const regionBonus = calcRegionScore(myRegion, String(worker.desired_region || worker.region || ""));
           const regionWeight = regionBonus >= 10 ? 12 : regionBonus >= 7 ? 4 : -15;
 
+          // 성향분석(HEXACO) 가중치는 매칭 스코어에서 제외 — calcHexacoScore는 유지하되 finalScore엔 미반영
           const finalScore = Math.round(
             70 +
-            (hexacoScore - 70) * 0.40 +
             condScore * 0.40 +
             popScore * 0.20 +
             trustBonus * 0.50 +
@@ -294,7 +290,7 @@ export async function POST(req: NextRequest) {
             worker_avatar: wrkUser?.avatar_url,
             worker_name: wrkUser?.nickname || wrkUser?.real_name,
             trust_score: trustScore,
-            match_score: hasMyHexaco ? finalScoreWithNoise : null,
+            match_score: finalScoreWithNoise,
             is_liked: false,
           };
         });

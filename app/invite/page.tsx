@@ -19,6 +19,7 @@ function InviteContent() {
   const { showToast, ToastUI } = useToast();
 
   const [user, setUser] = useState<any>(null);
+  const [employerId, setEmployerId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [selProfile, setSelProfile] = useState<any>(null);
 
@@ -43,13 +44,15 @@ function InviteContent() {
       if (!u) { router.push("/login"); return; }
       setUser(u);
 
-      const { allowed } = await canSendInvite(supabase, u.id);
+      const { allowed, employerId: resolvedEmployerId } = await canSendInvite(supabase, u.id);
       if (!allowed) { showToast("초대 권한이 없습니다", "error"); router.push("/"); return; }
+      const effectiveEmployerId = resolvedEmployerId || u.id;
+      setEmployerId(effectiveEmployerId);
 
-      // 매장 목록 로드
+      // 매장 목록 로드 (매니저인 경우 본인 계정이 아니라 소속 사장님 기준으로 조회)
       const { data: ps } = await supabase.from("employer_profiles")
         .select("id, business_name, address, sigungu, eupmyeondong, wage, work_days, work_hours")
-        .eq("user_id", u.id).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null)
+        .eq("user_id", effectiveEmployerId).or("is_deleted.is.null,is_deleted.eq.false").not("business_name", "is", null)
         .order("created_at", { ascending: false });
 
       if (ps && ps.length > 0) {
@@ -107,14 +110,14 @@ function InviteContent() {
   };
 
   async function sendInvite() {
-    if (!user) return;
+    if (!user || !employerId) return;
     if (!selProfile) { showToast("매장을 선택해주세요", "error"); return; }
     if (!selected) { showToast("초대할 직원을 검색해서 선택해주세요", "error"); return; }
 
     // 이 매장에 이미 활성 팀원인지 확인 (퇴직자는 재초대 가능, 같은 사장님의 다른 매장은 별개로 초대 가능)
     const { data: existing } = await supabase.from("team_members")
       .select("id, status")
-      .eq("employer_id", user.id)
+      .eq("employer_id", employerId)
       .eq("employer_profile_id", selProfile.id)
       .eq("worker_id", selected.id)
       .eq("status", "active")
@@ -126,7 +129,7 @@ function InviteContent() {
 
     // 미수락 초대장이 이미 있는지 확인
     const { data: pendingInvite } = await supabase.from("invite_codes")
-      .select("id").eq("employer_id", user.id).is("used_at", null)
+      .select("id").eq("employer_id", employerId).is("used_at", null)
       .gt("expires_at", new Date().toISOString()).limit(1);
     // (코드별로 특정 유저 지정이 없으므로 중복 발송만 안내)
 
@@ -136,7 +139,8 @@ function InviteContent() {
       const code = generateCode();
       const { error } = await supabase.from("invite_codes").insert({
         code,
-        employer_id: user.id,
+        employer_id: employerId,
+        created_by: user.id,
         employer_profile_id: selProfile.id,
         biz_name: selProfile.business_name,
         wage: wage ? parseInt(wage) : null,

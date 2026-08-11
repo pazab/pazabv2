@@ -11,6 +11,7 @@ import TierBadge from "@/components/TierBadge";
 import { getWorkerTiers, DaetaTier } from "@/lib/daetaTier";
 import { useToast } from "@/lib/useToast";
 import { addRole } from "@/lib/onboarding";
+import { getEmployerContext } from "@/lib/permissions";
 
 const FALLBACK_BASE = { lat: 37.5665, lng: 126.9780 };
 
@@ -87,6 +88,9 @@ function DaetaPageContent() {
 
   const [isEmployer, setIsEmployer] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // SOS 발행 화면에서 "이 요청이 누구 매장 것인가"에 쓰는 식별자.
+  // 사장님 본인이면 currentUserId와 동일, sos_request 권한을 가진 매니저면 소속 사장님 id로 대체된다.
+  const [effectiveEmployerId, setEffectiveEmployerId] = useState<string | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [userType, setUserType] = useState<string>("worker");
   const { showToast, ToastUI } = useToast();
@@ -275,10 +279,21 @@ function DaetaPageContent() {
 
       if (user) {
         setCurrentUserId(user.id);
+        setEffectiveEmployerId(user.id);
         const { data } = await supabase.from("users").select("user_type").eq("id", user.id).single();
         const userTypeTemp = data?.user_type || "worker";
         setUserType(userTypeTemp);
-        const employer = userTypeTemp === "employer" || userTypeTemp === "both";
+        let employer = userTypeTemp === "employer" || userTypeTemp === "both";
+
+        // 사장님 본인이 아니면, sos_request 권한을 가진 매니저인지 확인해서 소속 사장님 id로 대체
+        if (!employer) {
+          const ctx = await getEmployerContext(supabase, user.id);
+          if (ctx?.isManager && ctx.permissions.sos_request) {
+            employer = true;
+            setEffectiveEmployerId(ctx.employerId);
+          }
+        }
+
         if (employer) setIsEmployer(true);
         setRoleView(employer ? "employer" : "worker");
         setView("home"); // 로그인 유저는 역할별 SOS 홈이 기본
@@ -498,7 +513,7 @@ function DaetaPageContent() {
   if (view === "home" && currentUserId) {
     return (
       <DaetaSosHome
-        userId={currentUserId}
+        userId={effectiveEmployerId || currentUserId}
         userType={userType}
         onOpenDeck={openDeck}
       />
@@ -1027,7 +1042,7 @@ function DaetaPageContent() {
 
       {showRegisterModal && currentUserId && (
         <DaetaRegisterModal
-          userId={currentUserId}
+          userId={effectiveEmployerId || currentUserId}
           postingId={editingPostingId}
           onClose={() => {
             setShowRegisterModal(false);
