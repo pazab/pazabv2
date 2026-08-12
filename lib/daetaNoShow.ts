@@ -5,7 +5,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
-import { DaetaPostingRow, getSosConfig, notifyTeam, notifyNearby, computeAutoWage } from "@/lib/daetaEscalation";
+import { DaetaPostingRow, reescalateAfterDropout } from "@/lib/daetaEscalation";
 
 interface NoShowMatch {
   id: string;
@@ -45,29 +45,11 @@ export async function markNoShowAndReescalate(
   });
 
   // 취소로 끝내지 않고 즉시 재확산 — 이미 동의한 상한(allow_new/max_urgent_pct) 안에서 넓은 단계로 바로 점프
-  const cfg = await getSosConfig(sb);
-  const targetStage = Math.max(posting.escalation_stage || 1, posting.allow_new ? 3 : 2);
-  const newWage = computeAutoWage(posting, targetStage, cfg);
-
-  await sb.from("daeta_postings").update({
-    status: "pending",
-    escalation_stage: targetStage,
-    stage_updated_at: new Date().toISOString(),
-    wage: newWage,
-  }).eq("id", posting.id);
-
-  const reopenedPosting: DaetaPostingRow = { ...posting, status: "pending", escalation_stage: targetStage, wage: newWage };
-  const [teamNotified, nearbyNotified] = await Promise.all([
-    notifyTeam(sb, reopenedPosting, match.worker_id),
-    notifyNearby(sb, reopenedPosting, targetStage >= 3 ? "tier2" : "tier1", cfg.radius_km, match.worker_id),
-  ]);
-
-  await createNotification({
-    userId: match.employer_id,
-    type: "daeta",
-    title: reason === "auto" ? "🚨 노쇼 자동 감지, 바로 대체 인력을 찾고 있어요" : "🔄 노쇼 확인, 바로 대체 인력을 찾고 있어요",
-    body: `${posting.business_name} 대타를 다시 넓혀서 요청했어요. 팀원 ${teamNotified}명 + 동네 인력 ${nearbyNotified}명에게 알림이 갔어요.`,
-    url: "/daeta",
-    data: { daetaPostingId: posting.id },
-  });
+  await reescalateAfterDropout(
+    sb,
+    posting,
+    match.worker_id,
+    reason === "auto" ? "🚨 노쇼 자동 감지, 바로 대체 인력을 찾고 있어요" : "🔄 노쇼 확인, 바로 대체 인력을 찾고 있어요",
+    `${posting.business_name} 대타를 다시 넓혀서 요청했어요.`
+  );
 }

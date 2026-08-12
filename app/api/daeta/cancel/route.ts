@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
+import { DaetaPostingRow, reescalateAfterDropout } from "@/lib/daetaEscalation";
 
 const getServiceClient = () =>
   createClient(
@@ -101,6 +102,30 @@ export async function POST(req: NextRequest) {
       url: `/chat/${matchId}`,
       data: { matchId },
     });
+
+    // 대타 공고 자체 처리 — 예전엔 여기서 daeta_postings를 아예 건드리지 않아서 노쇼보다도 못한
+    // 대우였음(사전에 알려준 취소인데 재구인 시도조차 안 됨). 알바생이 취소했으면 노쇼와 동일하게
+    // 즉시 재오픈+재확산(신뢰점수/정지 페널티는 위에서 이미 별도 처리했으니 중복 감점 없음).
+    // 사장님이 취소했으면 더 이상 구할 필요가 없다는 뜻이라 공고 자체를 종료.
+    const { data: posting } = await supabase
+      .from("daeta_postings")
+      .select("id, user_id, business_name, region, lat, lng, work_date, work_date_end, work_hours, wage, base_wage, max_urgent_pct, duty, status, escalation_stage, stage_updated_at, allow_new, created_at, expires_at")
+      .eq("id", match.daeta_posting_id)
+      .maybeSingle();
+
+    if (posting) {
+      if (isEmployerCancelling) {
+        await supabase.from("daeta_postings").update({ status: "cancelled" }).eq("id", posting.id);
+      } else {
+        await reescalateAfterDropout(
+          supabase,
+          posting as DaetaPostingRow,
+          match.worker_id,
+          "🔄 대타 취소 확인, 바로 대체 인력을 찾고 있어요",
+          `${posting.business_name} 대타를 다시 넓혀서 요청했어요.`
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, suspendDays: tier.suspendDays, trustPenalty: tier.trustPenalty, cancelCount: (priorCancels ?? 0) + 1 });
   } catch (e: any) {

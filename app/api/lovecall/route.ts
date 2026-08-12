@@ -347,6 +347,30 @@ export async function PATCH(req: NextRequest) {
 
               // 매칭 확정된 공고는 더 이상 다른 알바생에게 노출되거나 수정·재취소 가능한 "구인중" 상태가 아님
               await supabase.from("daeta_postings").update({ status: "matched" }).eq("id", acceptMatchData.daeta_posting_id);
+
+              // 같은 공고에 지원했던 다른 알바생들 — 예전엔 그대로 방치돼서 본인이 떨어진 줄도
+              // 모른 채 pending으로 계속 남아있었음. 전부 정리 + "다른 분으로 확정됐어요" 안내.
+              const { data: otherApplicants } = await supabase
+                .from("matches")
+                .select("id, worker_id")
+                .eq("daeta_posting_id", acceptMatchData.daeta_posting_id)
+                .eq("progress_status", "pending")
+                .neq("id", matchId);
+
+              if (otherApplicants?.length) {
+                await supabase.from("matches")
+                  .update({ progress_status: "rejected", message: "다른 지원자로 확정됨" })
+                  .in("id", otherApplicants.map(m => m.id));
+
+                await Promise.all(otherApplicants.map(m => createNotification({
+                  userId: m.worker_id,
+                  type: "daeta",
+                  title: "😢 다른 분으로 확정됐어요",
+                  body: `${daetaPosting.business_name} 대타는 다른 지원자로 확정됐어요. 다른 대타를 찾아보세요!`,
+                  url: "/daeta",
+                  data: { daetaPostingId: acceptMatchData.daeta_posting_id },
+                })));
+              }
             }
           }
 

@@ -202,6 +202,48 @@ export async function notifyNearby(
 }
 
 /**
+ * 확정된 대타 인력이 이탈(노쇼 또는 사전 취소)했을 때 공고를 재오픈하고 즉시 재확산.
+ * "돈으로 위로금을 주는 대신 속도로 확실히 채워준다" 방향(DESIGN_PLAN.md §11) —
+ * 노쇼(lib/daetaNoShow.ts)와 알바생측 사전취소(app/api/daeta/cancel) 양쪽에서 공용으로 쓴다.
+ * 신뢰점수/정지 페널티는 호출부마다 성격이 달라서(노쇼=-30 고정, 취소=90일 누적 가중) 여기서 다루지 않는다.
+ */
+export async function reescalateAfterDropout(
+  sb: SupabaseClient,
+  posting: DaetaPostingRow,
+  excludeWorkerId: string,
+  employerNotifyTitle: string,
+  employerNotifyBodyPrefix: string
+): Promise<{ teamNotified: number; nearbyNotified: number }> {
+  const cfg = await getSosConfig(sb);
+  const targetStage = Math.max(posting.escalation_stage || 1, posting.allow_new ? 3 : 2);
+  const newWage = computeAutoWage(posting, targetStage, cfg);
+
+  await sb.from("daeta_postings").update({
+    status: "pending",
+    escalation_stage: targetStage,
+    stage_updated_at: new Date().toISOString(),
+    wage: newWage,
+  }).eq("id", posting.id);
+
+  const reopenedPosting: DaetaPostingRow = { ...posting, status: "pending", escalation_stage: targetStage, wage: newWage };
+  const [teamNotified, nearbyNotified] = await Promise.all([
+    notifyTeam(sb, reopenedPosting, excludeWorkerId),
+    notifyNearby(sb, reopenedPosting, targetStage >= 3 ? "tier2" : "tier1", cfg.radius_km, excludeWorkerId),
+  ]);
+
+  await createNotification({
+    userId: posting.user_id,
+    type: "daeta",
+    title: employerNotifyTitle,
+    body: `${employerNotifyBodyPrefix} 팀원 ${teamNotified}명 + 동네 인력 ${nearbyNotified}명에게 알림이 갔어요.`,
+    url: "/daeta",
+    data: { daetaPostingId: posting.id },
+  });
+
+  return { teamNotified, nearbyNotified };
+}
+
+/**
  * 단계 전진. 전진했으면 새 stage 반환, 아니면 null.
  * 규칙: 1→2 (stage1_wait 경과), 2→3 (allow_new) 또는 2→4, 3→4
  */
