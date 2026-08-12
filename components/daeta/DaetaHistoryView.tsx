@@ -187,6 +187,48 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
     setShowUnpaidModal(match);
   };
 
+  // 알바생 원탭 출근 체크인 — 미출근 15분 경과 시 자동 노쇼 판정(app/api/cron/daeta-checkin)의 기준이 됨
+  const handleDaetaCheckin = async (match: any) => {
+    setActionError("");
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/daeta/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: match.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) { setActionError(result.error || "출근 처리 중 오류가 발생했어요."); setActionLoading(false); return; }
+      await loadDaetaRecords();
+    } catch (err: any) {
+      console.error(err);
+      setActionError("출근 처리 중 오류가 발생했어요.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 사장님이 자동 노쇼 판정을 10분 미루기 — 알림의 원탭 버튼과 동일 엔드포인트
+  const handleDaetaExtend = async (match: any) => {
+    setActionError("");
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/daeta/extend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: match.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) { setActionError(result.error || "연장 처리 중 오류가 발생했어요."); setActionLoading(false); return; }
+      await loadDaetaRecords();
+    } catch (err: any) {
+      console.error(err);
+      setActionError("연장 처리 중 오류가 발생했어요.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // 예전엔 검증 없이 즉시 사장님 계정을 영구정지시키고, 실제로 접수도 안 한 "정부 진정서"를
   // 접수했다고 알리는 코드였음 — 앱이 직접 처벌하지 않고, 이력 기록 + 양쪽 알림만 하고
   // 실제 정지 여부는 관리자가 사람이 검토해서 판단하도록 변경.
@@ -307,23 +349,44 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
 
                 {/* 사장님 액션 버튼 (정산 / 노쇼 신고) */}
                 {isEmployerForRecord && isPending && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                    <button onClick={() => openConfirm("complete", rec)}
-                      style={{ flex: 2, background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                      💸 급여 이체 완료 (정산 확정)
-                    </button>
-                    <button onClick={() => openConfirm("noshow", rec)}
-                      style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "12px", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                      🚨 노쇼 신고
-                    </button>
-                  </div>
+                  <>
+                    <div style={{ fontSize: 11, color: rec.checked_in_at ? "#4ade80" : "#fbbf24", marginBottom: 8 }}>
+                      {rec.checked_in_at ? "✅ 출근 확인됨" : "⏳ 아직 출근 전이에요 — 출근시각 15분 초과 시 자동으로 다음 인력을 찾아드려요"}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button onClick={() => openConfirm("complete", rec)}
+                        style={{ flex: 2, background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                        💸 급여 이체 완료 (정산 확정)
+                      </button>
+                      {!rec.checked_in_at && (
+                        <button onClick={() => handleDaetaExtend(rec)} disabled={actionLoading}
+                          style={{ flex: 1, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 12, padding: "12px", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
+                          ⏳ 10분만 더
+                        </button>
+                      )}
+                      <button onClick={() => openConfirm("noshow", rec)}
+                        style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "12px", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        🚨 노쇼 신고
+                      </button>
+                    </div>
+                  </>
                 )}
 
-                {/* 알바생 액션 버튼 (임금 미지급 신고) */}
+                {/* 알바생 액션 버튼 (출근 체크인 / 임금 미지급 신고) */}
                 {!isEmployerForRecord && isPending && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                    {rec.checked_in_at ? (
+                      <div style={{ textAlign: "center", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 12, padding: "10px", color: "#4ade80", fontSize: 12, fontWeight: 700 }}>
+                        ✅ 출근 처리 완료
+                      </div>
+                    ) : (
+                      <button onClick={() => handleDaetaCheckin(rec)} disabled={actionLoading}
+                        style={{ background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
+                        ✅ 출근했어요
+                      </button>
+                    )}
                     <button onClick={() => handleUnpaidReport(rec)}
-                      style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "12px", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
+                      style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "12px", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
                       ⚠️ 임금 미지급 (먹튀) 신고 및 법적 대응
                     </button>
                   </div>

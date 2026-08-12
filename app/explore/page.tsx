@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Suspense } from "react";
-import { getMatchLevel } from "@/lib/utils";
+import { getFitChips } from "@/lib/utils";
 import AppHeader from "@/components/AppHeader";
 import { getGrade } from "@/lib/trustScore";
 import { JobCard, CardProps } from "@/components/JobCard";
@@ -14,7 +14,7 @@ const SORT_OPTIONS = [
   { key: "추천순", icon: "✦" },
   { key: "인기순", icon: "❤" },
   { key: "긴급순", icon: "⚡" },
-  { key: "궁합순", icon: "💕" },
+  { key: "적합순", icon: "🎯" },
 ] as const;
 
 type SortKey = typeof SORT_OPTIONS[number]["key"];
@@ -91,7 +91,7 @@ function ExploreContent() {
     employer_avatar?: string; worker_avatar?: string;
     business_name?: string; worker_type?: string; worker_name?: string;
     employer_name?: string; business_type?: string; desired_type?: string;
-    trust_score?: number; match_score?: number;
+    trust_score?: number; wage_ok?: boolean | null; days_overlap?: number;
     wage?: number; work_days?: string; region?: string; work_hours?: string;
     desired_region?: string; desired_wage?: number;
     tags?: string[] | string; meal_provided?: boolean;
@@ -247,12 +247,11 @@ function ExploreContent() {
           employer_profile_id: j.employer_profiles?.id || j.employer_profile_id,
           employer_avatar: j.users?.avatar_url,
           employer_name: j.users?.nickname || j.users?.real_name,
-          match_score: null
         }));
       setAllItems(formatted);
     } else {
       const { data } = await supabase.from("worker_profiles").select("*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname)").eq("is_active", true).limit(1000);
-      setAllItems((data || []).filter((w: any) => w.is_public !== false && (!w.job_status || w.job_status === "active" || w.job_status === "open")).map((d: any) => ({ ...d, id: d.user_id, worker_avatar: (d.users as Record<string, unknown>)?.avatar_url, worker_name: (d.users as Record<string, unknown>)?.nickname || (d.users as Record<string, unknown>)?.real_name, trust_score: (d.users as Record<string, unknown>)?.trust_score ?? 50, match_score: null })));
+      setAllItems((data || []).filter((w: any) => w.is_public !== false && (!w.job_status || w.job_status === "active" || w.job_status === "open")).map((d: any) => ({ ...d, id: d.user_id, worker_avatar: (d.users as Record<string, unknown>)?.avatar_url, worker_name: (d.users as Record<string, unknown>)?.nickname || (d.users as Record<string, unknown>)?.real_name, trust_score: (d.users as Record<string, unknown>)?.trust_score ?? 50 })));
     }
   };
 
@@ -288,8 +287,7 @@ function ExploreContent() {
     setSending(true);
     try {
       const targetId = String(confirmItem.id || confirmItem.user_id);
-      const matchScore = confirmItem.match_score || 0;
-      
+
       if (viewMode === "worker") {
         if (!hasWorkerProfile) {
           try {
@@ -319,7 +317,6 @@ function ExploreContent() {
           body: JSON.stringify({
             employerId,
             workerId: userId,
-            matchScore,
             senderType: "worker",
             employerProfileId: confirmItem.employer_profile_id ?? confirmItem.id,
             jobId: confirmItem.id
@@ -343,7 +340,6 @@ function ExploreContent() {
           body: JSON.stringify({
             employerId: userId,
             workerId,
-            matchScore,
             senderType: "employer",
             employerProfileId: selectedEmployerProfileId || myEmployerProfile?.id || null
           })
@@ -462,7 +458,13 @@ function ExploreContent() {
       if (bD) return 1;
       return 0;
     }
-    return Number(b.match_score ?? -1) - Number(a.match_score ?? -1);
+    if (sortBy === "적합순") {
+      const aFit = (a.wage_ok === true ? 2 : a.wage_ok === null ? 1 : 0) + Number(a.days_overlap || 0);
+      const bFit = (b.wage_ok === true ? 2 : b.wage_ok === null ? 1 : 0) + Number(b.days_overlap || 0);
+      if (aFit !== bFit) return bFit - aFit;
+      return Number(b.trust_score ?? 0) - Number(a.trust_score ?? 0);
+    }
+    return Number(b.trust_score ?? 0) - Number(a.trust_score ?? 0);
   });
 
   // 탭별 상단 가로 섹션 데이터
@@ -480,8 +482,8 @@ function ExploreContent() {
     if (sortBy === "긴급순") {
       return sorted.filter(i => urgencyScore(i) >= 2).slice(0, 8); // 단기/긴급대타만
     }
-    if (sortBy === "궁합순") {
-      return sorted.filter(i => Number(i.match_score ?? -1) >= 80).slice(0, 8);
+    if (sortBy === "적합순") {
+      return sorted.filter(i => i.wage_ok === true || Number(i.days_overlap || 0) > 0).slice(0, 8);
     }
     return [];
   })();
@@ -491,7 +493,7 @@ function ExploreContent() {
     if (sortBy === "추천순") return "🔥 지금 인기 공고";
     if (sortBy === "인기순") return "❤ 많이 찜한 공고";
     if (sortBy === "긴급순") return "🚨 긴급 · 단기 모집";
-    if (sortBy === "궁합순") return "💕 궁합 80점 이상";
+    if (sortBy === "적합순") return "🎯 조건 딱 맞는 자리";
     return "";
   })();
 
@@ -618,14 +620,14 @@ function ExploreContent() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", gap: 4 }}>
                 {SORT_OPTIONS.map(opt => {
-                  const isGunghap = opt.key === "궁합순";
+                  const isFit = opt.key === "적합순";
                   const isActive = sortBy === opt.key;
                   return (
                     <button key={opt.key} onClick={() => {
                       setSortBy(opt.key);
                       setShowAllSection(null);
                     }}
-                      style={{ padding: "6px 10px", background: isActive ? (isGunghap ? "var(--chip-pink-bg)" : viewMode === "worker" ? "var(--chip-purple-bg)" : "var(--chip-pink-bg)") : "var(--surface2)", border: `1px solid ${isActive ? (isGunghap ? "var(--chip-pink-border)" : viewMode === "worker" ? "var(--chip-purple-border)" : "var(--chip-pink-border)") : "var(--border)"}`, borderRadius: 10, color: isActive ? (isGunghap ? "var(--pink-text)" : viewMode === "worker" ? "var(--purple-text)" : "var(--pink-text)") : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s", position: "relative" as const }}>
+                      style={{ padding: "6px 10px", background: isActive ? (isFit ? "var(--chip-pink-bg)" : viewMode === "worker" ? "var(--chip-purple-bg)" : "var(--chip-pink-bg)") : "var(--surface2)", border: `1px solid ${isActive ? (isFit ? "var(--chip-pink-border)" : viewMode === "worker" ? "var(--chip-purple-border)" : "var(--chip-pink-border)") : "var(--border)"}`, borderRadius: 10, color: isActive ? (isFit ? "var(--pink-text)" : viewMode === "worker" ? "var(--purple-text)" : "var(--pink-text)") : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, transition: "all 0.15s", position: "relative" as const }}>
                       {opt.key === "긴급순" && !isActive ? <span style={{ color: "var(--danger)" }}>{opt.icon} {opt.key}</span> : `${opt.icon} ${opt.key}`}
                     </button>
                   );
@@ -647,7 +649,7 @@ function ExploreContent() {
         {loading ? (
           <div style={{ textAlign: "center", padding: "80px 0" }}>
             <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.6 }}>✦</div>
-            <p style={{ color: "var(--text-muted)", fontSize: 13 }}>{isLoggedIn ? "궁합 계산 중..." : "불러오는 중..."}</p>
+            <p style={{ color: "var(--text-muted)", fontSize: 13 }}>불러오는 중...</p>
           </div>
         ) : showAllSection ? (
           <div style={{ padding: "16px 16px" }}>
@@ -706,7 +708,7 @@ function ExploreContent() {
             <div style={{ padding: "0 16px" }}>
               <SectionHeader
                 title={isLoggedIn
-                  ? `✦ ${sortBy === "인기순" ? "인기" : sortBy === "긴급순" ? "긴급" : sortBy === "궁합순" ? "궁합" : "추천"} ${viewMode === "worker" ? "공고" : "구직자"}`
+                  ? `✦ ${sortBy === "인기순" ? "인기" : sortBy === "긴급순" ? "긴급" : sortBy === "적합순" ? "적합" : "추천"} ${viewMode === "worker" ? "공고" : "구직자"}`
                   : `전체 ${viewMode === "worker" ? "공고" : "구직자"}`}
                 count={sorted.length}
               />
@@ -789,15 +791,11 @@ function ExploreContent() {
                         📅 단기 {bottomSheet.work_start_date ? formatDateBadge(bottomSheet.work_start_date, bottomSheet.work_end_date) : ""}
                       </span>
                     )}
-                    {bottomSheet.match_score != null && (() => {
-                      const level = getMatchLevel(Number(bottomSheet.match_score));
-                      return (
-                        <div style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", border: `1px solid ${level.color}40`, borderRadius: 12, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}>
-                          <span style={{ fontSize: 16, fontWeight: 900, color: level.color }}>{String(bottomSheet.match_score)}</span>
-                          <span style={{ fontSize: 9, color: level.color, fontWeight: 700 }}>{level.emoji} {level.label}</span>
-                        </div>
-                      );
-                    })()}
+                    {getFitChips(bottomSheet).map(c => (
+                      <span key={c.text} style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", border: "1px solid rgba(74,222,128,0.4)", borderRadius: 12, padding: "5px 10px", fontSize: 11, fontWeight: 700, color: "#86efac" }}>
+                        {c.icon} {c.text}
+                      </span>
+                    ))}
                   </div>
                 </div>
               );
@@ -852,12 +850,6 @@ function ExploreContent() {
                   </div>
                 ))}
               </div>
-              {bottomSheet.match_score != null && (() => {
-                const s = Number(bottomSheet.match_score);
-                const comment = s >= 85 ? "성향과 조건이 아주 잘 맞아요 💕" : s >= 75 ? "꽤 잘 맞는 편이에요 👍" : s >= 65 ? "괜찮은 매칭이에요 😊" : "조건을 잘 확인해보세요 💪";
-                const level = getMatchLevel(s);
-                return <div style={{ background: `${level.color}12`, border: `1px solid ${level.color}30`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>{level.emoji}</span><p style={{ fontSize: 13, color: level.color, fontWeight: 600, margin: 0 }}>{comment}</p></div>;
-              })()}
               {viewMode === "worker" && bottomSheet.tags && (() => {
                 const tags = Array.isArray(bottomSheet.tags) ? bottomSheet.tags as string[] : JSON.parse(String(bottomSheet.tags || "[]")) as string[];
                 if (!tags.length && !bottomSheet.meal_provided) return null;

@@ -90,7 +90,6 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const [maxUrgentPct, setMaxUrgentPct] = useState(30); // STRATEGY.md 긴급 할증 기본값 넛지 — 강제 아님, 0으로 낮추면 자동 할증 끔
   const [autoPct, setAutoPct] = useState({ stage2: 10, stage3: 20, stage4: 30 }); // DB daeta_sos_config에서 로드
   const [duty, setDuty] = useState("");
-  const [secureOption, setSecureOption] = useState(false); // 사장님 안심 옵션 수수료 동의
   const [allowNew, setAllowNew] = useState(false); // 🔵 신규(Tier2) 알바생에게도 노출 opt-in
 
   // 자격 요건 마스터 및 선택 상태
@@ -197,7 +196,6 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         setWageTouched(true); // 수정 모드에서는 저장된 시급 유지
         setMaxUrgentPct(data.max_urgent_pct ?? 0);
         setDuty(data.duty || "");
-        setSecureOption(data.secure_option || false);
         setAllowNew(!!data.allow_new);
         if (data.required_credentials) {
           const parsed = typeof data.required_credentials === "string"
@@ -463,7 +461,6 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         base_wage: finalWage, // 자동 할증 계산의 기준값 — 수정 시 새로 입력한 시급이 새 기준이 됨
         max_urgent_pct: maxUrgentPct,
         duty: finalDuty,
-        secure_option: secureOption,
         allow_new: allowNew,
         required_credentials: JSON.stringify(selectedCreds),
       };
@@ -1045,19 +1042,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   </div>
                 </div>
 
-                {/* 안심 보장 수수료 옵션 */}
-                <div style={{ background: "rgba(236,72,153,0.06)", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "12px 14px", marginTop: 4 }}>
-                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <input type="checkbox" id="secureCheck" checked={secureOption} onChange={e => setSecureOption(e.target.checked)}
-                      style={{ width: 20, height: 20, cursor: "pointer", marginTop: 2, flexShrink: 0 }} />
-                    <div>
-                      <label htmlFor="secureCheck" style={{ fontSize: 13, fontWeight: 800, color: "var(--pink-text)", cursor: "pointer", display: "block", marginBottom: 4 }}>
-                        🛡️ 노쇼 안심 보장 수수료 가입 (건당 3,000원)
-                      </label>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, display: "block" }}>
-                        체크 시 공고에 [안심보장 🛡️] 마크가 표시되어 매칭률이 3배 급상승합니다. 알바생이 노쇼할 경우 플랫폼이 위로금(일당 전액 환불 및 쿠폰)을 보장합니다.
-                      </span>
-                    </div>
+                {/* 안심 보장 — 결제 상품이 아니라 신뢰도 노출 + 자동 재확산으로 대체 (DESIGN_PLAN.md §11) */}
+                <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.18)", borderRadius: 14, padding: "12px 14px", marginTop: 4 }}>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: "var(--success)", margin: "0 0 6px" }}>🛡️ 안심하고 요청하세요 (무료)</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>✅ 노쇼 이력 없는 검증 인력에게 먼저 노출돼요</span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>🚨 만약 노쇼가 나도, 신고 즉시 자동으로 다음 대체 인력을 찾아드려요 — 잡힐 때까지</span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>⛔ 노쇼한 알바생은 신뢰점수가 크게 깎이고 일정 기간 대타 참여가 제한돼요</span>
                   </div>
                 </div>
 

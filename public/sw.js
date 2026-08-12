@@ -57,6 +57,39 @@ self.addEventListener('notificationclick', (e) => {
     return;
   }
 
+  // 대타 출근/연장 원탭 액션 — matches 기준(팀원과 별도 엔드포인트)
+  if ((e.action === 'daeta_checkin' || e.action === 'daeta_extend') && notifData.matchId) {
+    const endpoint = e.action === 'daeta_checkin' ? '/api/daeta/checkin' : '/api/daeta/extend';
+    e.waitUntil(
+      fetch(endpoint, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId: notifData.matchId }),
+      })
+        .then((res) => res.json())
+        .then((result) => {
+          const ok = !result.error;
+          return self.registration.showNotification(
+            ok ? (e.action === 'daeta_checkin' ? '✅ 출근 처리 완료' : '⏳ 10분 연장했어요') : '⚠️ 처리 실패',
+            {
+              body: ok ? (result.message || (e.action === 'daeta_checkin' ? '출근 처리됐어요.' : '자동 노쇼 판정을 10분 미뤘어요.')) : (result.error || '다시 시도해주세요.'),
+              icon: '/icon-192.png',
+              tag: 'pazab-quick-action-result',
+            }
+          );
+        })
+        .catch(() =>
+          self.registration.showNotification('⚠️ 처리 실패', {
+            body: '네트워크 오류로 처리하지 못했어요. 앱에서 직접 시도해주세요.',
+            icon: '/icon-192.png',
+            tag: 'pazab-quick-action-result',
+          })
+        )
+    );
+    return;
+  }
+
   // 기본(본문 클릭) — 해당 URL로 이동
   const url = notifData.url || '/';
   e.waitUntil(

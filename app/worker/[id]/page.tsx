@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
-import { getMatchLevel, WORKER_TYPE_INFO } from "@/lib/utils";
+import { getFitChips, WORKER_TYPE_INFO } from "@/lib/utils";
 import { getGrade, BADGE_DEFS, getBadgesByRole } from "@/lib/trustScore";
 import { getWorkerTier, DaetaTier } from "@/lib/daetaTier";
 import TierBadge from "@/components/TierBadge";
@@ -12,29 +12,16 @@ import { btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles
 import AppHeader from "@/components/AppHeader";
 import PersonalFeedSection from "@/components/profile/PersonalFeedSection";
 
-function HeroScoreBadge({ score }: { score: number }) {
-  const level = getMatchLevel(score);
-  return (
-    <div style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(12px)", border: `1px solid ${level.color}40`, borderRadius: 12, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5 }}>
-      <span style={{ fontSize: 15, fontWeight: 900, color: level.color }}>{score}</span>
-      <span style={{ fontSize: 9, color: level.color, fontWeight: 700 }}>{level.emoji} {level.label}</span>
-    </div>
-  );
-}
-
-function MatchScoreSection({ score }: { score: number }) {
-  const level = getMatchLevel(score);
+function FitSection({ fit }: { fit: { wage_ok: boolean | null; days_overlap: number } }) {
+  const chips = getFitChips(fit);
+  if (chips.length === 0) return null;
   return (
     <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>💕 이 직원과의 궁합</p>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ fontSize: 56, fontWeight: 900, color: level.color, lineHeight: 1, letterSpacing: "-2px" }}>{score}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ background: "var(--progress-track)", borderRadius: 6, height: 8, marginBottom: 8, overflow: "hidden" }}>
-            <div style={{ background: `linear-gradient(90deg, ${level.color}80, ${level.color})`, height: "100%", borderRadius: 6, width: `${score}%`, transition: "width 0.8s ease" }} />
-          </div>
-          <p style={{ fontSize: 14, color: level.color, margin: 0, fontWeight: 700 }}>{level.emoji} {level.label}</p>
-        </div>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>🎯 조건 적합도</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {chips.map(c => (
+          <span key={c.text} style={{ fontSize: 13, fontWeight: 700, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", padding: "8px 14px", borderRadius: 20 }}>{c.icon} {c.text}</span>
+        ))}
       </div>
     </div>
   );
@@ -70,18 +57,18 @@ export default function WorkerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [matchScore, setMatchScore] = useState<number | null>(null);
+  const [fit, setFit] = useState<{ wage_ok: boolean | null; days_overlap: number } | null>(null);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [existingMatch, setExistingMatch] = useState<Record<string, unknown> | null>(null);
   const [employerProfileId, setEmployerProfileId] = useState<string | null>(null);
   const [employerProfiles, setEmployerProfiles] = useState<{ id: string; business_name: string }[]>([]);
   const [isOwner, setIsOwner] = useState(false);
+  const [activeTeamMemberId, setActiveTeamMemberId] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
   const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [teamCompat, setTeamCompat] = useState<Record<string, unknown> | null>(null);
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [workerTier, setWorkerTier] = useState<DaetaTier | null>(null);
@@ -257,29 +244,28 @@ export default function WorkerDetailPage() {
         setEmployerProfileId(empProfiles[0].id);
       }
 
-      if (uid !== id) {
-        try {
-          const tcRes = await fetch(`/api/team-compat?employerUserId=${uid}&targetUserId=${id}`);
-          const tcData = await tcRes.json();
-          if (tcData.success) setTeamCompat(tcData);
-        } catch {}
-      }
-
+      // 대타 SOS 매칭(daeta_posting_id 있음)은 단발성 요청이라 제외 — 정규 채용 매칭 상태만 반영
       const { data: match } = await supabase.from("matches")
-        .select("id, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score")
+        .select("id, progress_status, employer_id, worker_id, employer_interest, worker_interest")
         .or(`and(employer_id.eq.${uid},worker_id.eq.${id}),and(employer_id.eq.${id},worker_id.eq.${uid})`)
+        .is("daeta_posting_id", null)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (match) setExistingMatch({ ...match, isReceived: match.worker_interest === true });
 
-      if (match?.match_score != null) {
-        setMatchScore(Number(match.match_score));
-      } else {
+      if (uid !== id) {
+        // 이미 우리 매장 활성 팀원이면 채용제안/결렬됨 흐름 자체가 무의미 — matches 이력과 무관하게 우선 적용
+        const { data: activeTeam } = await supabase.from("team_members")
+          .select("id").eq("employer_id", uid).eq("worker_id", id).eq("status", "active").maybeSingle();
+        setActiveTeamMemberId(activeTeam?.id || null);
+      }
+
+      if (uid !== id) {
         try {
           const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: uid, userType: "employer" }) });
           const matchData = await res.json();
           if (matchData.success) {
             const found = matchData.results?.find((r: Record<string, unknown>) => r.id === id || r.user_id === id);
-            setMatchScore(found?.match_score != null ? Number(found.match_score) : null);
+            if (found) setFit({ wage_ok: (found.wage_ok as boolean | null) ?? null, days_overlap: Number(found.days_overlap || 0) });
           }
         } catch {}
       }
@@ -322,7 +308,7 @@ export default function WorkerDetailPage() {
   const sendLoveCall = async () => {
     setSending(true);
     try {
-      const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: userId, workerId: id, matchScore: matchScore || 0, senderType: "employer", employerProfileId }) });
+      const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: userId, workerId: id, senderType: "employer", employerProfileId }) });
       const data = await res.json();
       if (data.success) {
         setSent(true);
@@ -518,12 +504,12 @@ export default function WorkerDetailPage() {
 
           {/* 히어로 오버레이 컨트롤 */}
           <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, zIndex: 30 }}>
-            {matchScore != null && <HeroScoreBadge score={matchScore} />}
             {ownerMenu}
           </div>
 
           {/* 히어로 하단 */}
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px" }}>
+            <h1 style={{ fontSize: 22, fontWeight: 900, color: "#fff", margin: "0 0 8px", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>{name}</h1>
             <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
               {workerTier && <TierBadge tier={workerTier} />}
               {!!w.available_now && <span style={{ fontSize: 10, fontWeight: 800, background: "var(--success)", color: "#fff", padding: "3px 8px", borderRadius: 8 }}>즉시가능</span>}
@@ -717,8 +703,8 @@ export default function WorkerDetailPage() {
           <p style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", margin: 0, letterSpacing: "0.5px" }}>🔍 매칭 정보</p>
         </div>
 
-        {/* 궁합 */}
-        {matchScore != null && <MatchScoreSection score={matchScore} />}
+        {/* 조건 적합도 */}
+        {fit && <FitSection fit={fit} />}
 
 
       </>) : (
@@ -771,7 +757,12 @@ export default function WorkerDetailPage() {
       {/* 하단 버튼 (구직 정보 등록 여부와 무관하게 항상 노출 — 채용제안/대타요청은 별개 기능) */}
       <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "var(--nav-bg)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--nav-border)", zIndex: 40, transition: "bottom 0.3s ease" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex", gap: 10 }}>
-          {isOwner ? null : isReceived && status === "pending" ? (
+          {isOwner ? null : activeTeamMemberId ? (
+            <div style={{ display: "flex", gap: 8, flex: 1 }}>
+              <button disabled style={{ flex: 1, height: 52, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>✅ 우리 매장 직원이에요</button>
+              <button onClick={() => router.push(`/employer/team/${activeTeamMemberId}`)} style={{ flex: 1, height: 52, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>👥 팀원 관리로 이동</button>
+            </div>
+          ) : isReceived && status === "pending" ? (
             <div style={{ display: "flex", gap: 8, flex: 1 }}>
               <button onClick={() => handleRespondDirect("reject")} disabled={sending}
                 style={{ flex: 1, height: 52, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
@@ -1019,61 +1010,5 @@ export default function WorkerDetailPage() {
       )}
 
     </main>
-  );
-}
-
-function TeamCompatSection({ teamCompat }: { teamCompat: Record<string, unknown> }) {
-  const router = useRouter();
-  const totalScore = teamCompat.totalScore;
-  const employer = teamCompat.employer as Record<string, unknown>;
-  const members = (teamCompat.members as Record<string, unknown>[] || []);
-  const isLocked = totalScore == null;
-
-  return (
-    <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: 0, letterSpacing: "0.5px" }}>👥 팀과의 궁합</p>
-        {isLocked ? (
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--purple-text)", background: "var(--primary-light)", border: "1px solid var(--primary-border)", padding: "4px 10px", borderRadius: 12 }}>🔒 분석 후 공개</span>
-        ) : (
-          <span style={{ fontSize: 20, fontWeight: 900, color: Number(totalScore) >= 70 ? "var(--success)" : Number(totalScore) >= 55 ? "var(--warning)" : "var(--danger)" }}>{Number(totalScore)}점</span>
-        )}
-      </div>
-
-      {[{ label: "사장님", data: employer }, ...members.map((m, i) => ({ label: `팀원 ${i + 1}`, data: m }))].map(({ label, data }) => (
-        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--card-inner-border)", opacity: isLocked ? 0.6 : 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 18 }}>{isLocked ? "👤" : String(data?.emoji || "👤")}</span>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>{label}</p>
-              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
-                {isLocked ? "성향 정보 잠김" : String(data?.personalityType || "미분석")}
-              </p>
-            </div>
-          </div>
-          {!isLocked && data?.score != null ? (
-            <span style={{ fontSize: 15, fontWeight: 800, color: Number(data.score) >= 70 ? "var(--success)" : Number(data.score) >= 55 ? "var(--warning)" : "var(--danger)" }}>{Number(data.score)}점</span>
-          ) : (
-            <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--card-inner)", padding: "3px 8px", borderRadius: 20 }}>
-              {isLocked ? "🔒 잠김" : "미분석"}
-            </span>
-          )}
-        </div>
-      ))}
-
-      {isLocked ? (
-        <div style={{ marginTop: 12, padding: "14px 16px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 16, textAlign: "center" }}>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.5 }}>
-            성향 분석을 완료하시면 사장님 및 팀원들과의<br />
-            <strong>상세 궁합 및 궁합 점수</strong>가 열려요! 😊
-          </p>
-          <button onClick={() => router.push("/interview")} style={{ background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-            🎯 5분 성향 분석 시작하기
-          </button>
-        </div>
-      ) : (
-        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "10px 0 0", textAlign: "center" }}>* 사장님 50% + 팀원 평균 50%</p>
-      )}
-    </div>
   );
 }

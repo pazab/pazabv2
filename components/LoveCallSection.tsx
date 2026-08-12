@@ -82,7 +82,7 @@ export default function LoveCallSection({ title, calls, showRespond, respondingI
                     )}
                   </p>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
-                    궁합 {lc.match_score}점 · {new Date(lc.created_at).toLocaleDateString("ko-KR")} · 탭하면 상세 보기
+                    {new Date(lc.created_at).toLocaleDateString("ko-KR")} · 탭하면 상세 보기
                   </p>
                 </div>
                 <span style={{ fontSize: 11, fontWeight: 700, color: statusInfo.color, background: `${statusInfo.color}20`, padding: "3px 8px", borderRadius: 20, flexShrink: 0, whiteSpace: "nowrap" }}>

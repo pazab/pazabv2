@@ -560,7 +560,7 @@ export default function DaetaWorkerHome({ userId, roleView, onRoleChange }: Daet
         </div>
 
         <button
-          onClick={() => router.push("/mypage?tab=worker")}
+          onClick={() => router.push("/mypage/daeta-history?tab=worker")}
           style={{ width: "100%", padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
           <i className="ti ti-list" aria-hidden="true" /> 내 대타 내역
         </button>

@@ -140,74 +140,12 @@ export function getTrustGrade(score: number): { label: string; emoji: string; co
   return { label: "주의", emoji: "⚠️", color: "#ef4444" };
 }
 
-export function getMatchLevel(score: number): { label: string; emoji: string; color: string } {
-  if (score >= 80) return { label: "환상의 짝꿍", emoji: "💕", color: "#a3e635" };
-  if (score >= 65) return { label: "잘 맞아요", emoji: "👍", color: "#c4b5fd" };
-  if (score >= 50) return { label: "괜찮아요", emoji: "😊", color: "#fbbf24" };
-  return { label: "도전적이에요", emoji: "💪", color: "#94a3b8" };
-}
-
-// 매칭 이유 생성 (카드에 표시용)
-export function getMatchReasons(
-  item: any,
-  userProfile: any,
-  viewMode: "worker" | "employer"
-): string[] {
-  const reasons: string[] = [];
-  if (!userProfile) return reasons;
-
-  if (viewMode === "worker") {
-    const workerResult = userProfile.worker_result || {};
-    const cond = workerResult.practicalConditions || {};
-
-    // 시급 비교
-    const jobWage = item.wage || 0;
-    const minWage = cond.minWage || 0;
-    if (minWage && jobWage >= minWage) {
-      reasons.push(`💰 시급 ${jobWage.toLocaleString()}원 (희망 이상)`);
-    } else if (jobWage > 0 && !minWage) {
-      reasons.push(`💰 시급 ${jobWage.toLocaleString()}원`);
-    }
-
-    // 지역 비교 (region: "충남 아산시 신창면 기준 자차 30분 이내" 형식)
-    const jobRegion = item.region || "";
-    const wantedRegion = cond.region || "";
-    if (wantedRegion && jobRegion) {
-      // 지역명 앞 2글자(시/도)나 앞 4글자(시/군/구)로 비교
-      const regionKeyword = wantedRegion.slice(0, 5);
-      if (jobRegion.includes(wantedRegion.slice(0, 2))) {
-        reasons.push(`📍 희망 지역 인근`);
-      }
-    }
-
-    // 요일 비교
-    const jobDays = item.work_days || "";
-    const preferredDays = cond.preferredDays || cond.workStyle || "";
-    if (preferredDays && jobDays) {
-      const dayKeywords = ["토", "일", "평일", "주말", "월", "화", "수", "목", "금"];
-      const matched = dayKeywords.filter(d =>
-        preferredDays.includes(d) && jobDays.includes(d)
-      );
-      if (matched.length > 0) reasons.push(`📅 선호 요일 일치`);
-    }
-
-    // 즉시 채용
-    if (item.available_now) reasons.push(`⚡ 즉시 채용 가능`);
-
-    // 선호 업종
-    if (item.is_preferred_type) reasons.push(`⭐ 선호 업종이에요`);
-
-  } else {
-    // 사장님이 구직자 보는 경우
-    if (item.experience === "있음" && item.experience_months > 0) {
-      reasons.push(`📋 경력 ${item.experience_months}개월`);
-    }
-    if (item.available_now) reasons.push(`⚡ 즉시 근무 가능`);
-    if (item.is_long_term) reasons.push(`🔒 장기 근무 선호`);
-    if (item.is_preferred_type) reasons.push(`⭐ 우리 업종 선호해요`);
-  }
-
-  return reasons.slice(0, 3);
+// 조건 적합도를 하나의 점수로 뭉치지 않고 개별 신호로 표시하기 위한 칩 목록
+export function getFitChips(item: { wage_ok?: boolean | null; days_overlap?: number | null }): { icon: string; text: string }[] {
+  const chips: { icon: string; text: string }[] = [];
+  if (item.wage_ok === true) chips.push({ icon: "💰", text: "시급 충족" });
+  if ((item.days_overlap || 0) > 0) chips.push({ icon: "📅", text: `요일 ${item.days_overlap}일 겹침` });
+  return chips;
 }
 
 export function calcWorkPay({

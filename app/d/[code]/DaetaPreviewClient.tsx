@@ -17,7 +17,6 @@ interface Posting {
   work_hours: string
   wage: number
   duty: string
-  secure_option: boolean
   short_code: string
 }
 
@@ -112,12 +111,6 @@ export default function DaetaPreviewClient({ posting, shortCode }: Props) {
                 </div>
               </div>
 
-              {posting.secure_option && (
-                <div className="flex items-center gap-2 bg-yellow-50 rounded-lg p-3">
-                  <span>⚠️</span>
-                  <p className="text-sm text-yellow-700 font-medium">보건증 등 자격요건 필요</p>
-                </div>
-              )}
             </div>
           </div>
 

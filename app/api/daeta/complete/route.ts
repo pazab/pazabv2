@@ -4,6 +4,8 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
 import { daetaDayCount } from "@/lib/utils";
+import { DaetaPostingRow } from "@/lib/daetaEscalation";
+import { markNoShowAndReescalate } from "@/lib/daetaNoShow";
 
 const getServiceClient = () =>
   createClient(
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     const { data: posting } = await supabase
       .from("daeta_postings")
-      .select("work_hours, wage, work_date, work_date_end")
+      .select("id, user_id, business_name, region, lat, lng, work_date, work_date_end, work_hours, wage, base_wage, max_urgent_pct, duty, status, escalation_stage, stage_updated_at, allow_new, created_at, expires_at")
       .eq("id", match.daeta_posting_id)
       .maybeSingle();
 
@@ -118,29 +120,8 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ success: true, totalPay, hours, wage });
     } else {
-      const { error: matchErr } = await supabase.from("matches").update({
-        progress_status: "failed", message: "알바생 노쇼로 인한 구인 취소",
-      }).eq("id", matchId);
-      if (matchErr) return NextResponse.json({ error: matchErr.message }, { status: 500 });
-      await supabase.from("daeta_postings").update({ status: "cancelled" }).eq("id", match.daeta_posting_id);
-
-      const { data: worker } = await supabase.from("users").select("trust_score").eq("id", match.worker_id).maybeSingle();
-      const before = worker?.trust_score ?? 50;
-      const after = Math.max(0, before - 30);
-      await supabase.from("users").update({ trust_score: after }).eq("id", match.worker_id);
-      await supabase.from("trust_score_logs").insert({
-        user_id: match.worker_id, delta: -30, reason: "대타 매칭 후 무단 노쇼 발생", before_score: before, after_score: after, ref_id: matchId,
-      });
-
-      await createNotification({
-        userId: match.worker_id,
-        type: "daeta",
-        title: "🚨 대타 노쇼 신고 접수",
-        body: "확정된 대타에 무단 노쇼로 신고되어 신뢰점수가 감점됐어요.",
-        url: "/myteam",
-        data: { matchId },
-      });
-
+      if (!posting) return NextResponse.json({ error: "대타 공고를 찾을 수 없어요." }, { status: 404 });
+      await markNoShowAndReescalate(supabase, match, posting as DaetaPostingRow, "manual");
       return NextResponse.json({ success: true });
     }
   } catch (e: any) {

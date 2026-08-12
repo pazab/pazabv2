@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { getMatchLevel } from "@/lib/utils";
+import { getFitChips } from "@/lib/utils";
 import { getGrade } from "@/lib/trustScore";
 
 const GRADE_EMOJI: Record<string, string> = {
@@ -79,8 +79,7 @@ export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onL
   const router = useRouter();
   const id = String(item.id || item.user_id || "");
   const isLiked = likedIds ? likedIds.has(id) : false;
-  const score = item.match_score as number | null;
-  const level = score != null ? getMatchLevel(score) : null;
+  const fitChips = getFitChips(item);
   const grade = getGrade(Number(item.trust_score ?? 50));
   const [isHovered, setIsHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -105,14 +104,15 @@ export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onL
   const workStartDate = String(item.work_start_date || "");
   const workEndDate = String(item.work_end_date || "");
 
-  const ScoreBadge = () => score != null && level ? (
-    <div style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(12px)", border: `1px solid ${level.color}30`, borderRadius: 12, padding: "5px 9px", display: "flex", flexDirection: "column", alignItems: "center", minWidth: 44 }}>
-      <span style={{ fontSize: 14, fontWeight: 900, color: level.color, lineHeight: 1 }}>{score}</span>
-      <span style={{ fontSize: 8, color: level.color, fontWeight: 700, marginTop: 1 }}>{level.emoji} {level.label}</span>
+  const FitBadges = () => fitChips.length > 0 ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+      {fitChips.map(c => (
+        <div key={c.text} style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(12px)", border: "1px solid rgba(74,222,128,0.35)", borderRadius: 10, padding: "3px 8px", fontSize: 9, fontWeight: 700, color: "#86efac", whiteSpace: "nowrap" }}>
+          {c.icon} {c.text}
+        </div>
+      ))}
     </div>
-  ) : (
-    <div style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "5px 9px", fontSize: 10, color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>🔒 궁합</div>
-  );
+  ) : null;
 
   const RegionBadge = () => regionLevel && regionLevel !== "other" ? (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: `1px solid ${regionLevel === "same-dong" ? "rgba(74,222,128,0.4)" : "rgba(134,239,172,0.3)"}`, borderRadius: 20, padding: "4px 10px" }}>
@@ -311,7 +311,7 @@ export function JobCard({ item, mode, isLoggedIn, myRegion, isOwner, onLike, onL
               <span>👁</span>
               <span>{Number(item.view_count || 0)}</span>
             </div>
-            <ScoreBadge />
+            <FitBadges />
             {onLike && (
               <button onClick={() => onLike(id, isLiked)} style={{ display: "flex", alignItems: "center", gap: 6, background: isLiked ? "rgba(239,68,68,0.3)" : "rgba(0,0,0,0.4)", backdropFilter: "blur(12px)", border: `1px solid ${isLiked ? "rgba(239,68,68,0.6)" : "rgba(255,255,255,0.2)"}`, borderRadius: 14, padding: "8px 12px", color: isLiked ? "#fca5a5" : "rgba(255,255,255,0.8)", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>
                 {isLiked ? "❤" : "♡"}

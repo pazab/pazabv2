@@ -2,7 +2,7 @@
 import { useState } from "react";
 
 export interface LoveCall {
-  id: string; status: string; match_score: number; message: string;
+  id: string; status: string; message: string;
   created_at: string; counterpart: any;
   employer_id: string; worker_id: string;
   isSent: boolean;

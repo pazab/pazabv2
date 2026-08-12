@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
-import { getMatchLevel, EMPLOYER_TYPE_INFO } from "@/lib/utils";
+import { getFitChips, EMPLOYER_TYPE_INFO } from "@/lib/utils";
 import { BADGE_DEFS, getGrade } from "@/lib/trustScore";
 import { btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 import { EntityLink } from "@/components/EntityLink";
@@ -34,33 +34,16 @@ function getEmployerTypeFromBig5(big5: Record<string, number> | null): TypeInfo 
   return { desc, color, traits: traits.slice(0, 3), good: good + "알바생", bad, tagline: desc, emoji: "👔" };
 }
 
-function HeroScoreBadge({ score }: { score: number }) {
-  const level = getMatchLevel(score);
-  return (
-    <div style={{
-      background: "rgba(0,0,0,0.45)", backdropFilter: "blur(12px)",
-      border: `1px solid ${level.color}40`, borderRadius: 12,
-      padding: "5px 10px", display: "flex", alignItems: "center", gap: 5,
-    }}>
-      <span style={{ fontSize: 15, fontWeight: 900, color: level.color }}>{score}</span>
-      <span style={{ fontSize: 9, color: level.color, fontWeight: 700 }}>{level.emoji} {level.label}</span>
-    </div>
-  );
-}
-
-function MatchScoreSection({ score }: { score: number }) {
-  const level = getMatchLevel(score);
+function FitSection({ fit }: { fit: { wage_ok: boolean | null; days_overlap: number } }) {
+  const chips = getFitChips(fit);
+  if (chips.length === 0) return null;
   return (
     <div style={{ padding: "20px 0", borderBottom: "1px solid var(--border)" }}>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>💕 이 매장과의 궁합</p>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ fontSize: 56, fontWeight: 900, color: level.color, lineHeight: 1, letterSpacing: "-2px" }}>{score}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ background: "var(--progress-track)", borderRadius: 6, height: 8, marginBottom: 8, overflow: "hidden" }}>
-            <div style={{ background: `linear-gradient(90deg, ${level.color}80, ${level.color})`, height: "100%", borderRadius: 6, width: `${score}%`, transition: "width 0.8s ease" }} />
-          </div>
-          <p style={{ fontSize: 14, color: level.color, margin: 0, fontWeight: 700 }}>{level.emoji} {level.label}</p>
-        </div>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>🎯 조건 적합도</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {chips.map(c => (
+          <span key={c.text} style={{ fontSize: 13, fontWeight: 700, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", padding: "8px 14px", borderRadius: 20 }}>{c.icon} {c.text}</span>
+        ))}
       </div>
     </div>
   );
@@ -109,18 +92,18 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [matchScore, setMatchScore] = useState<number | null>(null);
+  const [fit, setFit] = useState<{ wage_ok: boolean | null; days_overlap: number } | null>(null);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [existingMatch, setExistingMatch] = useState<Record<string, unknown> | null>(null);
   const [isOwner, setIsOwner] = useState(false);
+  const [activeTeamMemberId, setActiveTeamMemberId] = useState<string | null>(null);
   const [hasWorkerProfile, setHasWorkerProfile] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showJobMenu, setShowJobMenu] = useState(false);
   const [storeFeeds, setStoreFeeds] = useState<any[]>([]);
   const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
   const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
-  const [teamCompat, setTeamCompat] = useState<Record<string, unknown> | null>(null);
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
@@ -212,34 +195,25 @@ export default function JobDetailPage() {
       if (uid) {
         const { data: wps } = await supabase.from("worker_profiles").select("id").eq("user_id", uid).maybeSingle();
         setHasWorkerProfile(!!wps);
-        if (uid !== data.user_id) {
-          try {
-            const tcRes = await fetch(`/api/team-compat?employerUserId=${data.user_id}&targetUserId=${uid}`);
-            const tcData = await tcRes.json();
-            if (tcData.success) setTeamCompat(tcData);
-          } catch {}
-        }
-        const { data: match } = await supabase.from("matches").select("id, progress_status, employer_id, worker_id, employer_interest, worker_interest, match_score")
+        // 대타 SOS 매칭(daeta_posting_id 있음)은 단발성 요청이라 제외 — 정규 채용 매칭 상태만 반영
+        const { data: match } = await supabase.from("matches").select("id, progress_status, employer_id, worker_id, employer_interest, worker_interest")
           .or(`job_id.eq.${data.id},employer_profile_id.eq.${data.employer_profile_id ?? data.id}`)
-          .eq("worker_id", uid).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          .eq("worker_id", uid).is("daeta_posting_id", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (match) setExistingMatch({ ...match, isReceived: match.employer_interest === true });
-        
-        if (match?.match_score != null) {
-          setMatchScore(Number(match.match_score));
-        } else {
-          try {
-            const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: uid, userType: "worker" }) });
-            const matchData = await res.json();
-            if (matchData.success) {
-              const found = matchData.results?.find((r: Record<string, unknown>) => r.user_id === data!.user_id || r.id === data!.user_id || r.id === id);
-              if (found && found.match_score != null) {
-                setMatchScore(Number(found.match_score));
-              } else {
-                setMatchScore(null);
-              }
-            }
-          } catch {}
-        }
+
+        // 이미 이 매장 활성 팀원이면 지원/결렬됨 흐름 자체가 무의미 — matches 이력과 무관하게 우선 적용
+        const { data: activeTeam } = await supabase.from("team_members")
+          .select("id").eq("employer_id", data.user_id).eq("worker_id", uid).eq("status", "active").maybeSingle();
+        setActiveTeamMemberId(activeTeam?.id || null);
+
+        try {
+          const res = await fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: uid, userType: "worker" }) });
+          const matchData = await res.json();
+          if (matchData.success) {
+            const found = matchData.results?.find((r: Record<string, unknown>) => r.user_id === data!.user_id || r.id === data!.user_id || r.id === id);
+            setFit(found ? { wage_ok: (found.wage_ok as boolean | null) ?? null, days_overlap: Number(found.days_overlap || 0) } : null);
+          }
+        } catch {}
       }
     }
     setLoading(false);
@@ -273,7 +247,7 @@ export default function JobDetailPage() {
           console.error("자동 프로필 생성 오류:", err);
         }
       }
-      const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: job?.user_id, workerId: userId, matchScore: matchScore || 0, senderType: "worker", employerProfileId: job?.employer_profile_id ?? job?.id, jobId: job?.id }) });
+      const res = await fetch("/api/lovecall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employerId: job?.user_id, workerId: userId, senderType: "worker", employerProfileId: job?.employer_profile_id ?? job?.id, jobId: job?.id }) });
       const data = await res.json();
       if (data.success) {
         setSent(true);
@@ -402,7 +376,6 @@ export default function JobDetailPage() {
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "48px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <button onClick={() => router.back()} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
           <div style={{ display: "flex", gap: 8 }}>
-            {matchScore != null && <HeroScoreBadge score={matchScore} />}
             <div style={{ position: "relative" }}>
               <button onClick={() => setShowJobMenu(!showJobMenu)} style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⋯</button>
               {showJobMenu && (
@@ -526,8 +499,8 @@ export default function JobDetailPage() {
         )}
 
 
-        {/* 궁합 */}
-        {matchScore != null && <MatchScoreSection score={matchScore} />}
+        {/* 조건 적합도 */}
+        {fit && <FitSection fit={fit} />}
 
         <div style={{ padding: "20px 0", borderBottom: "1px solid var(--border)" }}>
           <button onClick={openBotChat} style={{ width: "100%", background: "var(--chip-pink-bg)", border: "1px solid var(--chip-pink-border)", color: "var(--pink-text)", fontWeight: 600, padding: "11px", borderRadius: 12, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -551,7 +524,12 @@ export default function JobDetailPage() {
       {/* 하단 버튼 */}
       <div style={{ position: "fixed", bottom: navHidden ? 0 : 81, left: 0, right: 0, padding: "12px 16px 12px", background: "var(--nav-bg)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--border)", zIndex: 40, transition: "bottom 0.3s ease" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex", gap: 10 }}>
-          {isOwner ? null : isReceived && status === "pending" ? (
+          {isOwner ? null : activeTeamMemberId ? (
+            <div style={{ display: "flex", gap: 8, flex: 1 }}>
+              <button disabled style={{ flex: 1, height: 52, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "default" }}>✅ 이미 근무 중인 매장이에요</button>
+              <button onClick={() => router.push(`/store/${job.employer_profile_id}`)} style={{ flex: 1, height: 52, background: "var(--primary)", border: "none", color: "#fff", fontWeight: 800, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>🏪 매장 홈 가기</button>
+            </div>
+          ) : isReceived && status === "pending" ? (
             <div style={{ display: "flex", gap: 8, flex: 1 }}>
               <button onClick={() => handleRespondDirect("reject")} disabled={sending}
                 style={{ flex: 1, height: 52, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, borderRadius: 14, fontSize: 13, cursor: "pointer" }}>
@@ -688,61 +666,5 @@ export default function JobDetailPage() {
         </div>
       )}
     </main>
-  );
-}
-
-function TeamCompatSection({ teamCompat }: { teamCompat: Record<string, unknown> }) {
-  const router = useRouter();
-  const totalScore = teamCompat.totalScore;
-  const employer = teamCompat.employer as Record<string, unknown>;
-  const members = (teamCompat.members as Record<string, unknown>[] || []);
-  const isLocked = totalScore == null;
-
-  return (
-    <div style={{ padding: "20px 0", borderBottom: "1px solid var(--border)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: 0, letterSpacing: "0.5px" }}>👥 팀과의 궁합</p>
-        {isLocked ? (
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--purple-text)", background: "var(--chip-purple-bg)", border: "1px solid var(--chip-purple-border)", padding: "4px 10px", borderRadius: 12 }}>🔒 분석 후 공개</span>
-        ) : (
-          <span style={{ fontSize: 20, fontWeight: 900, color: Number(totalScore) >= 70 ? "var(--success)" : Number(totalScore) >= 55 ? "var(--warning)" : "var(--danger)" }}>{Number(totalScore)}점</span>
-        )}
-      </div>
-
-      {[{ label: "사장님", data: employer }, ...members.map((m, i) => ({ label: `팀원 ${i + 1}`, data: m }))].map(({ label, data }) => (
-        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border)", opacity: isLocked ? 0.6 : 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 18 }}>{isLocked ? "👤" : String(data?.emoji || "👤")}</span>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>{label}</p>
-              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
-                {isLocked ? "성향 정보 잠김" : String(data?.personalityType || "미분석")}
-              </p>
-            </div>
-          </div>
-          {!isLocked && data?.score != null ? (
-            <span style={{ fontSize: 15, fontWeight: 800, color: Number(data.score) >= 70 ? "var(--success)" : Number(data.score) >= 55 ? "var(--warning)" : "var(--danger)" }}>{Number(data.score)}점</span>
-          ) : (
-            <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--surface2)", padding: "3px 8px", borderRadius: 20 }}>
-              {isLocked ? "🔒 잠김" : "미분석"}
-            </span>
-          )}
-        </div>
-      ))}
-
-      {isLocked ? (
-        <div style={{ marginTop: 12, padding: "14px 16px", background: "var(--primary-light)", border: "1px solid var(--primary-border)", borderRadius: 16, textAlign: "center" }}>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.5 }}>
-            성향 분석을 완료하시면 사장님 및 팀원들과의<br />
-            <strong>상세 궁합 및 궁합 점수</strong>가 열려요! 😊
-          </p>
-          <button onClick={() => router.push("/interview")} style={{ background: "var(--primary)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontSize: 12 }}>
-            🎯 5분 성향 분석 시작하기
-          </button>
-        </div>
-      ) : (
-        <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "10px 0 0", textAlign: "center" }}>* 사장님 50% + 팀원 평균 50%</p>
-      )}
-    </div>
   );
 }

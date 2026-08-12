@@ -6,69 +6,21 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-interface HexacoData {
-  H: number; E: number; X: number; A: number; C: number; O: number;
-}
-
-const DEFAULT_HEXACO: HexacoData = { H: 3, E: 3, X: 3, A: 3, C: 3, O: 3 };
-
-function parseHexaco(raw: unknown): HexacoData {
-  if (!raw) return DEFAULT_HEXACO;
-  const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
-  return {
-    H: obj?.H ?? obj?.honesty ?? obj?.hexaco?.H ?? obj?.hexaco?.honesty ?? 3,
-    E: obj?.E ?? obj?.emotionality ?? obj?.hexaco?.E ?? obj?.hexaco?.emotionality ?? 3,
-    X: obj?.X ?? obj?.extraversion ?? obj?.hexaco?.X ?? obj?.hexaco?.extraversion ?? 3,
-    A: obj?.A ?? obj?.agreeableness ?? obj?.hexaco?.A ?? obj?.hexaco?.agreeableness ?? 3,
-    C: obj?.C ?? obj?.conscientiousness ?? obj?.hexaco?.C ?? obj?.hexaco?.conscientiousness ?? 3,
-    O: obj?.O ?? obj?.openness ?? obj?.hexaco?.O ?? obj?.hexaco?.openness ?? 3,
-  };
-}
-
-function calcHexacoScore(emp: HexacoData, wrk: HexacoData): number {
-  let score = 70;
-  const cDiff = Math.abs(emp.C - wrk.C);
-  score -= cDiff * 3;
-  if (wrk.H <= 1.5) score -= 8;
-  else if (wrk.H >= 3.5) score += 6;
-  const aSum = emp.A + wrk.A;
-  if (aSum >= 7) score += 6;
-  else if (aSum >= 5) score += 3;
-  const eDiff = Math.abs(emp.E - wrk.E);
-  if (eDiff <= 1) score += 4;
-  else if (eDiff >= 3) score -= 3;
-  const oDiff = Math.abs(emp.O - wrk.O);
-  if (oDiff <= 1) score += 3;
-  return Math.max(40, Math.min(100, Math.round(score)));
-}
-
-function calcConditionScore(emp: Record<string, unknown>, wrk: Record<string, unknown>): number {
-  let score = 0;
-  const empRegion = String(emp.region || "");
-  const wrkRegion = String(wrk.desired_region || wrk.region || "");
-  if (empRegion && wrkRegion) {
-    const empParts = empRegion.split(/\s+/);
-    const wrkParts = wrkRegion.split(/\s+/);
-    if (empParts[0] && wrkParts[0] && empParts[0] === wrkParts[0]) {
-      score += 10;
-      if (empParts[1] && wrkParts[1] && empParts[1] === wrkParts[1]) score += 10;
-    }
-  }
+// 시급 조건 충족 여부 — true(충족)/false(미달)/null(비교 불가, 어느 한쪽 값 없음)
+function calcWageOk(emp: Record<string, unknown>, wrk: Record<string, unknown>): boolean | null {
   const empWage = Number(emp.wage || 0);
   const wrkWage = Number(wrk.desired_wage || 0);
-  if (empWage > 0 && wrkWage > 0) {
-    if (empWage >= wrkWage) score += 12;
-    else if (empWage >= wrkWage * 0.9) score += 6;
-  } else if (empWage > 0 || wrkWage > 0) {
-    score += 6;
-  }
+  if (empWage <= 0 || wrkWage <= 0) return null;
+  return empWage >= wrkWage;
+}
+
+// 겹치는 근무요일 수
+function calcDaysOverlap(emp: Record<string, unknown>, wrk: Record<string, unknown>): number {
   const empDays = String(emp.work_days || "");
   const wrkDays = String(wrk.work_days || wrk.available_days || "");
-  if (empDays && wrkDays && empDays !== "협의") {
-    const overlap = empDays.split(/[,\s+]+/).filter(d => wrkDays.split(/[,\s+]+/).includes(d));
-    score += Math.min(8, overlap.length * 2);
-  }
-  return Math.min(40, score);
+  if (!empDays || !wrkDays || empDays === "협의") return 0;
+  const wrkDaySet = wrkDays.split(/[,\s+]+/).filter(Boolean);
+  return empDays.split(/[,\s+]+/).filter(d => d && wrkDaySet.includes(d)).length;
 }
 
 function calcPopularityScore(item: Record<string, unknown>): number {
@@ -95,7 +47,7 @@ function calcRegionScore(myRegion: string, targetRegion: string): number {
   return 0;
 }
 
-// 긴급/단기 공고 시간 가중치 (오늘/내일이면 추천순 상위에도 올라오게)
+// 긴급/단기 공고 시간 가중치 (오늘/내일이면 추천 목록 상위에도 올라오게)
 function calcUrgencyBonus(item: Record<string, unknown>): number {
   const jobType = String(item.job_type || "regular");
   if (jobType === "urgent") {
@@ -112,21 +64,22 @@ function calcUrgencyBonus(item: Record<string, unknown>): number {
   return 0;
 }
 
+// 목록 정렬 전용 내부 랭크 — 사용자에게 노출되는 "점수"가 아니라 서버 정렬 순서만 결정함.
+// 지역일치/시급충족/요일겹침/신뢰도/인기도/긴급도를 각각 독립 신호로 반영하되 하나의 숫자로 뭉쳐서 보여주지 않음.
+function calcRank(regionBonus: number, trustBonus: number, popScore: number, urgencyBonus: number, wageOk: boolean | null, daysOverlap: number): number {
+  return regionBonus * 3 + trustBonus * 5 + popScore * 2 + urgencyBonus * 4 + (wageOk === true ? 15 : wageOk === false ? -10 : 0) + daysOverlap * 3;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { userId, userType } = await req.json() as { userId: string; userType: "worker" | "employer" };
 
-    const { data: myUser } = await supabaseAdmin.from("users").select("worker_result, employer_result, trust_score").eq("id", userId).single();
-
-    let myHexaco = DEFAULT_HEXACO;
     let myRegion = "";
     let myProfile: Record<string, unknown> = {};
 
     if (userType === "worker") {
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
-      if (myUser?.worker_result?.hexaco) myHexaco = parseHexaco(myUser.worker_result.hexaco);
-      else if (myUser?.worker_result) myHexaco = parseHexaco(myUser.worker_result);
       myRegion = String(wp?.desired_region || "");
       myProfile = wp || {};
 
@@ -155,51 +108,36 @@ export async function POST(req: NextRequest) {
 
       const jobs = [...localJobs, ...otherJobs];
 
-      const results = (jobs || []).map((job: Record<string, unknown>) => {
-        const empHexaco = job.hexaco_data ? parseHexaco(job.hexaco_data) : (myUser?.employer_result ? parseHexaco(myUser.employer_result) : DEFAULT_HEXACO);
+      const ranked = (jobs || []).map((job: Record<string, unknown>) => {
         const empUser = job.users as Record<string, unknown> | null;
         const trustScore = Number(empUser?.trust_score ?? 50);
 
-        const hexacoScore = calcHexacoScore(empHexaco, myHexaco);
-        const condScore = calcConditionScore(job, myProfile);
+        const wageOk = calcWageOk(job, myProfile);
+        const daysOverlap = calcDaysOverlap(job, myProfile);
         const popScore = calcPopularityScore(job);
         const trustBonus = calcTrustScore(trustScore);
         const regionBonus = calcRegionScore(myRegion, String(job.region || ""));
         const urgencyBonus = calcUrgencyBonus(job);
 
-        const regionWeight = regionBonus >= 10 ? 12 : regionBonus >= 7 ? 4 : -15;
-
-        // 성향분석(HEXACO) 가중치는 매칭 스코어에서 제외 — calcHexacoScore는 유지하되 finalScore엔 미반영
-        const finalScore = Math.round(
-          70 +
-          condScore * 0.40 +
-          popScore * 0.20 +
-          trustBonus * 0.50 +
-          regionWeight +
-          urgencyBonus
-        );
-        // 기대 분포: 같은 구/군 75~95 / 같은 시도 60~80 / 다른 지역 40~65
-
-        const idHash = String(job.id || "").split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
-        const noise = ((idHash % 20) - 10);
-        const finalScoreWithNoise = Math.max(40, Math.min(99, finalScore + noise));
+        const rank = calcRank(regionBonus, trustBonus, popScore, urgencyBonus, wageOk, daysOverlap);
 
         return {
-          ...job,
-          id: job.id || job.user_id,
-          employer_avatar: empUser?.avatar_url,
-          employer_name: empUser?.nickname || empUser?.real_name,
-          trust_score: trustScore,
-          match_score: finalScoreWithNoise,
-          is_liked: false,
-          hexaco_score: hexacoScore,
-          condition_score: condScore,
-          popularity_score: popScore,
+          rank,
+          item: {
+            ...job,
+            id: job.id || job.user_id,
+            employer_avatar: empUser?.avatar_url,
+            employer_name: empUser?.nickname || empUser?.real_name,
+            trust_score: trustScore,
+            wage_ok: wageOk,
+            days_overlap: daysOverlap,
+            is_liked: false,
+          },
         };
       });
 
-      results.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
-      return NextResponse.json({ success: true, results });
+      ranked.sort((a, b) => b.rank - a.rank);
+      return NextResponse.json({ success: true, results: ranked.map(r => r.item) });
 
     } else {
       const { data: latestJobs } = await supabaseAdmin.from("jobs")
@@ -208,8 +146,6 @@ export async function POST(req: NextRequest) {
       const latestJob = latestJobs?.[0] || null;
       const { data: wps } = await supabaseAdmin.from("worker_profiles").select("desired_region").eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
       const wp = wps?.[0] || null;
-      if (latestJob?.hexaco_data) myHexaco = parseHexaco(latestJob.hexaco_data);
-      else if (myUser?.employer_result) myHexaco = parseHexaco(myUser.employer_result);
       myRegion = String(latestJob?.employer_profiles?.region || wp?.desired_region || "");
       myProfile = latestJob ? { ...latestJob.employer_profiles, ...latestJob } : {};
 
@@ -221,7 +157,7 @@ export async function POST(req: NextRequest) {
       if (gugun) {
         const { data } = await supabaseAdmin
           .from("worker_profiles")
-          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname, worker_result)`)
+          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname)`)
           .eq("is_active", true)
           .neq("user_id", userId)
           .ilike("desired_region", `%${gugun}%`)
@@ -230,7 +166,7 @@ export async function POST(req: NextRequest) {
       } else if (sido) {
         const { data } = await supabaseAdmin
           .from("worker_profiles")
-          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname, worker_result)`)
+          .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname)`)
           .eq("is_active", true)
           .neq("user_id", userId)
           .ilike("desired_region", `%${sido}%`)
@@ -240,7 +176,7 @@ export async function POST(req: NextRequest) {
 
       let otherQuery = supabaseAdmin
         .from("worker_profiles")
-        .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname, worker_result)`)
+        .select(`*, users!worker_profiles_user_id_fkey(trust_score, avatar_url, real_name, nickname)`)
         .eq("is_active", true)
         .neq("user_id", userId);
 
@@ -254,49 +190,37 @@ export async function POST(req: NextRequest) {
 
       const workers = [...localWorkers, ...otherWorkers];
 
-      const results = (workers || [])
+      const ranked = (workers || [])
         .filter((w: Record<string, unknown>) => w.is_public !== false && (!w.job_status || w.job_status === "active" || w.job_status === "open"))
         .map((worker: Record<string, unknown>) => {
           const wrkUser = worker.users as Record<string, unknown> | null;
-          const wrkHexaco = (wrkUser?.worker_result as any)?.hexaco 
-            ? parseHexaco((wrkUser?.worker_result as any).hexaco) 
-            : DEFAULT_HEXACO;
           const trustScore = Number(wrkUser?.trust_score ?? 50);
 
-          const hexacoScore = calcHexacoScore(myHexaco, wrkHexaco);
-          const condScore = calcConditionScore(myProfile, worker);
+          const wageOk = calcWageOk(myProfile, worker);
+          const daysOverlap = calcDaysOverlap(myProfile, worker);
           const popScore = calcPopularityScore(worker);
           const trustBonus = calcTrustScore(trustScore);
           const regionBonus = calcRegionScore(myRegion, String(worker.desired_region || worker.region || ""));
-          const regionWeight = regionBonus >= 10 ? 12 : regionBonus >= 7 ? 4 : -15;
 
-          // 성향분석(HEXACO) 가중치는 매칭 스코어에서 제외 — calcHexacoScore는 유지하되 finalScore엔 미반영
-          const finalScore = Math.round(
-            70 +
-            condScore * 0.40 +
-            popScore * 0.20 +
-            trustBonus * 0.50 +
-            regionWeight
-          );
-          // 기대 분포: 같은 구/군 75~95 / 같은 시도 60~80 / 다른 지역 40~65
-
-          const idHashW = String(worker.user_id || "").split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
-          const noiseW = ((idHashW % 20) - 10);
-          const finalScoreWithNoise = Math.max(40, Math.min(99, finalScore + noiseW));
+          const rank = calcRank(regionBonus, trustBonus, popScore, 0, wageOk, daysOverlap);
 
           return {
-            ...worker,
-            id: worker.user_id,
-            worker_avatar: wrkUser?.avatar_url,
-            worker_name: wrkUser?.nickname || wrkUser?.real_name,
-            trust_score: trustScore,
-            match_score: finalScoreWithNoise,
-            is_liked: false,
+            rank,
+            item: {
+              ...worker,
+              id: worker.user_id,
+              worker_avatar: wrkUser?.avatar_url,
+              worker_name: wrkUser?.nickname || wrkUser?.real_name,
+              trust_score: trustScore,
+              wage_ok: wageOk,
+              days_overlap: daysOverlap,
+              is_liked: false,
+            },
           };
         });
 
-      results.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
-      return NextResponse.json({ success: true, results });
+      ranked.sort((a, b) => b.rank - a.rank);
+      return NextResponse.json({ success: true, results: ranked.map(r => r.item) });
     }
 
   } catch (err) {

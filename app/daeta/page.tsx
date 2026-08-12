@@ -175,7 +175,6 @@ function DaetaPageContent() {
         body: JSON.stringify({
           employerId: currentUserId,
           workerId: c.workerUserId,
-          matchScore: c.score,
           senderType: "employer",
           employerProfileId: profileId,
           daetaPostingId: activePosting.id
@@ -759,7 +758,7 @@ function DaetaPageContent() {
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               {currentUserId && (
                 <button
-                  onClick={() => router.push(`/mypage?tab=${isEmployer ? "employer" : "worker"}`)}
+                  onClick={() => router.push(`/mypage/daeta-history?tab=${isEmployer ? "employer" : "worker"}`)}
                   style={{
                     background: "rgba(255,255,255,0.15)",
                     border: "1px solid rgba(255,255,255,0.2)",

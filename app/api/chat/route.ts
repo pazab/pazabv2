@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     // 현재 match 정보
     const { data: match } = await supabaseAdmin
       .from("matches")
-      .select("employer_id, worker_id, progress_status, match_score, interview_at, interview_memo, initiated_by, worker_left, employer_left, employer_profile_id, job_id, daeta_posting_id")
+      .select("employer_id, worker_id, progress_status, interview_at, interview_memo, initiated_by, worker_left, employer_left, employer_profile_id, job_id, daeta_posting_id")
       .eq("id", matchId)
       .single();
 

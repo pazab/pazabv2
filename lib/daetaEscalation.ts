@@ -116,7 +116,7 @@ async function maybeWarnExpansion(sb: SupabaseClient, posting: DaetaPostingRow, 
 }
 
 /** ① 팀 내 알림 — 사장님 소속 active 팀원 전원에게 발송. 알림 보낸 인원 수 반환 */
-export async function notifyTeam(sb: SupabaseClient, posting: DaetaPostingRow): Promise<number> {
+export async function notifyTeam(sb: SupabaseClient, posting: DaetaPostingRow, excludeWorkerId?: string): Promise<number> {
   const { data: members } = await sb
     .from("team_members")
     .select("worker_id")
@@ -124,7 +124,7 @@ export async function notifyTeam(sb: SupabaseClient, posting: DaetaPostingRow): 
     .eq("status", "active");
 
   const workerIds = [...new Set((members || []).map((m: { worker_id: string }) => m.worker_id))]
-    .filter(id => id && id !== posting.user_id);
+    .filter(id => id && id !== posting.user_id && id !== excludeWorkerId);
 
   await Promise.all(workerIds.map(workerId =>
     createNotification({
@@ -144,7 +144,8 @@ export async function notifyNearby(
   sb: SupabaseClient,
   posting: DaetaPostingRow,
   targetTier: "tier1" | "tier2",
-  radiusKm: number
+  radiusKm: number,
+  excludeWorkerId?: string
 ): Promise<number> {
   const { data: workers } = await sb
     .from("worker_profiles")
@@ -155,6 +156,7 @@ export async function notifyNearby(
 
   const nearby = (workers || []).filter((w: { user_id: string; lat: number; lng: number }) =>
     w.user_id !== posting.user_id &&
+    w.user_id !== excludeWorkerId &&
     distanceKm({ lat: w.lat, lng: w.lng }, { lat: posting.lat, lng: posting.lng }) <= radiusKm
   );
   if (nearby.length === 0) return 0;

@@ -280,7 +280,58 @@
 
 ---
 
+## 11. 정산·결제 인프라 설계 (2026-08-12)
+
+### 진단
+대타 등록 화면의 "노쇼 안심 보장 수수료"·"계좌 1원 실명인증"과, 명세서 자동발행의 "자동 지급"이 실제로는 전부 화면만 있고 뒷단이 없는 상태로 확인됨:
+
+- `components/daeta/DaetaRegisterModal.tsx` — `secureOption` 체크 시 `daeta_postings.secure_option`에 boolean만 저장, 실제 3,000원 결제도 노쇼 시 위로금 환불도 없음. 1원인증(`verifyAccount()`)은 입력값과 무관하게 항상 "인증완료"(예금주: 안심사장) 처리되는 목업.
+- `app/api/cron/payslip/route.ts` — 근태 기반 명세서 **계산·발행**은 자동화돼 있으나 실제 계좌이체는 없음("자동 지급"이 아니라 "자동 계산"). `payslips` 테이블(`supabase/v2_schema.sql:263`)에 지급여부를 추적하는 컬럼 자체가 없음(`paid_status`/`paid_at` 등 부재).
+- 코드베이스 전체에 PG(토스페이먼츠/포트원 등)·오픈뱅킹 연동이 전무함.
+- 계좌정보 자체는 이미 암호화 인프라가 있음 — `lib/bankCryptoServer.ts`/`lib/bankCryptoClient.ts`(AES-256-GCM), `app/contract/page.tsx`의 `bankName`/`bankNumber` 필드로 계약서에 저장됨. 결제 인프라를 얹을 때 이 계좌정보를 그대로 재사용 가능.
+
+### 단계별 설계
+
+**1단계 — 딥링크 원탭 송금 (PAZAB이 자금을 전혀 보관·경유하지 않음, 즉시 착수 가능)**
+- `payslips`에 `paid_status`('unpaid'|'paid' 기본 unpaid), `paid_at`, `paid_method`('deeplink'|'manual') 컬럼 추가.
+- 명세서 상세/팀원 상세 페이지에 "💸 지급하기" 버튼 → 바텀시트에서 계좌정보 복호화(`decryptBankFields`) 후 노출, 은행 앱 송금 딥링크(토스/카카오뱅크 등, 정확한 URL 스킴은 각 사 공식 문서로 착수 직전 재검증 필요) + **딥링크 실패 대비 필수 폴백**(계좌번호·금액 클립보드 복사 버튼)까지 함께 제공.
+- 실제 이체 성공 여부는 PAZAB이 알 수 없으므로 "지급완료로 표시"는 사장님 자기신고 방식(수동 체크) — 법적 리스크 없음, 사업자 계약 불필요.
+- 한계: 최종 이체 승인은 은행 앱에서 사장님이 직접 해야 함(완전자동 아님), 노쇼 위로금 자동환불은 이 방식으로 불가능(PAZAB이 돈을 안 갖고 있음).
+
+**2단계 — PG 지급대행 연동 (설계만 확정, 실제 착수는 사업자 계약 이후)**
+- 안심보장 수수료(3천원) 징수: 표준 PG 결제창(포트원/토스페이먼츠 등) 단건결제. 신규 테이블/필드 예상: `daeta_postings.payment_id`/`paid_amount`/`paid_at`, `/api/payments/charge`(결제요청), `/api/payments/webhook`(PG 콜백 검증) 신설.
+- 위로금 자동환불·임금 자동이체: PG사의 지급대행(대량이체) API 필요 — PG사와 정산계약·예치금 운용계좌가 전제조건.
+- **임금 자동이체는 근로기준법 제43조 임금 직접지급원칙과 충돌 소지** — "사용자(사장님) 동의 하에 PAZAB이 이체를 대행한다"는 이용약관 조항과 법률 검토가 선행돼야 함(저는 법률 자문 아님, 실제 진행 전 변호사 확인 필수).
+- 필요한 사업자측 준비물: PG 가맹계약, 정산 전용 은행계좌, 통신판매업 신고 여부 확인.
+
+**3단계 (장기) — 노쇼 보장 재원 구조**
+- 수수료를 모아 위로금을 지급하는 구조는 실질적으로 소액 보증상품 판매에 해당할 소지가 있어 보험업법 해당 여부 검토가 필요함. 대안으로 외부 소액단기보험사 제휴도 검토 가능하나 이 단계는 지금 우선순위 아님.
+
+### 결정
+지금 시점(콜드스타트, 마켓플레이스 밀도 확보가 최우선 — STRATEGY.md)엔 **1단계만 실제 착수 대상**. 2·3단계는 이 설계를 기준으로 사업자 계약·법률 검토가 끝난 뒤 착수. 위 설계와 별개로, "노쇼 시 위로금 전액 환불" 문구·체크박스와 가짜 1원인증은 실제 지급 능력이 없는 한 소비자 기만 소지가 있어 **"준비 중" 처리(비활성화 또는 라벨 교체)가 1단계 착수 여부와 무관하게 우선 필요** — 별도 세션에서 처리.
+
+### 후속 결정 — "노쇼 안심 보장 수수료" 자체를 폐기 (2026-08-13)
+결제 기반 노쇼 보장(3단계 재원 구조)은 보험업법·PG계약 부담 대비 지금 단계 가치가 낮다고 판단, **유료 위로금 모델 자체를 포기**하고 무료 대안 3가지로 대체(구현 완료):
+
+- **A. 신뢰 시그널 노출** — `DaetaRegisterModal.tsx`의 "🛡️ 노쇼 안심 보장 수수료" 체크박스(결제 유도)를 제거하고, "✅ 노쇼 이력 없는 검증 인력에게 먼저 노출돼요" 등 이미 존재하는 trust_score/Tier 시스템을 그대로 설명하는 무료 안내 박스로 교체.
+- **B. 억제책 노출** — 같은 박스에 "노쇼한 알바생은 신뢰점수가 크게 깎이고 일정 기간 대타 참여가 제한돼요" 문구 추가. 실제로 이미 동작하는 로직(`app/api/daeta/complete/route.ts`의 -30점, `app/api/daeta/cancel/route.ts`의 3~14일 정지)을 사장님에게 처음으로 명시.
+- **C. 속도 기반 자동 재확산 (핵심)** — 기존엔 노쇼 신고 시 `daeta_postings.status`가 `cancelled`로 끝나고 사장님이 알아서 다시 구해야 했음(`app/api/daeta/complete/route.ts` noshow 분기). 이제 노쇼 신고 즉시: 공고를 `pending`으로 재오픈 → `escalation_stage`를 (팀 재알림은 유지하되) 이미 동의한 상한(`allow_new`) 안에서 넓은 단계로 즉시 점프 → `lib/daetaEscalation.ts`의 `notifyTeam`/`notifyNearby`를 그 자리에서 바로 호출(5분 크론 대기 없이) → 사장님에게 "🔄 노쇼 확인, 바로 대체 인력을 찾고 있어요" 알림. 노쇼한 당사자는 `notifyTeam`/`notifyNearby`에 신설한 `excludeWorkerId` 파라미터로 재알림 대상에서 제외.
+- `secure_option` 컬럼은 DB에 남겨두되(과거 데이터 보존) 신규 저장 경로는 없앰 — `app/d/[code]/DaetaPreviewClient.tsx`의 관련 배지 렌더링도 같이 제거(원래 "안심보장"이 아니라 "보건증 자격요건 필요"라는 다른 문구를 오표시하던 버그였음).
+
+### 후속 결정 — 노쇼 자동판정 타임라인 신설 (2026-08-13)
+"C. 속도 기반 자동 재확산"은 지금까지 사장님이 수동으로 "노쇼 신고"를 눌러야만 발동했음 — 정작 "왔는지 안 왔는지"를 판가름할 타이밍 기준 자체가 없었음. 정규 팀원 출퇴근에는 이미 검증된 타임라인 로직(`app/api/cron/checkin/route.ts`: 10분전→정시→+5분지각경고→**+20분 자동결근**)이 있는데 대타(`daeta_postings`/`matches`)엔 체크인 개념 자체가 없어서 이 크론이 안 봤음. 같은 패턴을 대타에 이식하되 대타는 그 시간에 반드시 사람이 있어야 하는 긴급성이 커서 **+15분**으로 더 타이트하게 설정:
+
+| 시점 | 동작 |
+|---|---|
+| 시작 10분 전 / 정시 | 알바생에게 출근 알림 + 원탭 체크인(`daeta_checkin` 푸시 액션) |
+| +5분 | 알바생·사장님 둘 다 지연 경고. 사장님 알림엔 `daeta_extend`(10분 연장) 원탭 버튼 동봉 |
+| +15분 (연장 안 걸려있으면) | 자동 노쇼 확정 → `lib/daetaNoShow.ts`의 `markNoShowAndReescalate()` 호출(=수동 신고와 동일 처리: -30점 + 즉시 재확산) |
+
+구현: `matches`에 `checked_in_at`/`noshow_extend_until` 컬럼 신설(`supabase/patch_daeta_noshow_auto.sql`) · `app/api/daeta/checkin`(알바생 체크인) · `app/api/daeta/extend`(사장님 10분 연장, 앱 버튼+푸시 원탭 둘 다) · `app/api/cron/daeta-checkin`(5분 주기 판정) · `public/sw.js`에 `daeta_checkin`/`daeta_extend` 푸시 액션 핸들러 추가 · `DaetaHistoryView.tsx`에 알바생용 "✅ 출근했어요" 버튼과 사장님용 "⏳ 10분만 더"/출근상태 표시 추가. 노쇼 신고 로직은 수동(`app/api/daeta/complete`)·자동(크론) 양쪽이 `markNoShowAndReescalate()` 하나를 공유 — 중복 구현 방지.
+
+---
+
 ## 배포 전 수동 작업 (필수)
 
-1. **SQL 패치 실행**: `supabase/patch_daeta_sos.sql` → Supabase SQL Editor에서 실행 (escalation 컬럼 + daeta_sos_config 테이블). 미실행 시 대타 등록이 실패함. 추가로 `patch_daeta_auto_premium.sql`, `patch_daeta_employer_profile_link.sql`도 실행 필요(2026-08-07 추가분).
-2. **크론 등록**: cron-job.org에 `GET /api/cron/daeta-escalate` 5분 주기 — ✅ 2026-08-07 등록 완료(그 전엔 코드만 있고 실제 등록이 안 돼 있었음, 여러 핸드오버 문서에 "확인 필요"로만 남아있던 항목). `GET /api/cron/doc-expiry`(팀원 보건증 만료 알림, 매일 1회)도 신규 등록 완료. 둘 다 `Authorization: Bearer <CRON_SECRET>` 헤더 필요.
+1. **SQL 패치 실행**: `supabase/patch_daeta_sos.sql` → Supabase SQL Editor에서 실행 (escalation 컬럼 + daeta_sos_config 테이블). 미실행 시 대타 등록이 실패함. 추가로 `patch_daeta_auto_premium.sql`, `patch_daeta_employer_profile_link.sql`도 실행 필요(2026-08-07 추가분). **`patch_daeta_noshow_auto.sql`도 신규 실행 필요(2026-08-13 추가분, `matches.checked_in_at`/`noshow_extend_until`) — 미실행 시 자동 노쇼 판정 크론이 에러남.**
+2. **크론 등록**: cron-job.org에 `GET /api/cron/daeta-escalate` 5분 주기 — ✅ 2026-08-07 등록 완료(그 전엔 코드만 있고 실제 등록이 안 돼 있었음, 여러 핸드오버 문서에 "확인 필요"로만 남아있던 항목). `GET /api/cron/doc-expiry`(팀원 보건증 만료 알림, 매일 1회)도 신규 등록 완료. **`GET /api/cron/daeta-checkin`(대타 출근 타임라인, 5분 주기) 신규 등록 필요(2026-08-13 추가분) — 미등록 시 자동 노쇼 판정이 전혀 동작하지 않음.** 전부 `Authorization: Bearer <CRON_SECRET>` 헤더 필요.

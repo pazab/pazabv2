@@ -2359,8 +2359,17 @@ function MyTeamPageContent() {
             {/* ── 내 소속 (worker / both) ── */}
             {mode === "worker" && (
               <section>
+                {/* 접혀있을 땐 색이 있는 카드로 감싸서 "여기 눌러서 펼치는 게 있다"가 한눈에 보이게 함 — 우리 매장과 동일 패턴 */}
                 <button onClick={() => setWorkOpen(v => !v)}
-                  style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  style={{
+                    width:"100%", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between",
+                    background: workOpen ? "none" : "var(--primary-light)",
+                    border: workOpen ? "none" : "1px solid var(--primary-border)",
+                    borderRadius: workOpen ? 0 : 16,
+                    padding: workOpen ? "4px 0 12px" : "12px 14px",
+                    marginBottom: workOpen ? 0 : 12,
+                    transition: "all 0.2s ease",
+                  }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                     <div style={{ width:34, height:34, borderRadius:10, background:"var(--accent)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}><i className="ti ti-briefcase" style={{ color:"#fff" }} aria-hidden="true" /></div>
                     <div>
@@ -2368,9 +2377,9 @@ function MyTeamPageContent() {
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{current.length > 0 ? `${current.length}곳 재직 중` : "소속 없음"}</p>
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: workOpen ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-                    <span>{workOpen ? "접기" : "펼치기"}</span>
-                    <i className={`ti ${workOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: workOpen ? "#f87171" : "var(--purple-text, #8b5cf6)", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                    <span>{workOpen ? "접기" : "펼쳐서 보기"}</span>
+                    <i className={`ti ${workOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: workOpen ? 16 : 20, fontWeight: 900 }} aria-hidden="true" />
                   </div>
                 </button>
 
@@ -2611,8 +2620,18 @@ function MyTeamPageContent() {
             {/* ── 내 팀 (employer / both) ── */}
             {mode === "employer" && (
               <section>
+                {/* 접혀있을 땐 색이 있는 카드로 감싸서 "여기 눌러서 펼치는 게 있다"가 한눈에 보이게 함 —
+                    both 계정이 알바→사장님 전환 시 매장 있으면 자동으로 접힌 채 시작되는데, 작은 텍스트만으론 놓치기 쉬웠음 */}
                 <button onClick={() => setTeamOpen(v => !v)}
-                  style={{ width:"100%", background:"none", border:"none", padding:"4px 0 12px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  style={{
+                    width:"100%", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between",
+                    background: teamOpen ? "none" : "var(--primary-light)",
+                    border: teamOpen ? "none" : "1px solid var(--primary-border)",
+                    borderRadius: teamOpen ? 0 : 16,
+                    padding: teamOpen ? "4px 0 12px" : "12px 14px",
+                    marginBottom: teamOpen ? 0 : 12,
+                    transition: "all 0.2s ease",
+                  }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                     <div style={{ width:34, height:34, borderRadius:10, background:"var(--primary)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}><i className="ti ti-building-store" style={{ color:"#fff" }} aria-hidden="true" /></div>
                     <div>
@@ -2620,9 +2639,9 @@ function MyTeamPageContent() {
                       <p style={{ fontSize:11, color:"var(--text-muted)", margin:0 }}>{myStores.length > 0 ? `${myStores.length}곳 운영 중` : "매장 없음"}</p>
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: teamOpen ? "#f87171" : "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-                    <span>{teamOpen ? "접기" : "펼치기"}</span>
-                    <i className={`ti ${teamOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 16, fontWeight: 900 }} aria-hidden="true" />
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: teamOpen ? "#f87171" : "var(--purple-text, #8b5cf6)", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                    <span>{teamOpen ? "접기" : "펼쳐서 보기"}</span>
+                    <i className={`ti ${teamOpen ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: teamOpen ? 16 : 20, fontWeight: 900 }} aria-hidden="true" />
                   </div>
                 </button>
 

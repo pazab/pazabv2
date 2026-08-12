@@ -10,7 +10,7 @@ const supabase = createClient(
 // 러브콜 보내기 (POST)
 export async function POST(req: NextRequest) {
   try {
-    const { employerId, workerId, matchScore, message, senderType, employerProfileId, jobId, daetaPostingId } = await req.json();
+    const { employerId, workerId, message, senderType, employerProfileId, jobId, daetaPostingId } = await req.json();
 
     if (!employerId || !workerId) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
         employer_id: employerId,
         worker_id: workerId,
         progress_status: "pending",
-        match_score: matchScore || 0,
+        match_score: null, // 컬럼 DEFAULT가 0이라 명시적으로 null을 넣어야 함 — 매칭점수 개념 자체를 폐기했으므로 항상 null
         employer_interest: senderType === "employer",
         worker_interest: senderType === "worker",
         initiated_by: senderType === "employer" ? employerId : workerId,

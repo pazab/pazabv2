@@ -727,7 +727,7 @@ export default function ChatRoomPage() {
                   return <span style={{ fontSize: 10, color: g.color, flexShrink: 0 }}>{g.emoji}</span>;
                 })()}
               </div>
-              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>궁합 {match?.match_score}점 · 탭하면 프로필 보기</p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>탭하면 프로필 보기</p>
             </div>
           </div>
           {/* 계약서 아이콘 버튼 (hired 상태) */}

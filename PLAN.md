@@ -27,6 +27,7 @@
   - 하단 네비 홈 탭에 예전 5탭 시절 원형 FAB 스타일 복원(`components/BottomNav.tsx`).
 - 전 항목 `npx tsc --noEmit` 신규 에러 0건 확인(기존 무관 에러 2개 파일은 그대로). 브라우저 시각 확인 미실시.
 - **다음 세션 확인 필요**: "대타 내역" 화면(`DaetaHistoryView` 재구성본)을 사용자가 이상하다고 언급 — 구체적 증상 미파악, 재확인 필요.
+  - ✅ **해결(2026-08-12)**: 증상 특정됨 — "내 대타내역" 버튼이 8/8 리팩터링(대타내역 MY 이전) 때 딥링크(채팅방/알림)는 전부 `/mypage/daeta-history?tab=...`로 바꿔놓고, 화면 안의 진입 버튼 3개(`app/daeta/page.tsx`, `components/daeta/DaetaSosHome.tsx`, `components/daeta/DaetaWorkerHome.tsx`)만 옛날 방식인 `/mypage?tab=...`(MY 허브)로 남아있었음. 눌러도 이력 목록이 아니라 MY 메인으로 가서 거기서 대타이력 버튼을 한 번 더 눌러야 했던 것. 3개 버튼 전부 `/mypage/daeta-history?tab=...` 직행으로 수정.
 
 **소셜 프로필 + 파잡 커리어 통합, 근태 마감 로직 개선, 하단 네비 피드탭 제거, 크롭 버그 수정 (2026-08-04)**
 > 상세 내역은 [docs/20260804_0227_PAZAB_DEV_HANDOVER.md](docs/20260804_0227_PAZAB_DEV_HANDOVER.md) 참조.

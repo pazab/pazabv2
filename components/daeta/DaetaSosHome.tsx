@@ -315,6 +315,16 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [selectedPostingId, setSelectedPostingId] = useState<string>("");
   const [sendingSos, setSendingSos] = useState(false);
 
+  // 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸
+  const [guideDismissed, setGuideDismissed] = useState(true);
+  useEffect(() => {
+    setGuideDismissed(localStorage.getItem("pazab_daeta_guide_dismissed") === "1");
+  }, []);
+  const dismissGuide = () => {
+    localStorage.setItem("pazab_daeta_guide_dismissed", "1");
+    setGuideDismissed(true);
+  };
+
   const handleSosClick = (w: any) => {
     if (w.isMe) {
       router.push("/mypage");
@@ -755,6 +765,27 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px 0" }}>
 
+        {/* 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸 */}
+        {!guideDismissed && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(249,115,22,0.1), rgba(139,92,246,0.06))",
+            border: "1px solid rgba(249,115,22,0.3)",
+            borderRadius: 16,
+            padding: "14px 16px",
+            marginBottom: 16,
+            position: "relative",
+          }}>
+            <button onClick={dismissGuide} aria-label="닫기"
+              style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.6))", fontSize: 14, cursor: "pointer", padding: 6, lineHeight: 1 }}>✕</button>
+            <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 8px", paddingRight: 20 }}>👋 대타 SOS, 이렇게 써요</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🚨 사람이 갑자기 빵꾸나면? 우측 하단 <b>+ 버튼</b>으로 SOS 등록 — 우리 팀 → 동네 검증 인력 순으로 자동 확산돼요</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🟢 나도 대타 뛸 수 있으면 아래 스위치를 켜두세요 — 근처 사장님 요청에 내 카드가 노출돼요</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>👥 급하면 <b>인력</b> 탭에서 검증된 사람에게 바로 콕 찍어 요청할 수도 있어요</p>
+            </div>
+          </div>
+        )}
+
         {/* 🟢 내 대타 가능 ON/OFF 스위치 바 */}
         <button
           onClick={toggleAvailable}
@@ -1049,7 +1080,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         {/* 보조 경로 — "직접 고르기"(카드덱)는 위 목록과 같은 후보를 다시 스와이프로 보여줘 중복이라 강등(코드는 유지, 진입 버튼만 제거) */}
         <div style={{ display: "flex", gap: 10 }}>
           <button
-            onClick={() => router.push(`/mypage?tab=${roleView || (userType === "employer" ? "employer" : "worker")}`)}
+            onClick={() => router.push(`/mypage/daeta-history?tab=${roleView || (userType === "employer" ? "employer" : "worker")}`)}
             style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             <i className="ti ti-list" aria-hidden="true" /> 대타 내역 {historyCount > 0 ? `(${historyCount}건)` : ""}
           </button>
