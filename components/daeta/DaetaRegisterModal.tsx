@@ -87,7 +87,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const [minWage, setMinWage] = useState(10030);
   const [wageHint, setWageHint] = useState("");
   // 안 잡히고 단계가 오를수록(escalation_stage) 자동으로 오르는 시급의 상한(%) — 사장님이 등록 시 직접 동의한 값만큼만 오름
-  const [maxUrgentPct, setMaxUrgentPct] = useState(30); // STRATEGY.md 긴급 할증 기본값 넛지 — 강제 아님, 0으로 낮추면 자동 할증 끔
+  const [maxUrgentPct, setMaxUrgentPct] = useState(20); // 기본값 넛지 — 강제 아님, 0으로 낮추면 자동 할증 끔. 30%는 사장님 심리적 거부감 우려로 2026-08-13 20%로 완화
   const [autoPct, setAutoPct] = useState({ stage2: 10, stage3: 20, stage4: 30 }); // DB daeta_sos_config에서 로드
   const [duty, setDuty] = useState("");
   const [allowNew, setAllowNew] = useState(false); // 🔵 신규(Tier2) 알바생에게도 노출 opt-in

@@ -419,6 +419,13 @@ export default function StoreHomePage() {
               );
             })()}
 
+            {store.lat != null && store.lng != null && (
+              <iframe
+                src={`/map.html?lat=${store.lat}&lng=${store.lng}&addr=${encodeURIComponent(store.address || store.region || store.business_name)}`}
+                className="w-full rounded-xl border-0"
+                style={{ height: 160 }} />
+            )}
+
             {store.description && (
               <p className="text-xs text-text-sub leading-relaxed whitespace-pre-wrap">{store.description}</p>
             )}

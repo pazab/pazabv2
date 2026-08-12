@@ -115,17 +115,19 @@ interface PostingCardProps {
   onApply?: () => void;
   onGoToChat: (matchId: string) => void;
   onViewStore?: (employerProfileId: string) => void;
+  onShowDetail?: (p: SosPosting) => void;
   expansionInfo?: { label: string; minutesLeft: number } | null;
 }
 
-function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore, expansionInfo }: PostingCardProps) {
+function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore, onShowDetail, expansionInfo }: PostingCardProps) {
   const stage = p.escalation_stage || 1;
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
   return (
-    <div style={{
+    <div onClick={() => onShowDetail?.(p)} style={{
       width: width ?? "100%",
       flexShrink: 0,
+      cursor: onShowDetail ? "pointer" : "default",
       background: isMine
         ? "linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(239,68,68,0.06) 100%)"
         : "var(--surface, rgba(255,255,255,0.04))",
@@ -166,6 +168,11 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
             {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours} · {p.duty}
             {dist != null && ` · 🚶 ${dist < 10 ? dist.toFixed(1) : Math.round(dist)}km`}
           </div>
+          {p.region && (
+            <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.45))", marginTop: 3, display: "flex", alignItems: "center", gap: 3 }}>
+              <i className="ti ti-map-pin" style={{ fontSize: 11 }} aria-hidden="true" /> {p.region}
+            </div>
+          )}
           <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c", marginTop: 3 }}>
             시급 {p.wage.toLocaleString()}원
             {isMine && p.base_wage != null && p.wage > p.base_wage && (
@@ -185,12 +192,12 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
             !meta.acceptedMatchId && (
               <>
                 <button
-                  onClick={onEdit}
+                  onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
                   style={{ background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 10, padding: "6px 10px", color: "var(--text, #fff)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   수정
                 </button>
                 <button
-                  onClick={onCancel}
+                  onClick={(e) => { e.stopPropagation(); onCancel?.(); }}
                   style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   취소
                 </button>
@@ -198,7 +205,7 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
             )
           ) : (
             <button
-              onClick={onApply}
+              onClick={(e) => { e.stopPropagation(); onApply?.(); }}
               disabled={isApplied || isLoading}
               style={{
                 background: isApplied ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #f97316, #ef4444)",
@@ -223,7 +230,7 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
       {isMine ? (
         meta.acceptedMatchId ? (
           <button
-            onClick={() => onGoToChat(meta.acceptedMatchId!)}
+            onClick={(e) => { e.stopPropagation(); onGoToChat(meta.acceptedMatchId!); }}
             style={{ width: "100%", padding: "10px", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 14, color: "#4ade80", fontSize: 12, fontWeight: 800, cursor: "pointer", marginTop: 8 }}>
             🎉 {meta.acceptedWorkerName}님 매칭 완료! 채팅 →
           </button>
@@ -314,6 +321,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [targetWorkerForSos, setTargetWorkerForSos] = useState<any | null>(null);
   const [selectedPostingId, setSelectedPostingId] = useState<string>("");
   const [sendingSos, setSendingSos] = useState(false);
+  const [detailPosting, setDetailPosting] = useState<SosPosting | null>(null);
 
   // 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸
   const [guideDismissed, setGuideDismissed] = useState(true);
@@ -915,6 +923,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                         onEdit={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
                         onCancel={() => cancelPosting(p)}
                         onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                        onShowDetail={setDetailPosting}
                         expansionInfo={nextExpansionInfo(p)}
                       />
                     ))}
@@ -943,6 +952,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                             onApply={() => applyPosting(p)}
                             onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                             onViewStore={(id) => router.push(`/store/${id}`)}
+                            onShowDetail={setDetailPosting}
                           />
                         </div>
                       ))}
@@ -967,6 +977,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           onApply={() => applyPosting(p)}
                           onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                           onViewStore={(id) => router.push(`/store/${id}`)}
+                          onShowDetail={setDetailPosting}
                         />
                       ))}
                     </div>
@@ -1103,6 +1114,44 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             }
           }}
         />
+      )}
+
+      {detailPosting && (
+        <div onClick={() => setDetailPosting(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", padding: 20, width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>{detailPosting.business_name}</h3>
+              <button onClick={() => setDetailPosting(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
+            </div>
+
+            {detailPosting.lat != null && detailPosting.lng != null && (
+              <iframe
+                src={`/map.html?lat=${detailPosting.lat}&lng=${detailPosting.lng}&addr=${encodeURIComponent(detailPosting.region || detailPosting.business_name)}`}
+                style={{ width: "100%", height: 180, borderRadius: 14, border: "none", marginBottom: 12 }} />
+            )}
+
+            {detailPosting.region && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-muted, rgba(255,255,255,0.7))", marginBottom: 10 }}>
+                <i className="ti ti-map-pin" style={{ fontSize: 14 }} aria-hidden="true" /> {detailPosting.region}
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "12px 14px" }}>
+              <div style={{ fontSize: 13 }}>📅 {formatDaetaDateRange(detailPosting.work_date, detailPosting.work_date_end)}</div>
+              <div style={{ fontSize: 13 }}>⏰ {detailPosting.work_hours}</div>
+              <div style={{ fontSize: 13 }}>💼 {detailPosting.duty}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c" }}>💰 시급 {detailPosting.wage.toLocaleString()}원</div>
+            </div>
+
+            {detailPosting.employer_profile_id && (
+              <button
+                onClick={() => { const id = detailPosting.employer_profile_id!; setDetailPosting(null); router.push(`/store/${id}`); }}
+                style={{ width: "100%", marginTop: 12, padding: "12px", background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 14, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <i className="ti ti-home" aria-hidden="true" /> 매장 홈 가기
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {pendingConfirm && (
