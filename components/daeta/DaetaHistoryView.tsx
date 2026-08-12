@@ -44,7 +44,10 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
       if (matchesErr) throw matchesErr;
 
       const rawMatches = matches || [];
-      const daetaMatches = rawMatches.filter((m: any) => m.daeta_posting_id !== null);
+      // "이력"은 지난 기록(확정/완료/노쇼/취소)만 — 아직 결정 안 난 지원(pending)은 여기 섞이면
+      // "완료·매칭 기록 없음"처럼 이상한 상태로 보임. pending 지원자는 이제 /daeta 홈의
+      // "지원자 보기"(수락 대기 목록)가 전담하므로 이력에서는 제외한다.
+      const daetaMatches = rawMatches.filter((m: any) => m.daeta_posting_id !== null && m.progress_status !== "pending");
 
       if (daetaMatches.length === 0) {
         setRecords([]);

@@ -15,6 +15,7 @@ import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import SetNeighborhoodSheet from "@/components/daeta/SetNeighborhoodSheet";
 import { getWorkerTiers, TIER_LABEL } from "@/lib/daetaTier";
+import { getGrade } from "@/lib/trustScore";
 import { formatDaetaDateRange } from "@/lib/utils";
 
 
@@ -116,10 +117,11 @@ interface PostingCardProps {
   onGoToChat: (matchId: string) => void;
   onViewStore?: (employerProfileId: string) => void;
   onShowDetail?: (p: SosPosting) => void;
+  onShowApplicants?: (p: SosPosting) => void;
   expansionInfo?: { label: string; minutesLeft: number } | null;
 }
 
-function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore, onShowDetail, expansionInfo }: PostingCardProps) {
+function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore, onShowDetail, onShowApplicants, expansionInfo }: PostingCardProps) {
   const stage = p.escalation_stage || 1;
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
@@ -269,9 +271,16 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
                 {stage === 3 && "신규 포함 공개"}
                 {stage === 4 && "전체 공개 중"}
               </span>
-              <span style={{ fontSize: 10, fontWeight: 800, color: meta.total > 0 ? "#4ade80" : "var(--text-muted, rgba(255,255,255,0.45))" }}>
-                {meta.notified > 0 ? `${meta.notified}명에게 알림 · ` : ""}응답 {meta.total}건
-              </span>
+              {meta.total > 0 ? (
+                <button onClick={(e) => { e.stopPropagation(); onShowApplicants?.(p); }}
+                  style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)", borderRadius: 10, padding: "3px 8px", fontSize: 10, fontWeight: 800, color: "#4ade80", cursor: "pointer" }}>
+                  {meta.notified > 0 ? `${meta.notified}명에게 알림 · ` : ""}응답 {meta.total}건 · 지원자 보기 →
+                </button>
+              ) : (
+                <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted, rgba(255,255,255,0.45))" }}>
+                  {meta.notified > 0 ? `${meta.notified}명에게 알림 · ` : ""}응답 {meta.total}건
+                </span>
+              )}
             </div>
             {expansionInfo && (
               <div style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.4))", marginTop: 4, textAlign: "right" }}>
@@ -322,6 +331,9 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [selectedPostingId, setSelectedPostingId] = useState<string>("");
   const [sendingSos, setSendingSos] = useState(false);
   const [detailPosting, setDetailPosting] = useState<SosPosting | null>(null);
+  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number }[] } | null>(null);
+  const [loadingApplicants, setLoadingApplicants] = useState(false);
+  const [acceptingMatchId, setAcceptingMatchId] = useState<string | null>(null);
 
   // 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸
   const [guideDismissed, setGuideDismissed] = useState(true);
@@ -689,6 +701,62 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     await load();
   };
 
+  // 내 공고에 지원한 사람들 목록 — 예전엔 이 화면 어디에도 지원자 리스트/수락 버튼이 없어서
+  // (응답 N건 이라는 숫자만 표시) MY페이지 지원현황까지 따로 찾아가야만 수락할 수 있었음
+  const openApplicants = async (p: SosPosting) => {
+    setLoadingApplicants(true);
+    setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants: [] });
+    try {
+      const { data: pendingMatches } = await supabase
+        .from("matches")
+        .select("id, worker_id")
+        .eq("daeta_posting_id", p.id)
+        .eq("progress_status", "pending");
+
+      if (!pendingMatches || pendingMatches.length === 0) {
+        setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants: [] });
+        return;
+      }
+
+      const workerIds = pendingMatches.map(m => m.worker_id);
+      const { data: users } = await supabase.from("users").select("id, nickname, trust_score").in("id", workerIds);
+      const userMap = new Map((users || []).map(u => [u.id, u]));
+
+      const applicants = pendingMatches.map(m => ({
+        matchId: m.id,
+        workerId: m.worker_id,
+        nickname: userMap.get(m.worker_id)?.nickname || "알바생",
+        trustScore: userMap.get(m.worker_id)?.trust_score ?? 50,
+      }));
+      setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants });
+    } catch {
+      showToast("지원자 목록을 불러오지 못했어요.", "error");
+    } finally {
+      setLoadingApplicants(false);
+    }
+  };
+
+  const acceptApplicant = async (matchId: string) => {
+    setAcceptingMatchId(matchId);
+    try {
+      const res = await fetch("/api/lovecall", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId, action: "accept" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "수락 실패");
+      showToast("✅ 수락 완료! 채팅방이 열렸어요");
+      setApplicantsSheet(null);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "수락 중 오류";
+      showToast(message, "error");
+    } finally {
+      setAcceptingMatchId(null);
+    }
+  };
+
   const applyPosting = async (posting: SosPosting) => {
     setActionLoading(posting.id);
     try {
@@ -924,6 +992,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                         onCancel={() => cancelPosting(p)}
                         onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                         onShowDetail={setDetailPosting}
+                        onShowApplicants={openApplicants}
                         expansionInfo={nextExpansionInfo(p)}
                       />
                     ))}
@@ -1114,6 +1183,45 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             }
           }}
         />
+      )}
+
+      {applicantsSheet && (
+        <div onClick={() => setApplicantsSheet(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", padding: 20, width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>{applicantsSheet.businessName} 지원자</h3>
+              <button onClick={() => setApplicantsSheet(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
+            </div>
+
+            {loadingApplicants ? (
+              <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>불러오는 중...</div>
+            ) : applicantsSheet.applicants.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>아직 지원자가 없어요.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {applicantsSheet.applicants.map(a => {
+                  const grade = getGrade(a.trustScore);
+                  return (
+                    <div key={a.matchId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "12px 14px" }}>
+                      <div onClick={() => router.push(`/worker/${a.workerId}`)} style={{ cursor: "pointer" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 14, fontWeight: 800, textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3 }}>
+                          <i className="ti ti-home" style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" /> {a.nickname}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.5))", marginTop: 2 }}>{grade.emoji} {grade.name} · 신뢰도 {a.trustScore}점</div>
+                      </div>
+                      <button
+                        onClick={() => acceptApplicant(a.matchId)}
+                        disabled={acceptingMatchId === a.matchId}
+                        style={{ flexShrink: 0, background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "9px 16px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", opacity: acceptingMatchId === a.matchId ? 0.6 : 1 }}>
+                        {acceptingMatchId === a.matchId ? "..." : "✅ 수락"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {detailPosting && (

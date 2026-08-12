@@ -75,7 +75,6 @@ function DaetaPageContent() {
   const searchParams = useSearchParams();
   // SOS 홈 우선 구조 (DESIGN_PLAN.md P1): 로그인 유저는 역할별 홈, 카드덱은 "직접 고르기" 보조 경로
   const [view, setView] = useState<"boot" | "home" | "deck">("boot");
-  const [roleView, setRoleView] = useState<"employer" | "worker">("worker"); // userType이 both일 때 전환용
 
   // "ask" = GPS 허용 요청 화면, "loading" = 매칭 중, "feed" = 피드
   const [step, setStep] = useState<"ask" | "loading" | "feed">("ask");
@@ -294,7 +293,6 @@ function DaetaPageContent() {
         }
 
         if (employer) setIsEmployer(true);
-        setRoleView(employer ? "employer" : "worker");
         setView("home"); // 로그인 유저는 역할별 SOS 홈이 기본
         return;
       }
@@ -515,6 +513,7 @@ function DaetaPageContent() {
         userId={effectiveEmployerId || currentUserId}
         userType={userType}
         onOpenDeck={openDeck}
+        roleView={isEmployer ? "employer" : "worker"}
       />
     );
   }
