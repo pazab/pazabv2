@@ -894,7 +894,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         rightActions={
           <button
             onClick={() => setShowNeighborhoodSheet(true)}
-            style={{ display: "flex", alignItems: "center", gap: 3, background: "var(--surface, rgba(255,255,255,0.06))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 20, padding: "5px 10px", color: "var(--text-muted, rgba(255,255,255,0.7))", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+            style={{
+              display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
+              background: "linear-gradient(135deg, #0ea5e9, #38bdf8)",
+              border: "none", borderRadius: 20, padding: "6px 12px",
+              color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(14,165,233,0.35)",
+            }}>
             <i className="ti ti-map-pin" style={{ fontSize: 13 }} aria-hidden="true" />
             {neighborhoodLabel || "동네 설정"}
           </button>

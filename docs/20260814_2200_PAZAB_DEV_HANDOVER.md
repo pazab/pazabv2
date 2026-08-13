@@ -77,5 +77,15 @@ ALTER TABLE matches ADD COLUMN IF NOT EXISTS checked_out_at timestamptz;
 
 ---
 
-> 작성: 2026-08-14 22:00 KST
+## 추가 수정 (같은 세션, 푸시 이후)
+
+### 10. `/mypage/daeta-history` 역할 전환 UI를 헤더 전역 스위치로 통일
+- 앞서 만든 "⚡알바생/🏪사장님" 큰 탭바가 `useActiveRole` 상태는 공유하면서도 UI만 따로 커스텀이라 마이페이지·홈과 느낌이 달랐음. `RoleToggleButton`을 그대로 헤더 `rightActions`에 붙여서 완전히 동일한 컴포넌트로 교체.
+
+### 11. 대타 홈 "동네 설정" 버튼에 색상 적용
+- `DaetaSosHome.tsx` 헤더의 동네(위치) 표시 버튼이 무채색이라 존재감이 약했음 — 헤더 역할 스위치 버튼과 같은 그라디언트 pill 스타일, 다만 겹치지 않게 하늘색(#0ea5e9→#38bdf8) 계열로 적용.
+
+---
+
+> 작성: 2026-08-14 22:00 KST (추가 수정 반영)
 > 브랜치: main
