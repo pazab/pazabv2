@@ -210,11 +210,11 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
               onClick={(e) => { e.stopPropagation(); onApply?.(); }}
               disabled={isApplied || isLoading}
               style={{
-                background: isApplied ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #f97316, #ef4444)",
-                border: "none",
+                background: isApplied ? "var(--surface2, rgba(255,255,255,0.1))" : "linear-gradient(135deg, #f97316, #ef4444)",
+                border: isApplied ? "1px solid var(--border)" : "none",
                 borderRadius: 10,
                 padding: "8px 14px",
-                color: "#fff",
+                color: isApplied ? "var(--text-muted)" : "#fff",
                 fontSize: 12,
                 fontWeight: 800,
                 cursor: isApplied ? "default" : "pointer",
@@ -237,8 +237,8 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
             🎉 {meta.acceptedWorkerName}님 매칭 완료! 채팅 →
           </button>
         ) : (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, rgba(255,255,255,0.08))" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
               {visibleSteps.map((s, i) => {
                 const active = stage >= s.n;
                 const current = stage === s.n;
@@ -264,26 +264,51 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
                 );
               })}
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.45))" }}>
-                {stage === 1 && "팀 알림 중"}
-                {stage === 2 && "동네 검증 공개"}
-                {stage === 3 && "신규 포함 공개"}
-                {stage === 4 && "전체 공개 중"}
-              </span>
-              {meta.total > 0 ? (
-                <button onClick={(e) => { e.stopPropagation(); onShowApplicants?.(p); }}
-                  style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)", borderRadius: 10, padding: "3px 8px", fontSize: 10, fontWeight: 800, color: "#4ade80", cursor: "pointer" }}>
-                  {meta.notified > 0 ? `${meta.notified}명에게 알림 · ` : ""}응답 {meta.total}건 · 지원자 보기 →
-                </button>
-              ) : (
-                <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted, rgba(255,255,255,0.45))" }}>
-                  {meta.notified > 0 ? `${meta.notified}명에게 알림 · ` : ""}응답 {meta.total}건
+
+            {meta.total > 0 ? (
+              // 지원자가 실제로 있으면 "확인해야 할 일"이므로 스테퍼 하단의 작은 텍스트가 아니라
+              // 카드 안에서 가장 눈에 띄는 액션 버튼으로 — 처음 쓰는 사장님도 여기서 지원자를 볼 수
+              // 있다는 걸 바로 알아챌 수 있게.
+              <button onClick={(e) => { e.stopPropagation(); onShowApplicants?.(p); }}
+                style={{
+                  width: "100%",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  background: "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(22,163,74,0.14))",
+                  border: "1.5px solid rgba(34,197,94,0.55)",
+                  borderRadius: 14,
+                  padding: "11px 14px",
+                  cursor: "pointer",
+                }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{
+                    width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+                    background: "#22c55e", color: "#fff", fontSize: 12, fontWeight: 900,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {meta.total}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 900, color: "#4ade80" }}>지원자 확인하기</span>
                 </span>
-              )}
-            </div>
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#4ade80", display: "flex", alignItems: "center", gap: 2 }}>
+                  보러가기 <i className="ti ti-chevron-right" style={{ fontSize: 13 }} aria-hidden="true" />
+                </span>
+              </button>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.45))" }}>
+                  {stage === 1 && "팀 알림 중"}
+                  {stage === 2 && "동네 검증 공개"}
+                  {stage === 3 && "신규 포함 공개"}
+                  {stage === 4 && "전체 공개 중"}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted, rgba(255,255,255,0.45))" }}>
+                  {meta.notified > 0 ? `${meta.notified}명에게 알림 · ` : ""}응답 0건
+                </span>
+              </div>
+            )}
+
             {expansionInfo && (
-              <div style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.4))", marginTop: 4, textAlign: "right" }}>
+              <div style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.4))", marginTop: 6, textAlign: "right" }}>
                 ⏳ {expansionInfo.minutesLeft > 0 ? `${expansionInfo.label}까지 ${expansionInfo.minutesLeft}분` : `곧 ${expansionInfo.label}`}
               </div>
             )}
@@ -331,9 +356,10 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [selectedPostingId, setSelectedPostingId] = useState<string>("");
   const [sendingSos, setSendingSos] = useState(false);
   const [detailPosting, setDetailPosting] = useState<SosPosting | null>(null);
-  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number }[] } | null>(null);
+  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number; avatarUrl?: string }[] } | null>(null);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [acceptingMatchId, setAcceptingMatchId] = useState<string | null>(null);
+  const [rejectingMatchId, setRejectingMatchId] = useState<string | null>(null);
 
   // 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸
   const [guideDismissed, setGuideDismissed] = useState(true);
@@ -458,6 +484,12 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       setMatchMeta(meta);
 
+      // 내가 지원한 공고 — 세션 안에서 방금 지원한 것만이 아니라 이전에 지원해둔 것도
+      // 새로고침/재진입 시 그대로 "지원 완료"로 보여야 함 (예전엔 로컬 state만 믿어서 리셋됨)
+      setAppliedIds(new Set(
+        (matches || []).filter(m => m.worker_id === userId).map(m => m.daeta_posting_id)
+      ));
+
       // 내 공고에만 필요한 "알림 간 인원" — 응답건수(meta.total)의 분모. notifications RLS(본인만 SELECT)상
       // 사장님이 직접 못 읽으므로 서버 라우트(서비스롤+소유권검증) 경유해서 근사치를 채운다(비동기, 실패해도 무시)
       const myIds = ids.filter(id => postingList.find(p => p.id === id)?.user_id === userId);
@@ -482,6 +514,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       }
     } else {
       setMatchMeta({});
+      setAppliedIds(new Set());
     }
 
     // ⚡ 사장님 프로필(매장) 존재 여부 조회
@@ -719,7 +752,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       }
 
       const workerIds = pendingMatches.map(m => m.worker_id);
-      const { data: users } = await supabase.from("users").select("id, nickname, trust_score").in("id", workerIds);
+      const { data: users } = await supabase.from("users").select("id, nickname, trust_score, avatar_url").in("id", workerIds);
       const userMap = new Map((users || []).map(u => [u.id, u]));
 
       const applicants = pendingMatches.map(m => ({
@@ -727,6 +760,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         workerId: m.worker_id,
         nickname: userMap.get(m.worker_id)?.nickname || "알바생",
         trustScore: userMap.get(m.worker_id)?.trust_score ?? 50,
+        avatarUrl: userMap.get(m.worker_id)?.avatar_url || undefined,
       }));
       setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants });
     } catch {
@@ -757,13 +791,34 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     }
   };
 
+  const rejectApplicant = async (matchId: string) => {
+    setRejectingMatchId(matchId);
+    try {
+      const res = await fetch("/api/lovecall", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId, action: "reject" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "거절 실패");
+      showToast("지원을 거절했어요", "info");
+      setApplicantsSheet(prev => prev ? { ...prev, applicants: prev.applicants.filter(a => a.matchId !== matchId) } : prev);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "거절 중 오류";
+      showToast(message, "error");
+    } finally {
+      setRejectingMatchId(null);
+    }
+  };
+
   const applyPosting = async (posting: SosPosting) => {
     setActionLoading(posting.id);
     try {
-      // 확정된 대타를 취소한 이력이 있으면 정지 기간 동안 지원 제한
+      // 무단 노쇼 이력이 있으면 정지 기간 동안 지원 제한 (사전 취소는 신뢰점수만 깎일 뿐 정지는 안 걸림)
       const { data: userRow } = await supabase.from("users").select("daeta_cancel_suspended_until").eq("id", userId).maybeSingle();
       if (userRow?.daeta_cancel_suspended_until && new Date(userRow.daeta_cancel_suspended_until) > new Date()) {
-        showToast(`확정된 대타를 취소한 이력으로 ${new Date(userRow.daeta_cancel_suspended_until).toLocaleString("ko-KR")}까지 지원이 제한돼요.`, "error");
+        showToast(`무단 노쇼 이력으로 ${new Date(userRow.daeta_cancel_suspended_until).toLocaleString("ko-KR")}까지 지원이 제한돼요.`, "error");
         setActionLoading(null);
         return;
       }
@@ -792,18 +847,25 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const cancelPosting = (posting: SosPosting) => {
     setPendingConfirm({
       title: "대타 요청 취소",
-      message: "이 대타 요청을 취소할까요? 진행 중인 알림·응답도 함께 종료돼요.",
+      message: "이 대타 요청을 취소할까요? 지원자들에게도 취소 알림이 가요.",
       onConfirm: async () => {
         setPendingConfirm(null);
-        const { error } = await supabase
-          .from("daeta_postings")
-          .update({ status: "cancelled" })
-          .eq("id", posting.id);
-        if (error) {
-          showToast("취소 실패: " + error.message, "error");
-        } else {
-          showToast("대타 요청이 취소됐어요", "info");
+        try {
+          const res = await fetch("/api/daeta/cancel-posting", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ postingId: posting.id, userId }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "취소 실패");
+          showToast(
+            data.notified > 0 ? `대타 요청이 취소됐어요 (지원자 ${data.notified}명에게 알림)` : "대타 요청이 취소됐어요",
+            "info"
+          );
           await load();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "취소 실패";
+          showToast(message, "error");
         }
       },
     });
@@ -855,7 +917,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.6))", fontSize: 14, cursor: "pointer", padding: 6, lineHeight: 1 }}>✕</button>
             <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 8px", paddingRight: 20 }}>👋 대타 SOS, 이렇게 써요</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🚨 사람이 갑자기 빵꾸나면? 우측 하단 <b>+ 버튼</b>으로 SOS 등록 — 우리 팀 → 동네 검증 인력 순으로 자동 확산돼요</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🚨 갑자기 사람이 빠지면? 우측 하단 <b>+ 버튼</b>으로 SOS 등록 — 우리 팀 → 동네 검증 인력 순으로 자동 확산돼요</p>
               <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🟢 나도 대타 뛸 수 있으면 아래 스위치를 켜두세요 — 근처 사장님 요청에 내 카드가 노출돼요</p>
               <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>👥 급하면 <b>인력</b> 탭에서 검증된 사람에게 바로 콕 찍어 요청할 수도 있어요</p>
             </div>
@@ -939,6 +1001,33 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             </div>
           </div>
         </button>
+
+        {/* 내 지원 현황 — 지원 후 화면을 나가면 상태를 다시 확인할 방법이 없었음. 지원한 게 있을 때만 노출 */}
+        {appliedIds.size > 0 && (
+          <button
+            onClick={() => router.push("/mypage/applications?tab=worker")}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: "var(--surface, rgba(255,255,255,0.04))",
+              border: "1px solid var(--border, rgba(255,255,255,0.1))",
+              borderRadius: 14,
+              padding: "11px 14px",
+              marginBottom: 16,
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800, color: "var(--text, #fff)" }}>
+              📋 내 지원 현황
+              <span style={{ background: "#f97316", color: "#fff", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "2px 7px" }}>
+                {appliedIds.size}건 대기중
+              </span>
+            </span>
+            <span style={{ fontSize: 12, color: "var(--primary, #8b5cf6)", fontWeight: 800 }}>전체보기 →</span>
+          </button>
+        )}
 
         {/* 공고 ⇄ 인력 탭 전환 — 지원(pull)할 공고와 직접 지목(push)할 인력은 액션이 달라 한 화면에 섞지 않음 */}
         <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "var(--surface, rgba(255,255,255,0.04))", borderRadius: 16, padding: 4 }}>
@@ -1187,34 +1276,61 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       {applicantsSheet && (
         <div onClick={() => setApplicantsSheet(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", padding: 20, width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "80vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-              <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>{applicantsSheet.businessName} 지원자</h3>
-              <button onClick={() => setApplicantsSheet(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: "10px 20px 20px", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid var(--border)", color: "var(--text)", maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--border)", margin: "0 auto 14px" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>지원자</h3>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "3px 0 0" }}>
+                  {applicantsSheet.businessName} · {applicantsSheet.applicants.length}명 대기중
+                </p>
+              </div>
+              <button onClick={() => setApplicantsSheet(null)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "50%", width: 28, height: 28, color: "var(--text-muted)", fontSize: 16, cursor: "pointer", lineHeight: 1, flexShrink: 0 }}>✕</button>
             </div>
 
             {loadingApplicants ? (
-              <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>불러오는 중...</div>
+              <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: 13 }}>불러오는 중...</div>
             ) : applicantsSheet.applicants.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>아직 지원자가 없어요.</div>
+              <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: 13 }}>아직 지원자가 없어요.</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {applicantsSheet.applicants.map(a => {
                   const grade = getGrade(a.trustScore);
+                  const isBusy = acceptingMatchId === a.matchId || rejectingMatchId === a.matchId;
                   return (
-                    <div key={a.matchId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "12px 14px" }}>
-                      <div onClick={() => router.push(`/worker/${a.workerId}`)} style={{ cursor: "pointer" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 14, fontWeight: 800, textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3 }}>
-                          <i className="ti ti-home" style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" /> {a.nickname}
+                    <div key={a.matchId} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 16, padding: "14px", boxShadow: "var(--shadow-elevate, none)" }}>
+                      <div onClick={() => router.push(`/worker/${a.workerId}`)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 12 }}>
+                        <div style={{
+                          width: 44, height: 44, borderRadius: "50%", flexShrink: 0, overflow: "hidden",
+                          background: "linear-gradient(135deg, #f97316, #8b5cf6)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 17, fontWeight: 900, color: "#fff",
+                        }}>
+                          {a.avatarUrl ? (
+                            <img src={a.avatarUrl} alt={a.nickname} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            a.nickname.charAt(0)
+                          )}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.5))", marginTop: 2 }}>{grade.emoji} {grade.name} · 신뢰도 {a.trustScore}점</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>{a.nickname}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{grade.emoji} {grade.name} · 신뢰도 {a.trustScore}점</div>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => acceptApplicant(a.matchId)}
-                        disabled={acceptingMatchId === a.matchId}
-                        style={{ flexShrink: 0, background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "9px 16px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer", opacity: acceptingMatchId === a.matchId ? 0.6 : 1 }}>
-                        {acceptingMatchId === a.matchId ? "..." : "✅ 수락"}
-                      </button>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          onClick={() => rejectApplicant(a.matchId)}
+                          disabled={isBusy}
+                          style={{ flex: 1, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12, padding: "10px", color: "var(--danger)", fontSize: 13, fontWeight: 800, cursor: "pointer", opacity: isBusy ? 0.5 : 1 }}>
+                          {rejectingMatchId === a.matchId ? "..." : "거절"}
+                        </button>
+                        <button
+                          onClick={() => acceptApplicant(a.matchId)}
+                          disabled={isBusy}
+                          style={{ flex: 2, background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "10px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", opacity: isBusy ? 0.6 : 1 }}>
+                          {acceptingMatchId === a.matchId ? "..." : "✅ 수락"}
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

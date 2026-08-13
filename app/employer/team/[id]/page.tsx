@@ -1056,7 +1056,7 @@ export default function TeamMemberPage() {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                   <button onClick={(e) => { e.stopPropagation(); if (member.worker_id) router.push(`/worker/${member.worker_id}`); }}
-                    title="파잡 커리어 페이지로 이동"
+                    title="이력서 페이지로 이동"
                     style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, cursor: member.worker_id ? "pointer" : "default" }}>
                     <i className="ti ti-home" style={{ fontSize: 15, color: "#fff" }} aria-hidden="true" />
                     <p style={{ fontSize: 17, fontWeight: 800, color: "#fff", margin: 0, textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.4)", textUnderlineOffset: 3 }}>{workerName}</p>

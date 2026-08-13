@@ -435,11 +435,11 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       if (endDate < workDate) { fail("종료일은 시작일과 같거나 이후여야 합니다."); return; }
     }
 
-    // 확정된 대타를 취소한 이력이 있으면 정지 기간 동안 신규 SOS 등록 제한
+    // 무단 노쇼 이력이 있으면 정지 기간 동안 신규 SOS 등록 제한 (사전 취소는 신뢰점수만 깎일 뿐 정지는 안 걸림)
     if (!postingId) {
       const { data: userRow } = await supabase.from("users").select("daeta_cancel_suspended_until").eq("id", userId).maybeSingle();
       if (userRow?.daeta_cancel_suspended_until && new Date(userRow.daeta_cancel_suspended_until) > new Date()) {
-        fail(`확정된 대타를 취소한 이력으로 ${new Date(userRow.daeta_cancel_suspended_until).toLocaleString("ko-KR")}까지 새 대타 등록이 제한돼요.`);
+        fail(`무단 노쇼 이력으로 ${new Date(userRow.daeta_cancel_suspended_until).toLocaleString("ko-KR")}까지 새 대타 등록이 제한돼요.`);
         return;
       }
     }

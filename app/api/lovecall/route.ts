@@ -91,6 +91,9 @@ export async function POST(req: NextRequest) {
         if (jobRow?.employer_profiles && (jobRow.employer_profiles as any).business_name) {
           businessName = (jobRow.employer_profiles as any).business_name;
         }
+      } else if (daetaPostingId) {
+        const { data: dp } = await supabase.from("daeta_postings").select("business_name").eq("id", daetaPostingId).maybeSingle();
+        if (dp?.business_name) businessName = dp.business_name;
       }
 
       if (senderType === "worker") {
@@ -261,7 +264,7 @@ export async function PATCH(req: NextRequest) {
         updateData.matched_at = new Date().toISOString();
         // 수락 시 건당 공고 매칭중으로 변경
         const { data: acceptMatchData } = await supabase.from("matches")
-          .select("worker_id, employer_id, employer_profile_id, job_id, daeta_posting_id").eq("id", matchId).single();
+          .select("worker_id, employer_id, employer_profile_id, job_id, daeta_posting_id, initiated_by").eq("id", matchId).single();
         if (acceptMatchData) {
           // 대타 자동 근로계약서 백그라운드 체결
           if (acceptMatchData.daeta_posting_id) {
@@ -345,6 +348,17 @@ export async function PATCH(req: NextRequest) {
                 signed_at: new Date().toISOString(),
               });
 
+              // 채팅방에도 확정 사실을 남겨둠 — 채팅 상단 "대타 확정" 배너는 항상 같은 문구라
+              // 나중에 스크롤해서 언제 확정됐는지 되짚어볼 기록이 따로 없었음
+              await supabase.from("chats").insert({
+                match_id: matchId,
+                sender_id: acceptMatchData.employer_id,
+                receiver_id: acceptMatchData.worker_id,
+                message: `✅ 대타가 확정됐어요! 근로계약서가 자동으로 체결됐습니다.\n근무일: ${formattedDate}${formattedDate !== formattedEndDate ? ` ~ ${formattedEndDate}` : ""} · ${daetaPosting.work_hours}\n근무 당일 잊지 말고 출근/퇴근 처리해주세요.`,
+                message_type: "system",
+                is_read: false,
+              });
+
               // 매칭 확정된 공고는 더 이상 다른 알바생에게 노출되거나 수정·재취소 가능한 "구인중" 상태가 아님
               await supabase.from("daeta_postings").update({ status: "matched" }).eq("id", acceptMatchData.daeta_posting_id);
 
@@ -393,7 +407,11 @@ export async function PATCH(req: NextRequest) {
             if (latestJob?.id) await supabase.from("jobs").update({ job_status: "matched" }).eq("id", latestJob.id);
           }
 
-          // 사장님에게 수락 알림 발송
+          // 수락 알림 발송 — action=accept는 두 방향에서 다 호출됨:
+          // (1) 알바생이 지원(daeta 지원 포함) → 사장님이 수락 → 알바생에게 알려야 함
+          // (2) 사장님이 채용 제안 → 알바생이 수락 → 사장님에게 알려야 함
+          // 예전엔 항상 (2)로 가정하고 사장님에게만 보냈었음 — (1)에서 정작 수락된
+          // 알바생 본인은 아무 알림도 못 받는 버그였음.
           try {
             const { data: workerUser } = await supabase.from("users").select("nickname, real_name").eq("id", acceptMatchData.worker_id).maybeSingle();
             const workerName = workerUser?.nickname || workerUser?.real_name || "알바생";
@@ -401,15 +419,31 @@ export async function PATCH(req: NextRequest) {
             if (acceptMatchData.employer_profile_id) {
               const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", acceptMatchData.employer_profile_id).maybeSingle();
               if (ep?.business_name) businessName = ep.business_name;
+            } else if (acceptMatchData.daeta_posting_id) {
+              const { data: dp } = await supabase.from("daeta_postings").select("business_name").eq("id", acceptMatchData.daeta_posting_id).maybeSingle();
+              if (dp?.business_name) businessName = dp.business_name;
             }
-            await createNotification({
-              userId: acceptMatchData.employer_id,
-              type: "lovecall",
-              title: `🎉 채용 제안 수락! (${businessName})`,
-              body: `✨ ${workerName}님이 채용 제안을 수락했어요! 지금 채팅을 시작해보세요.`,
-              url: `/chat/${matchId}`,
-              data: { matchId }
-            });
+
+            const workerInitiated = acceptMatchData.initiated_by === acceptMatchData.worker_id;
+            if (workerInitiated) {
+              await createNotification({
+                userId: acceptMatchData.worker_id,
+                type: "lovecall",
+                title: `🎉 지원 수락! (${businessName})`,
+                body: `✨ ${businessName}에서 지원을 수락했어요! 지금 채팅을 시작해보세요.`,
+                url: `/chat/${matchId}`,
+                data: { matchId }
+              });
+            } else {
+              await createNotification({
+                userId: acceptMatchData.employer_id,
+                type: "lovecall",
+                title: `🎉 채용 제안 수락! (${businessName})`,
+                body: `✨ ${workerName}님이 채용 제안을 수락했어요! 지금 채팅을 시작해보세요.`,
+                url: `/chat/${matchId}`,
+                data: { matchId }
+              });
+            }
           } catch (err) {
             console.error("[accept notify error]", err);
           }
@@ -420,7 +454,7 @@ export async function PATCH(req: NextRequest) {
         {
           const { data: rejectMatchData } = await supabase
             .from("matches")
-            .select("worker_id, employer_id, employer_profile_id, initiated_by")
+            .select("worker_id, employer_id, employer_profile_id, daeta_posting_id, initiated_by")
             .eq("id", matchId).single();
           if (rejectMatchData) {
             try {
@@ -428,6 +462,9 @@ export async function PATCH(req: NextRequest) {
               if (rejectMatchData.employer_profile_id) {
                 const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", rejectMatchData.employer_profile_id).maybeSingle();
                 if (ep?.business_name) businessName = ep.business_name;
+              } else if (rejectMatchData.daeta_posting_id) {
+                const { data: dp } = await supabase.from("daeta_postings").select("business_name").eq("id", rejectMatchData.daeta_posting_id).maybeSingle();
+                if (dp?.business_name) businessName = dp.business_name;
               }
               const { data: workerUser } = await supabase.from("users").select("nickname, real_name").eq("id", rejectMatchData.worker_id).maybeSingle();
               const workerName = workerUser?.nickname || workerUser?.real_name || "알바생";
@@ -465,7 +502,7 @@ export async function PATCH(req: NextRequest) {
         updateData.progress_status = "cancelled";
         const { data: cancelMatchData } = await supabase
           .from("matches")
-          .select("worker_id, employer_id, employer_profile_id, job_id, initiated_by")
+          .select("worker_id, employer_id, employer_profile_id, job_id, daeta_posting_id, initiated_by")
           .eq("id", matchId).single();
         if (cancelMatchData) {
           await supabase.from("worker_profiles")
@@ -489,6 +526,9 @@ export async function PATCH(req: NextRequest) {
             if (cancelMatchData.employer_profile_id) {
               const { data: ep } = await supabase.from("employer_profiles").select("business_name").eq("id", cancelMatchData.employer_profile_id).maybeSingle();
               if (ep?.business_name) businessName = ep.business_name;
+            } else if (cancelMatchData.daeta_posting_id) {
+              const { data: dp } = await supabase.from("daeta_postings").select("business_name").eq("id", cancelMatchData.daeta_posting_id).maybeSingle();
+              if (dp?.business_name) businessName = dp.business_name;
             }
 
             const isWorkerCancelling = cancelMatchData.initiated_by === cancelMatchData.worker_id;

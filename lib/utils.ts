@@ -32,6 +32,25 @@ export function calcKoreanAge(birthDate: string | null | undefined): number | nu
   return age;
 }
 
+// "HH:MM ~ HH:MM" 형식의 근무시간 문자열을 분 단위까지 반영해 시간(0.1시간 단위 반올림)으로 변환.
+// 자정을 넘기는 경우(예: "22:00 ~ 02:00")도 처리. 기존엔 정수 시(hour)만 보고 분은 버리는 코드가
+// 대타 정산(app/api/daeta/complete)에 있어서 "12:30~18:00"도 그냥 6시간으로 계산되는 버그가 있었음.
+export function parseWorkHoursRange(hoursStr: string | null | undefined): number | null {
+  if (!hoursStr) return null;
+  const parts = hoursStr.split("~").map(s => s.trim());
+  if (parts.length < 2) return null;
+  const toMinutes = (t: string): number | null => {
+    const m = t.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  };
+  const startMin = toMinutes(parts[0]);
+  const endMin = toMinutes(parts[1]);
+  if (startMin == null || endMin == null) return null;
+  const diffMin = endMin > startMin ? endMin - startMin : 24 * 60 - startMin + endMin;
+  return Math.round((diffMin / 60) * 10) / 10;
+}
+
 // "HH:MM ~ HH:MM" 형식의 근무시간이 야간(22~06시)을 포함하는지 판정.
 // calcWorkPay의 hasNight와 동일 기준(22시 이후 시작 또는 06시 이전 종료) — 근로기준법상 연소근로자(만 18세 미만) 야간근무 제한 판단 기준.
 export function isNightWorkHours(workHours: string | null | undefined): boolean {
@@ -121,6 +140,16 @@ export function calcWeeklyHolidayPay(
     total += Math.round((hours / 40) * 8 * hourlyRate);
   }
   return total;
+}
+
+// 확정된 대타 사전 취소 페널티 — 통보 시점(근무 시작까지 남은 시간)에 따라 신뢰점수만 차등 감점.
+// 하드 정지는 없음(무단 노쇼는 별개로 markNoShowAndReescalate가 정지까지 적용) — 반복되면
+// Tier1(✅검증) 문턱(lib/daetaTier.ts TIER1_MIN_TRUST_SCORE=40) 아래로 자연스럽게 강등되는 정도로만 작동.
+// app/api/daeta/cancel/route.ts(서버 실제 적용)와 components/daeta/DaetaHistoryView.tsx(취소 전 미리보기) 공용.
+export function calcDaetaCancelTrustPenalty(hoursUntilShift: number): number {
+  if (hoursUntilShift >= 24) return 5;
+  if (hoursUntilShift >= 6) return 15;
+  return 30;
 }
 
 // 연장/야간 가산수당(근로기준법 제56조)은 상시근로자 5인 이상 사업장에만 의무 — 5인 미만이면

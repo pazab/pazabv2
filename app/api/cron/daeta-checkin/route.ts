@@ -4,9 +4,11 @@ import { createNotification } from "@/lib/notify";
 import { DaetaPostingRow } from "@/lib/daetaEscalation";
 import { markNoShowAndReescalate } from "@/lib/daetaNoShow";
 
-// 대타 출근 타임라인 크론 (5분 주기) — app/api/cron/checkin(정규 팀원용)과 동일한 검증된 패턴을
+// 대타 출근·퇴근 타임라인 크론 (5분 주기) — app/api/cron/checkin(정규 팀원용)과 동일한 검증된 패턴을
 // 대타(daeta) 매칭에 이식. 정규직원은 +20분을 결근 기준으로 쓰지만, 대타는 그 시간에 반드시
 // 사람이 있어야 하는 긴급성이 더 커서 +15분으로 더 타이트하게 잡음 (2026-08-13 결정).
+// 파일명은 daeta-checkin이지만 이미 등록된 외부 크론(cron-job.org) URL을 그대로 재사용하기 위해
+// 퇴근 체크아웃 리마인드 로직도 이 안에 같이 넣었음(2026-08-14) — 새 크론 등록 불필요.
 const AUTO_NOSHOW_MIN = 15;
 
 const getServiceClient = () =>
@@ -102,6 +104,78 @@ export async function GET(req: Request) {
     } else if (diffMins >= AUTO_NOSHOW_MIN && !extendActive) {
       await markNoShowAndReescalate(supabase, m, posting as DaetaPostingRow, "auto");
       results.push({ matchId: m.id, action: "auto_noshow_reescalated" });
+    }
+  }
+
+  // 퇴근 체크아웃 타임라인 — 출근했지만 아직 체크아웃 안 한 건. 노쇼처럼 자동판정할 근거는
+  // 없으니(이미 근무를 한 상태) 원탭 알림으로 계속 유도만 하고, 오래 방치되면 사장님에게도 알림.
+  const { data: checkoutPending } = await supabase
+    .from("matches")
+    .select("id, employer_id, worker_id, daeta_posting_id, checked_in_at, checked_out_at")
+    .not("daeta_posting_id", "is", null)
+    .eq("progress_status", "accepted")
+    .not("checked_in_at", "is", null)
+    .is("checked_out_at", null);
+
+  if (checkoutPending && checkoutPending.length > 0) {
+    const coPostingIds = Array.from(new Set(checkoutPending.map(m => m.daeta_posting_id)));
+    const { data: coPostings } = await supabase
+      .from("daeta_postings")
+      .select("id, business_name, work_date, work_date_end, work_hours")
+      .in("id", coPostingIds);
+    const coPostingById = new Map((coPostings || []).map(p => [p.id, p]));
+
+    for (const m of checkoutPending) {
+      const posting = coPostingById.get(m.daeta_posting_id);
+      if (!posting) continue;
+      const endDateStr = posting.work_date_end || posting.work_date;
+      if (endDateStr !== todayStr) continue; // 오늘 끝나는 건만 판정
+
+      const endPart = posting.work_hours?.split("~")[1]?.trim();
+      const endMatch = endPart?.match(/\b(\d{1,2}):(\d{2})\b/);
+      if (!endMatch) continue;
+      const endMins = parseInt(endMatch[1]) * 60 + parseInt(endMatch[2]);
+      const diffMins = nowMins - endMins;
+      const timeStr = `${endMatch[1].padStart(2, "0")}:${endMatch[2]}`;
+
+      if (diffMins >= -12 && diffMins <= -8) {
+        await createNotification({
+          userId: m.worker_id, type: "daeta",
+          title: "⏰ 대타 근무 종료 10분 전입니다!",
+          body: `${posting.business_name} 근무 종료 시각은 ${timeStr}이에요. 마무리하시면 아래 버튼으로 바로 퇴근 처리하세요.`,
+          url: "/mypage/daeta-history?tab=worker",
+          actions: [{ action: "daeta_checkout", title: "🏁 지금 퇴근" }],
+          data: { matchId: m.id, actionType: "daeta_checkout" },
+        });
+        results.push({ matchId: m.id, action: "checkout_alert_10m_before" });
+      } else if (diffMins >= -2 && diffMins <= 2) {
+        await createNotification({
+          userId: m.worker_id, type: "daeta",
+          title: "📢 대타 근무 종료 시각입니다",
+          body: `${posting.business_name} 근무 종료 예정 시각(${timeStr})이에요. 퇴근하시면 아래 버튼으로 바로 처리하세요.`,
+          url: "/mypage/daeta-history?tab=worker",
+          actions: [{ action: "daeta_checkout", title: "🏁 지금 퇴근" }],
+          data: { matchId: m.id, actionType: "daeta_checkout" },
+        });
+        results.push({ matchId: m.id, action: "checkout_alert_on_time" });
+      } else if (diffMins >= 30 && diffMins <= 34) {
+        await createNotification({
+          userId: m.worker_id, type: "daeta",
+          title: "⚠️ 퇴근 처리를 아직 안 하셨어요",
+          body: `근무 종료 시각이 30분 지났어요. 잊지 말고 퇴근 처리해주세요 — 사장님 정산에 필요해요.`,
+          url: "/mypage/daeta-history?tab=worker",
+          actions: [{ action: "daeta_checkout", title: "🏁 지금 퇴근" }],
+          data: { matchId: m.id, actionType: "daeta_checkout" },
+        });
+        await createNotification({
+          userId: m.employer_id, type: "daeta",
+          title: "⚠️ 대타 퇴근 처리 지연",
+          body: `${posting.business_name} 대타가 종료시각(${timeStr})이 30분 지나도록 퇴근 처리를 안 했어요. 확인 후 필요하면 직접 정산해주세요.`,
+          url: "/mypage/daeta-history?tab=employer",
+          data: { matchId: m.id },
+        });
+        results.push({ matchId: m.id, action: "checkout_alert_30m_late" });
+      }
     }
   }
 

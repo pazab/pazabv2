@@ -468,7 +468,7 @@ export default function WorkerDetailPage() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 150, width: "100%", maxWidth: 480, margin: "0 auto" }}>
-      <AppHeader title={isWorkerRole ? "파잡 커리어" : "프로필"} showBack showBellAndMenu={true} />
+      <AppHeader title={isWorkerRole ? "이력서" : "프로필"} showBack showBellAndMenu={true} />
       {ToastUI}
 
       {hasWorkerProfile ? (

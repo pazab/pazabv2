@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
-import { daetaDayCount } from "@/lib/utils";
+import { daetaDayCount, parseWorkHoursRange, getOvertimePremiumMultiplier } from "@/lib/utils";
 import { DaetaPostingRow } from "@/lib/daetaEscalation";
 import { markNoShowAndReescalate } from "@/lib/daetaNoShow";
 
@@ -18,7 +18,7 @@ const getServiceClient = () =>
 // 서버 라우트로 옮기고 알림 발송을 추가함(기존엔 로컬 alert만 뜨고 알바생에겐 아무 알림도 안 갔음).
 export async function POST(req: NextRequest) {
   try {
-    const { matchId, action, rating } = await req.json();
+    const { matchId, action, rating, hours: hoursOverride } = await req.json();
     if (!matchId || !["complete", "noshow"].includes(action)) {
       return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
     }
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const supabase = getServiceClient();
     const { data: match } = await supabase
       .from("matches")
-      .select("id, employer_id, worker_id, daeta_posting_id, progress_status")
+      .select("id, employer_id, worker_id, daeta_posting_id, employer_profile_id, progress_status, checked_in_at, checked_out_at")
       .eq("id", matchId)
       .maybeSingle();
 
@@ -59,19 +59,43 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (action === "complete") {
-      const hoursStr = posting?.work_hours || "12:00 ~ 18:00";
       const wage = posting?.wage || 10030;
-      let hours = 6;
-      try {
-        const times = hoursStr.split("~");
-        const sh = parseInt(times[0].split(":")[0]);
-        const eh = parseInt(times[1].split(":")[0]);
-        hours = eh > sh ? eh - sh : 24 - sh + eh;
-      } catch {}
+      // 예정 시간(공고에 적힌 시간대) — 분 단위까지 정확히 파싱. 실제 출퇴근 기록이 없을 때의
+      // 폴백이자, 초과근무 여부를 판정하는 기준선.
+      const scheduledHoursPerDay = parseWorkHoursRange(posting?.work_hours) ?? 6;
       // 시작일~종료일 기간 전체를 한 공고로 등록한 경우(work_date_end) 일수만큼 곱해서 정산
       const days = posting ? daetaDayCount(posting.work_date, posting.work_date_end) : 1;
-      const totalHours = hours * days;
-      const totalPay = wage * totalHours;
+
+      // 실제 출퇴근 기록이 있으면(하루짜리 공고 한정) 그 시간으로, 없으면 예정 시간×일수로 폴백.
+      // 사장님이 확인 화면에서 이 값을 직접 수정해서 보낼 수도 있음(hoursOverride).
+      let totalHours: number;
+      if (typeof hoursOverride === "number" && hoursOverride > 0) {
+        totalHours = Math.round(hoursOverride * 10) / 10;
+      } else if (days === 1 && match.checked_in_at && match.checked_out_at) {
+        const actualMs = new Date(match.checked_out_at).getTime() - new Date(match.checked_in_at).getTime();
+        totalHours = Math.max(0, Math.round((actualMs / 3600000) * 10) / 10);
+      } else {
+        totalHours = scheduledHoursPerDay * days;
+      }
+
+      const scheduledTotal = scheduledHoursPerDay * days;
+      const overtimeHours = Math.max(0, Math.round((totalHours - scheduledTotal) * 10) / 10);
+      const regularHours = totalHours - overtimeHours;
+
+      // 상시근로자 5인 이상 여부 (연장근로 가산수당 의무 대상 판정) — 매장 프로필에 없으면 안전하게 5인 이상으로 간주
+      let is5OrMore = true;
+      if (match.employer_profile_id) {
+        const { data: epRow } = await supabase.from("employer_profiles")
+          .select("is_5_or_more_employees")
+          .eq("id", match.employer_profile_id)
+          .maybeSingle();
+        is5OrMore = epRow?.is_5_or_more_employees !== false;
+      }
+      const overtimeMultiplier = getOvertimePremiumMultiplier(is5OrMore);
+
+      const basePay = Math.round(regularHours * wage);
+      const overtimePay = Math.round(overtimeHours * wage * overtimeMultiplier);
+      const totalPay = basePay + overtimePay;
       const now = new Date();
 
       const { error: psErr } = await supabase.from("payslips").insert({
@@ -82,7 +106,9 @@ export async function POST(req: NextRequest) {
         month: now.getMonth() + 1,
         wage,
         total_hours: totalHours,
-        base_pay: totalPay,
+        overtime_hours: overtimeHours,
+        base_pay: basePay,
+        overtime_pay: overtimePay,
         total_pay: totalPay,
         status: "issued",
         issued_at: now.toISOString(),
@@ -109,16 +135,29 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      await supabase.from("chats").insert({
+        match_id: matchId,
+        sender_id: match.employer_id,
+        receiver_id: match.worker_id,
+        message: overtimePay > 0
+          ? `💸 정산이 완료됐어요! 실수령액: ${totalPay.toLocaleString()}원 (초과근무 ${overtimeHours}시간 포함) — 수고하셨습니다.`
+          : `💸 정산이 완료됐어요! 실수령액: ${totalPay.toLocaleString()}원 — 수고하셨습니다.`,
+        message_type: "system",
+        is_read: false,
+      });
+
       await createNotification({
         userId: match.worker_id,
         type: "payslip",
         title: "💸 대타 급여 정산 완료",
-        body: `대타 근무 정산이 완료됐어요. 실수령액: ${totalPay.toLocaleString()}원`,
+        body: overtimePay > 0
+          ? `대타 근무 정산이 완료됐어요. 실수령액: ${totalPay.toLocaleString()}원 (초과근무 ${overtimeHours}시간 포함)`
+          : `대타 근무 정산이 완료됐어요. 실수령액: ${totalPay.toLocaleString()}원`,
         url: "/myteam",
         data: { matchId },
       });
 
-      return NextResponse.json({ success: true, totalPay, hours, wage });
+      return NextResponse.json({ success: true, totalPay, totalHours, overtimeHours, basePay, overtimePay, wage });
     } else {
       if (!posting) return NextResponse.json({ error: "대타 공고를 찾을 수 없어요." }, { status: 404 });
       await markNoShowAndReescalate(supabase, match, posting as DaetaPostingRow, "manual");

@@ -2,6 +2,10 @@
  * lib/daetaNoShow.ts — 대타 노쇼 처리 공통 로직 (수동 신고 / 자동판정 공용)
  * "돈으로 위로금을 주는 대신 속도로 확실히 채워준다" 방향(DESIGN_PLAN.md §11 2026-08-13) —
  * 노쇼 확정 즉시 신뢰점수 감점 + 알림 + 공고 재오픈/재확산까지 한 번에 처리한다.
+ *
+ * 노쇼(당일 무단 불참)는 사전 취소(app/api/daeta/cancel — 신뢰점수만 차등 감점, 정지 없음)보다
+ * 명백히 더 나쁜 행동이라 실제로 정지가 걸림(2026-08-14) — 예전엔 알림 문구만 "참여 제한된다"고
+ * 안내하고 실제로는 daeta_cancel_suspended_until을 전혀 건드리지 않던 버그였음.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
@@ -14,6 +18,11 @@ interface NoShowMatch {
   daeta_posting_id: string;
 }
 
+const NOSHOW_REASON = "대타 매칭 후 무단 노쇼 발생";
+const LOOKBACK_DAYS = 90;
+// 첫 건부터 정지 — 사전 취소와 달리 "유예"를 주지 않음 (당일 무단 불참은 사장님 쪽에 즉시 피해가 감)
+const NOSHOW_SUSPEND_DAYS_TIERS = [3, 7, 14, 30];
+
 export async function markNoShowAndReescalate(
   sb: SupabaseClient,
   match: NoShowMatch,
@@ -25,12 +34,24 @@ export async function markNoShowAndReescalate(
     message: "알바생 노쇼로 인한 구인 취소",
   }).eq("id", match.id);
 
+  // 정지 단계는 이번 건을 기록하기 전(=이전 발생 횟수) 기준으로 판정
+  const lookbackStart = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { count: priorNoShows } = await sb
+    .from("trust_score_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", match.worker_id)
+    .eq("reason", NOSHOW_REASON)
+    .gte("created_at", lookbackStart);
+  const tierIndex = Math.min(priorNoShows ?? 0, NOSHOW_SUSPEND_DAYS_TIERS.length - 1);
+  const suspendDays = NOSHOW_SUSPEND_DAYS_TIERS[tierIndex];
+
   const { data: worker } = await sb.from("users").select("trust_score").eq("id", match.worker_id).maybeSingle();
   const before = worker?.trust_score ?? 50;
   const after = Math.max(0, before - 30);
-  await sb.from("users").update({ trust_score: after }).eq("id", match.worker_id);
+  const suspendedUntil = new Date(Date.now() + suspendDays * 24 * 60 * 60 * 1000).toISOString();
+  await sb.from("users").update({ trust_score: after, daeta_cancel_suspended_until: suspendedUntil }).eq("id", match.worker_id);
   await sb.from("trust_score_logs").insert({
-    user_id: match.worker_id, delta: -30, reason: "대타 매칭 후 무단 노쇼 발생", before_score: before, after_score: after, ref_id: match.id,
+    user_id: match.worker_id, delta: -30, reason: NOSHOW_REASON, before_score: before, after_score: after, ref_id: match.id,
   });
 
   await createNotification({
@@ -38,8 +59,8 @@ export async function markNoShowAndReescalate(
     type: "daeta",
     title: "🚨 대타 노쇼 처리",
     body: reason === "auto"
-      ? "출근 시각이 15분 넘게 지나도록 출근 처리가 안 돼 무단 노쇼로 자동 처리됐어요. 신뢰점수가 감점되고 대타 참여도 일정 기간 제한돼요."
-      : "확정된 대타에 무단 노쇼로 신고되어 신뢰점수가 감점됐어요. 대타 참여도 일정 기간 제한돼요.",
+      ? `출근 시각이 15분 넘게 지나도록 출근 처리가 안 돼 무단 노쇼로 자동 처리됐어요. 신뢰점수 -30점, ${suspendDays}일간 대타 참여가 제한돼요.`
+      : `확정된 대타에 무단 노쇼로 신고되어 신뢰점수 -30점, ${suspendDays}일간 대타 참여가 제한돼요.`,
     url: "/myteam",
     data: { matchId: match.id },
   });
