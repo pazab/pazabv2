@@ -107,12 +107,15 @@ export async function POST(req: NextRequest) {
           is_read: false,
         });
 
+        // 대타 지원은 프로필 페이지가 아니라 지원자 목록(수락/거절 버튼이 실제로 있는 화면)으로 보냄 —
+        // /worker/[id] 페이지는 대타 매칭을 아예 제외하고 정규 채용 매칭만 다뤄서(daeta_posting_id is null),
+        // 예전엔 알림을 눌러도 그 지원을 수락할 방법이 없는 막다른 길이었음.
         await createNotification({
           userId: employerId,
           type: "lovecall",
           title: `📥 새 지원서 도착 (${businessName})`,
           body: `💡 ${workerName}님이 매장에 지원했습니다. 지금 확인해보세요!`,
-          url: `/worker/${workerId}`,
+          url: daetaPostingId ? `/daeta?applicants=${daetaPostingId}` : `/worker/${workerId}`,
           data: { matchId: data.id }
         });
         await createNotification({
@@ -275,9 +278,40 @@ export async function PATCH(req: NextRequest) {
               .maybeSingle();
 
             if (daetaPosting) {
+              // 동시 수락 가드 — 사장님이 두 지원자를 거의 동시에(다른 탭·더블탭) 수락하면 이 체크
+              // 없이는 계약서가 두 건 다 체결될 수 있었음. daeta_postings.status가 아직 pending일
+              // 때만 matched로 원자적으로 전환하고, 이미 다른 요청이 먼저 가져갔으면 이 수락은 무효 처리.
+              // (에스컬레이션 단계 전진 로직엔 이미 동일한 가드가 있었는데 accept 경로에만 빠져있었음)
+              const { data: claimResult } = await supabase
+                .from("daeta_postings")
+                .update({ status: "matched" })
+                .eq("id", daetaPosting.id)
+                .eq("status", "pending")
+                .select("id");
+              if (!claimResult || claimResult.length === 0) {
+                await supabase.from("matches")
+                  .update({ progress_status: "rejected", message: "다른 지원자로 이미 확정됨" })
+                  .eq("id", matchId);
+                return NextResponse.json({ error: "이미 다른 지원자로 확정된 공고예요.", success: false }, { status: 409 });
+              }
+
               const { data: employer } = await supabase.from("users").select("real_name, nickname, phone").eq("id", acceptMatchData.employer_id).maybeSingle();
-              const { data: worker } = await supabase.from("users").select("real_name, nickname, phone, address, birth_date").eq("id", acceptMatchData.worker_id).maybeSingle();
-              
+              const { data: worker } = await supabase.from("users").select("real_name, nickname, phone, address, birth_date, bank_name, bank_number_enc, bank_account_enc").eq("id", acceptMatchData.worker_id).maybeSingle();
+              // 대타는 계약이 사람이 앉아서 작성하는 게 아니라 수락 순간 자동 발행되는 거라
+              // 계좌번호를 물어볼 화면 자체가 없었음 — 이전에 정규 계약을 맺으며 users에 저장해둔
+              // 계좌정보(SOT, 이미 암호화돼있음)가 있으면 암호문 그대로 계약 스냅샷에 복사하고,
+              // 없으면(대타가 처음인 사람) 계속 공란으로 둔다. 복호화해서 다시 넣으면 정규
+              // 계약서(app/contract/page.tsx)와 저장 형식이 달라져서 여기서 그대로 재사용한다.
+              // 실제 사업자 정보 — 예전엔 사업자등록번호가 "123-45-67890" 더미값으로 하드코딩돼서
+              // 법적 문서인 근로계약서가 실제 매장 정보 없이 자동 체결되고 있었음
+              let employerProfile: { biz_reg_number: string | null; ceo_name: string | null; biz_tel: string | null } | null = null;
+              if (daetaPosting.employer_profile_id) {
+                const { data: ep } = await supabase.from("employer_profiles")
+                  .select("biz_reg_number, ceo_name, biz_tel")
+                  .eq("id", daetaPosting.employer_profile_id).maybeSingle();
+                employerProfile = ep;
+              }
+
               const workDate = daetaPosting.work_date || new Date().toISOString().split("T")[0];
               const workDateEnd = daetaPosting.work_date_end || workDate;
               const formattedDate = workDate.replace(/-/g, ". ");
@@ -311,9 +345,9 @@ export async function PATCH(req: NextRequest) {
               const contractData = {
                 contractType: "parttime",
                 biz: daetaPosting.business_name || "",
-                bizRegNo: "123-45-67890",
-                ceo: employer?.real_name || employer?.nickname || "사장님",
-                ceoPhone: employer?.phone || "",
+                bizRegNo: employerProfile?.biz_reg_number || "",
+                ceo: employerProfile?.ceo_name || employer?.real_name || employer?.nickname || "사장님",
+                ceoPhone: employerProfile?.biz_tel || employer?.phone || "",
                 bizAddr: daetaPosting.region || "",
                 workPlace: daetaPosting.region || "",
                 jobDesc: `${daetaPosting.business_type || "기타"} 대타 근무`,
@@ -329,6 +363,11 @@ export async function PATCH(req: NextRequest) {
                 wageType: "hour",
                 payDay: "당일 지급",
                 payMethod: "계좌이체",
+                // users에 저장된 계좌정보 SOT를 계약 체결 시점 스냅샷으로 복사 — 정규 계약서
+                // (app/contract/page.tsx)와 동일한 필드명(bankName/bankNumber/bankAccount)을 씀
+                bankName: worker?.bank_name || "",
+                bankNumber: worker?.bank_number_enc || "",
+                bankAccount: worker?.bank_account_enc || "",
                 contractDate: formattedDate,
               };
 
@@ -359,8 +398,7 @@ export async function PATCH(req: NextRequest) {
                 is_read: false,
               });
 
-              // 매칭 확정된 공고는 더 이상 다른 알바생에게 노출되거나 수정·재취소 가능한 "구인중" 상태가 아님
-              await supabase.from("daeta_postings").update({ status: "matched" }).eq("id", acceptMatchData.daeta_posting_id);
+              // (daeta_postings.status는 위 동시 수락 가드에서 이미 matched로 전환됨)
 
               // 같은 공고에 지원했던 다른 알바생들 — 예전엔 그대로 방치돼서 본인이 떨어진 줄도
               // 모른 채 pending으로 계속 남아있었음. 전부 정리 + "다른 분으로 확정됐어요" 안내.
@@ -456,6 +494,11 @@ export async function PATCH(req: NextRequest) {
             .from("matches")
             .select("worker_id, employer_id, employer_profile_id, daeta_posting_id, initiated_by")
             .eq("id", matchId).single();
+          // 대타 지원 거절만 message를 남김 — 대타 이력 화면(DaetaHistoryView)이 이 필드를 읽어서
+          // "경합 낙방"과 "사장님이 거절"을 구분해 보여주기 때문(일반 채용 매칭은 이 화면에서 안 씀)
+          if (rejectMatchData?.daeta_posting_id) {
+            updateData.message = "사장님이 지원을 거절함";
+          }
           if (rejectMatchData) {
             try {
               let businessName = "매장";

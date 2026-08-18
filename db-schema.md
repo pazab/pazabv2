@@ -22,6 +22,7 @@
 | bot_chat_logs | ✅ 사용 중 | AI 상담 로그 |
 | chats | ✅ 사용 중 | 실제 채팅 테이블 |
 | contracts | ✅ 사용 중 | |
+| daeta_daily_attendance | ✅ 사용 중 (`patch_daeta_daily_attendance.sql`) | 다일치(기간) 대타 전용 일별 출퇴근 기록 — `matches.checked_in_at/out`은 매칭당 값이 하나뿐이라 2일차 이후는 출근 여부를 알 수 없어서 신설. **하루짜리 대타는 이 테이블에 안 씀**(matches 컬럼이 SOT). `(match_id, work_date)` UNIQUE |
 | daeta_postings | ✅ 사용 중 | 긴급 대타 공고. `status`: 'pending'\|'matched'(매칭 확정, 수정·재취소 불가)\|'expired'(응답 없이 근무시작시각 경과 — `/api/cron/daeta-escalate`가 5분마다 직접 처리+사장님 실패알림, 2026-08-07부터)\|'completed'\|'cancelled'. `work_date_end`(nullable, `patch_daeta_date_range.sql`) — NULL이면 `work_date` 하루, 값 있으면 `work_date`~`work_date_end` 기간 전체를 공고 1건이 커버(수락 1번으로 기간 전체 확정, 정산은 일수만큼 곱함). `base_wage`/`max_urgent_pct`(`patch_daeta_auto_premium.sql`) — 미체결 시 escalation 단계별 자동 할증의 기준값/사장님 동의 상한. `employer_profile_id`(`patch_daeta_employer_profile_link.sql`) — 공고 카드의 매장 홈 링크용 |
 | employer_profiles | ✅ 사용 중 | 공고 레거시 컬럼 DROP 완료 |
 | invite_codes | ✅ 사용 중 | |
@@ -223,6 +224,9 @@
 | ~~onboarding_data~~ | jsonb | YES | | 🗑️ DROP 예정 (레거시) |
 | bank_verified | boolean | YES | false | |
 | bank_verified_at | timestamptz | YES | | |
+| bank_name | text | YES | | ✅ SOT (재사용 가능한 현재 계좌 정보, `patch_users_bank_account.sql`) — 평문(민감하지 않음) |
+| bank_number_enc | text | YES | | ✅ SOT — 계좌번호, `lib/bankCryptoServer.ts` AES-256-GCM 암호화 |
+| bank_account_enc | text | YES | | ✅ SOT — "은행명 계좌번호" 결합 표시용, 암호화. `contracts.contract_data.bankAccount/bankNumber`는 이 값의 계약 체결 시점 스냅샷(둘 다 유지, 역할 분리) |
 | hexaco_done | boolean | YES | false | |
 | hexaco_version | text | YES | '5turn' | |
 | worker_result | jsonb | YES | | ✅ HEXACO 분석 결과 SOT |
@@ -368,6 +372,7 @@
 | interviews | match_id, employer_id, worker_id, type, transcript, result, created_at |
 | trust_score_logs | user_id, delta, reason, before_score, after_score, ref_id, created_at |
 | worker_career_entries | worker_id, company_name, role_desc, start_date, end_date, is_current, description, created_at, updated_at |
+| daeta_daily_attendance | match_id, work_date, checked_in_at, checked_out_at, created_at — 다일치 대타 전용, 하루짜리는 미사용(matches.checked_in_at/out이 SOT) |
 
 ---
 
@@ -422,6 +427,8 @@
 | 신뢰도 변동 이력 | **trust_score_logs** | |
 | 인터뷰/사전미팅 | **interviews** | |
 | 매칭 진행상태 | **matches.progress_status** | matches.status 레거시 (DROP 완료) |
+| 계좌 정보 (현재값, 재사용) | **users.bank_name / bank_number_enc / bank_account_enc** | `contracts.contract_data.bankAccount/bankNumber`는 계약 체결 시점 스냅샷 사본(계약별로 계속 남음, users는 최신값만) |
+| 대타 일별 출퇴근 (다일치 전용) | **daeta_daily_attendance** | 하루짜리 대타는 여기 안 씀 — `matches.checked_in_at/checked_out_at`가 SOT |
 
 ---
 

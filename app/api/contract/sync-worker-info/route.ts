@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { encryptBank } from "@/lib/bankCryptoServer";
 
 const getServiceClient = () =>
   createClient(
@@ -15,7 +16,7 @@ const getServiceClient = () =>
 // 이 라우트에서 서비스 롤로 대신 처리하고, 실제 팀원 관계인지만 검증한다.
 export async function POST(req: NextRequest) {
   try {
-    const { teamMemberId, workerId, real_name, birth_date, phone, address, address_detail } = await req.json();
+    const { teamMemberId, workerId, real_name, birth_date, phone, address, address_detail, bank_name, bank_number } = await req.json();
     if (!teamMemberId || !workerId) {
       return NextResponse.json({ error: "필수 정보 없음" }, { status: 400 });
     }
@@ -45,6 +46,15 @@ export async function POST(req: NextRequest) {
     if (phone) update.phone = phone;
     if (address) update.address = address;
     if (address_detail) update.address_detail = address_detail;
+
+    // 계좌정보 SOT — 계약서(contract_data.bankAccount/bankNumber)는 계약 체결 시점 스냅샷으로
+    // 계속 남지만, users에도 "현재값"을 최신화해서 다음 계약(재계약·대타 등)에서 재사용할 수 있게 함.
+    // 예전엔 이 값이 계약 건마다 새로 입력·암호화·저장돼서 재사용이 전혀 안 됐음.
+    if (bank_name || bank_number) {
+      update.bank_name = bank_name || "";
+      update.bank_number_enc = encryptBank(bank_number);
+      update.bank_account_enc = encryptBank(bank_name && bank_number ? `${bank_name} ${bank_number}`.trim() : (bank_name || bank_number));
+    }
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ success: true });

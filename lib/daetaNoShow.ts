@@ -34,6 +34,19 @@ export async function markNoShowAndReescalate(
     message: "알바생 노쇼로 인한 구인 취소",
   }).eq("id", match.id);
 
+  // 채팅방에 노쇼 처리 사실을 남김 — 체크인/체크아웃/정산완료는 전부 시스템 메시지를 남기는데
+  // 노쇼만 빠져있어서, 나중에 채팅방을 다시 열어봐도 왜 매칭이 끝났는지 흔적이 전혀 없었음
+  await sb.from("chats").insert({
+    match_id: match.id,
+    sender_id: match.employer_id,
+    receiver_id: match.worker_id,
+    message: reason === "auto"
+      ? "🚨 출근 시각이 15분 넘게 지나 무단 노쇼로 자동 처리됐어요."
+      : "🚨 무단 노쇼로 신고 처리됐어요.",
+    message_type: "system",
+    is_read: false,
+  });
+
   // 정지 단계는 이번 건을 기록하기 전(=이전 발생 횟수) 기준으로 판정
   const lookbackStart = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { count: priorNoShows } = await sb

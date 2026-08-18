@@ -4,6 +4,22 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { formatDaetaDateRange, parseWorkHoursRange, daetaDayCount, calcDaetaCancelTrustPenalty } from "@/lib/utils";
+import { calcDailyTaxForPeriod } from "@/lib/daetaSettlement";
+import { useToast } from "@/lib/useToast";
+
+// 매장-현위치 거리(m) — myteam.tsx CheckInButton과 동일한 haversine 공식(이 저장소는 이 계산을
+// 파일마다 로컬로 두는 관례라 그대로 따름)
+function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+const CHECKIN_RADIUS_M = 200;
 
 interface DaetaHistoryViewProps {
   userId: string;
@@ -16,6 +32,7 @@ interface DaetaHistoryViewProps {
 
 export default function DaetaHistoryView({ userId, userType, onBack, focusMatchId, embedded }: DaetaHistoryViewProps) {
   const router = useRouter();
+  const { showToast, ToastUI } = useToast();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<any[]>([]);
   const [selectedPayslip, setSelectedPayslip] = useState<any>(null);
@@ -29,6 +46,10 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   // 정산 확인 화면에서 사장님이 직접 확인/수정하는 근무시간 — 출퇴근 기록이 있으면 실제 시간을,
   // 없으면 예정 시간을 기본값으로 채워둠 (반자동: 자동계산 → 확인/수정 → 확정)
   const [completeHours, setCompleteHours] = useState("");
+  // 자동 계산된 시간(계약/실제 출퇴근 기준) — completeHours가 이 값과 달라지면 "조정됨"으로 간주해서
+  // 사유 입력칸을 보여주고, 메모가 없어도 조정 사실 자체는 서버에서 항상 기록됨
+  const [suggestedHours, setSuggestedHours] = useState(0);
+  const [adjustReason, setAdjustReason] = useState("");
   // 취소 확인 화면에서 "상대방과 미리 합의된 취소예요" 체크박스 — 켜면 페널티 없이 처리됨
   const [cancelMutual, setCancelMutual] = useState(false);
   // "지난 기록"은 계속 쌓이는 정보라 최근 1건만 접어서 보여주고, 필요할 때만 펼쳐서 전체를 봄
@@ -37,6 +58,11 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   const [pastExpanded, setPastExpanded] = useState(false);
   const PAST_COLLAPSED_COUNT = 1;
   const PAST_SCROLL_THRESHOLD = 5;
+  // 노쇼 신고 이의제기 — 서버가 중복 접수를 막아주지만(409), 한 번 접수한 뒤엔 이 화면에서도
+  // 버튼을 바로 "접수됨"으로 바꿔줘야 다시 눌러서 매번 에러 토스트를 보는 걸 피할 수 있음
+  const [disputedIds, setDisputedIds] = useState<Set<string>>(new Set());
+  const [disputingMatchId, setDisputingMatchId] = useState<string | null>(null);
+  const [disputeError, setDisputeError] = useState<{ matchId: string; msg: string } | null>(null);
 
   const isEmployer = userType === "employer" || userType === "both";
 
@@ -111,11 +137,33 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
         payslips = data || [];
       }
 
+      // 다일치(기간) 공고는 matches.checked_in_at/out이 1일차 값 하나뿐이라 오늘 출근 여부를 알 수
+      // 없음 — daeta_daily_attendance에서 "오늘" 기록을 따로 가져와서 출근/퇴근 버튼 상태 판정에 씀
+      const todayStr = (() => {
+        const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+        return kst.toISOString().split("T")[0];
+      })();
+      const multiDayMatchIds = joinedMatches
+        .filter((m: any) => m.progress_status === "accepted" && daetaDayCount(m.daeta_postings.work_date, m.daeta_postings.work_date_end) > 1)
+        .map((m: any) => m.id);
+      let todayAttendanceByMatch: Record<string, any> = {};
+      if (multiDayMatchIds.length > 0) {
+        const { data: dailyRows } = await supabase
+          .from("daeta_daily_attendance")
+          .select("match_id, checked_in_at, checked_out_at")
+          .in("match_id", multiDayMatchIds)
+          .eq("work_date", todayStr);
+        (dailyRows || []).forEach((r: any) => { todayAttendanceByMatch[r.match_id] = r; });
+      }
+
       const enriched = joinedMatches.map((m: any) => {
         const ps = payslips.find((p: any) => p.match_id === m.id);
+        const isMultiDay = daetaDayCount(m.daeta_postings.work_date, m.daeta_postings.work_date_end) > 1;
         return {
           ...m,
           payslip: ps || null,
+          isMultiDay,
+          todayAttendance: isMultiDay ? (todayAttendanceByMatch[m.id] || null) : null,
         };
       });
 
@@ -172,7 +220,10 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
     setActionError("");
     if (type === "complete") {
       setCompleteRating(0);
-      setCompleteHours(String(computeSuggestedHours(match)));
+      const suggested = computeSuggestedHours(match);
+      setCompleteHours(String(suggested));
+      setSuggestedHours(suggested);
+      setAdjustReason("");
     }
     if (type === "cancel") {
       setCancelMutual(false);
@@ -203,6 +254,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
             matchId: pendingAction.match.id, action: "complete",
             ...(completeRating > 0 ? { rating: completeRating } : {}),
             ...(!isNaN(parsedHours) && parsedHours > 0 ? { hours: parsedHours } : {}),
+            ...(adjustReason.trim() ? { adjustReason: adjustReason.trim() } : {}),
           }
         : { matchId: pendingAction.match.id, action: pendingAction.type };
       const res = await fetch(endpoint, {
@@ -229,9 +281,55 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
     setShowUnpaidModal(match);
   };
 
+  // 노쇼 신고 이의제기 — 사장님의 노쇼 신고는 즉시 확정 페널티라(트러스트 -30점 + 정지)
+  // 알바생 쪽엔 지금까지 방어 수단이 전혀 없었음. 자동으로 페널티를 되돌리진 않지만
+  // 관리자 검토 대기열에 올려서 사람이 판단할 수 있게 한다.
+  const handleDisputeNoShow = async (match: any) => {
+    setDisputingMatchId(match.id);
+    setDisputeError(null);
+    try {
+      const res = await fetch("/api/daeta/dispute-noshow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId: match.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) { setDisputeError({ matchId: match.id, msg: result.error || "이의제기 접수 중 오류가 발생했어요." }); return; }
+      setDisputedIds(prev => new Set([...prev, match.id]));
+    } catch (err: any) {
+      console.error(err);
+      setDisputeError({ matchId: match.id, msg: "이의제기 접수 중 오류가 발생했어요." });
+    } finally {
+      setDisputingMatchId(null);
+    }
+  };
+
   // 알바생 원탭 출근 체크인 — 미출근 15분 경과 시 자동 노쇼 판정(app/api/cron/daeta-checkin)의 기준이 됨
+  // 매장 좌표가 있으면 반경 200m 밖에서는 체크인을 막음 — 정규 팀원 출근(myteam.tsx CheckInButton)엔
+  // 이미 있는 검증인데 대타 체크인엔 빠져있어서, 이 시각이 그대로 노쇼 면제/실근무시간(→급여) 판정에
+  // 쓰이는데도 어디서나 "출근했어요"를 누르면 통과됐음. 위치 권한 거부/미지원 시엔 막지 않음(폴백).
+  const verifyOnSite = (posting: any): Promise<boolean> => {
+    if (posting?.lat == null || posting?.lng == null) return Promise.resolve(true);
+    if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const dist = getDistanceMeters(pos.coords.latitude, pos.coords.longitude, posting.lat, posting.lng);
+          resolve(dist <= CHECKIN_RADIUS_M);
+        },
+        () => resolve(true),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+  };
+
   const handleDaetaCheckin = async (match: any) => {
     setActionError("");
+    const inRange = await verifyOnSite(match.daeta_postings);
+    if (!inRange) {
+      showToast(`📍 매장 반경 ${CHECKIN_RADIUS_M}m 밖에서는 출근 처리할 수 없어요.`, "error");
+      return;
+    }
     setActionLoading(true);
     try {
       const res = await fetch("/api/daeta/checkin", {
@@ -316,10 +414,24 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
     }
   };
 
+  // 취소(사전 통보)와 노쇼(당일 무단 불참)는 성격이 완전히 다른데(노쇼만 정지가 걸림) 예전엔
+  // 둘 다 "❌ 취소/노쇼"로 뭉뚱그려 보여줬음 — 어느 쪽인지 구분하고, rejected(경합 낙방/만료
+  // 자동종료)도 케이스가 없어서 raw 값("rejected")이 그대로 노출되던 버그를 고침.
   const getStatusText = (match: any) => {
     if (match.progress_status === "hired") return "✅ 정산 완료";
-    if (["cancelled", "failed"].includes(match.progress_status)) return "❌ 취소/노쇼";
-    if (match.progress_status === "accepted") return "🤝 근무 예정 / 정산 대기";
+    if (match.progress_status === "failed") return "🚨 노쇼 처리됨";
+    if (match.progress_status === "cancelled") return "🚫 사전 취소됨";
+    if (match.progress_status === "rejected") return "😢 매칭 종료 (미확정)";
+    if (match.progress_status === "accepted") {
+      // 체크인/체크아웃 여부와 무관하게 항상 "근무 예정"으로 고정돼 있었음 — 이미 출근해서
+      // 근무 중인데도 "예정"이라고 뜨는 게 어색하다는 지적. 다일치는 오늘 기록(todayAttendance)
+      // 기준으로, 하루짜리는 매칭 전체 필드 기준으로 판정(renderCard의 effectiveChecked*와 동일 로직).
+      const checkedInAt = match.isMultiDay ? match.todayAttendance?.checked_in_at ?? null : match.checked_in_at;
+      const checkedOutAt = match.isMultiDay ? match.todayAttendance?.checked_out_at ?? null : match.checked_out_at;
+      if (checkedOutAt) return "🏁 퇴근함 / 정산 대기";
+      if (checkedInAt) return "🔥 근무 중 / 정산 대기";
+      return "🤝 근무 예정 / 정산 대기";
+    }
     if (match.progress_status === "expired_no_match") return "😢 못 구함 (지원자 없음)";
     return match.progress_status;
   };
@@ -328,6 +440,13 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
     <div style={embedded
       ? { color: "var(--text)" }
       : { padding: "16px", color: "var(--text)", background: "var(--bg)", minHeight: "100vh", maxWidth: 480, margin: "0 auto" }}>
+
+      <style>{`
+        @keyframes daetaLivePulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.35; transform: scale(0.8); }
+        }
+      `}</style>
 
       {!embedded && (
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
@@ -365,18 +484,49 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
             const targetUser = rec.users; // 알바생 정보
             const isEmployerForRecord = rec.employer_id === userId;
             const isCompleted = rec.progress_status === "hired";
-            const isCancelled = ["cancelled", "failed"].includes(rec.progress_status);
+            const isCancelled = ["cancelled", "failed", "rejected"].includes(rec.progress_status);
+            const isNoShow = rec.progress_status === "failed";
             const isPending = rec.progress_status === "accepted";
+            // 다일치 공고는 matches.checked_in_at/out이 1일차 값 하나뿐이라 그걸로 버튼 상태를
+            // 정하면 2일차부터 영원히 "퇴근 완료"로 잠겨서 출근 버튼 자체가 다시 안 뜸 — 오늘
+            // 기록(todayAttendance)이 있으면 그걸 기준으로, 없으면 기존처럼 매칭 전체 필드를 씀
+            const effectiveCheckedInAt = rec.isMultiDay ? rec.todayAttendance?.checked_in_at ?? null : rec.checked_in_at;
+            const effectiveCheckedOutAt = rec.isMultiDay ? rec.todayAttendance?.checked_out_at ?? null : rec.checked_out_at;
+            // "예정"과 "근무 중"이 색이 똑같아서(둘 다 주황) 구별이 안 된다는 지적 — 지금 실제로
+            // 근무 중인 건만 별도로 강조(붉은 계열 + 깜빡이는 점)
+            const isWorkingNow = isPending && !!effectiveCheckedInAt && !effectiveCheckedOutAt;
+            // 근무 시작 전인데도 "근무 완료·정산하기"가 항상 눌려있어서, 아직 아무도 출근 안 한
+            // 상태에서 예정 시간 기준으로 그냥 정산·확정해버릴 수 있었음(눌러보면 확인 팝업은 뜨지만
+            // 그 팝업 자체가 뜨는 게 부적절한 타이밍). 출근 기록이 없다면 예정 시작 시각이 지나야 활성화.
+            const shiftStartTime = (() => {
+              const startPart = ep?.work_hours?.split("~")[0]?.trim();
+              if (!ep?.work_date || !startPart) return null;
+              const d = new Date(`${ep.work_date}T${startPart}:00+09:00`);
+              return Number.isNaN(d.getTime()) ? null : d;
+            })();
+            const canSettleNow = !!effectiveCheckedInAt || !shiftStartTime || Date.now() >= shiftStartTime.getTime();
+            // 체크인은 "오늘" 근무 시작 10분 전부터 — 다일치는 ep.work_date(1일차)가 아니라
+            // 오늘 날짜 기준으로 시작 시각을 계산해야 함(크론 알림도 같은 기준, 서버 검증도 동일)
+            const CHECKIN_OPEN_BEFORE_MIN = 10;
+            const todayShiftStartTime = (() => {
+              const startPart = ep?.work_hours?.split("~")[0]?.trim();
+              if (!startPart) return null;
+              const todayStr = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
+              const d = new Date(`${todayStr}T${startPart}:00+09:00`);
+              return Number.isNaN(d.getTime()) ? null : d;
+            })();
+            const checkinOpensAt = todayShiftStartTime ? new Date(todayShiftStartTime.getTime() - CHECKIN_OPEN_BEFORE_MIN * 60000) : null;
+            const canCheckinNow = !checkinOpensAt || Date.now() >= checkinOpensAt.getTime();
 
             // 일시 포맷
             const dateStr = ep?.work_date ? formatDaetaDateRange(ep.work_date, ep.work_date_end) : rec.created_at?.split("T")[0];
 
-            const accentColor = isPending ? "#fb923c" : isCompleted ? "#22c55e" : "var(--border)";
+            const accentColor = isWorkingNow ? "#ef4444" : isPending ? "#fb923c" : isCompleted ? "#22c55e" : "var(--border)";
 
             return (
               <div key={rec.id} style={{
-                background: isPending ? "rgba(251,146,60,0.06)" : "var(--surface2)",
-                border: `1px solid ${isPending ? "rgba(251,146,60,0.3)" : "var(--border)"}`,
+                background: isWorkingNow ? "rgba(239,68,68,0.07)" : isPending ? "rgba(251,146,60,0.06)" : "var(--surface2)",
+                border: `1px solid ${isWorkingNow ? "rgba(239,68,68,0.35)" : isPending ? "rgba(251,146,60,0.3)" : "var(--border)"}`,
                 borderLeft: `4px solid ${accentColor}`,
                 borderRadius: 18,
                 padding: "16px",
@@ -407,7 +557,14 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                       </span>
                       <span style={{ fontSize: 10, color: "#a78bfa", background: "rgba(167,139,250,0.15)", padding: "2px 8px", borderRadius: 20, fontWeight: 700 }}>대타 긴급</span>
                       {isPending && (
-                        <span style={{ fontSize: 10, color: "#fb923c", background: "rgba(251,146,60,0.18)", padding: "2px 8px", borderRadius: 20, fontWeight: 800 }}>🔥 진행중</span>
+                        isWorkingNow ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, color: "#ef4444", background: "rgba(239,68,68,0.15)", padding: "2px 8px", borderRadius: 20, fontWeight: 800 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#ef4444", animation: "daetaLivePulse 1.4s ease-in-out infinite" }} />
+                            근무 중
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 10, color: "#fb923c", background: "rgba(251,146,60,0.18)", padding: "2px 8px", borderRadius: 20, fontWeight: 800 }}>🔥 진행중</span>
+                        )
                       )}
                     </div>
                     <h3 style={{ fontSize: 16, fontWeight: 900, margin: "6px 0 2px" }}>
@@ -428,9 +585,19 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                       )}
                     </h3>
                   </div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: isCompleted ? "#4ade80" : isCancelled ? "#f87171" : "#fbbf24" }}>
-                    {getStatusText(rec)}
-                  </span>
+                  <div style={{ textAlign: "right" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, color: isWorkingNow ? "#ef4444" : isCompleted ? "#4ade80" : isCancelled ? "#f87171" : "#fbbf24" }}>
+                      {isWorkingNow && (
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ef4444", animation: "daetaLivePulse 1.4s ease-in-out infinite" }} />
+                      )}
+                      {getStatusText(rec)}
+                    </span>
+                    {/* 백엔드는 취소/노쇼/경합낙방/만료 사유를 message에 남기는데 예전엔 이 화면 어디서도
+                        보여주지 않아서, 카드가 죄다 "취소/노쇼"로만 뭉뚱그려 보였음 */}
+                    {isCancelled && rec.message && (
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, maxWidth: 160 }}>{rec.message}</div>
+                    )}
+                  </div>
                 </div>
 
                 {/* 알바생 입장 — 매장 위치. 진행중일 때만 지도까지 보여줌(가야 할 곳이니까), 지난 기록은 주소 텍스트면 충분 */}
@@ -497,28 +664,34 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                 {/* 사장님 액션 버튼 (정산 / 노쇼 신고) */}
                 {isEmployerForRecord && isPending && (
                   <>
-                    <div style={{ fontSize: 11, color: rec.checked_out_at ? "#4ade80" : rec.checked_in_at ? "#60a5fa" : "#fbbf24", marginBottom: 8 }}>
-                      {rec.checked_out_at
-                        ? "✅ 퇴근 확인됨 — 실제 근무시간 기준으로 정산할 수 있어요"
-                        : rec.checked_in_at
-                        ? "🕐 출근 확인됨 · 아직 퇴근 전이에요"
-                        : "⏳ 아직 출근 전이에요 — 출근시각 15분 초과 시 자동으로 다음 인력을 찾아드려요"}
+                    <div style={{ fontSize: 11, color: !canSettleNow ? "var(--text-muted)" : effectiveCheckedOutAt ? "#4ade80" : effectiveCheckedInAt ? "#60a5fa" : "#fbbf24", marginBottom: 8 }}>
+                      {!canSettleNow
+                        ? `⏳ 아직 근무 시작 전이에요 (${shiftStartTime!.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 시작 예정) — 시작 전엔 정산·노쇼 신고를 할 수 없어요`
+                        : rec.isMultiDay
+                        ? (effectiveCheckedOutAt ? "✅ 오늘 퇴근 확인됨" : effectiveCheckedInAt ? "🕐 오늘 출근 확인됨 · 아직 퇴근 전이에요" : "⏳ 오늘 아직 출근 전이에요 — 마지막 날이면 근무 완료·정산하기를 눌러주세요")
+                        : (effectiveCheckedOutAt
+                          ? "✅ 퇴근 확인됨 — 실제 근무시간 기준으로 정산할 수 있어요"
+                          : effectiveCheckedInAt
+                          ? "🕐 출근 확인됨 · 아직 퇴근 전이에요"
+                          : "⏳ 아직 출근 전이에요 — 출근시각 15분 초과 시 자동으로 다음 인력을 찾아드려요")}
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button onClick={() => openConfirm("complete", rec)}
-                        style={{ flex: 2, background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                      <button onClick={() => openConfirm("complete", rec)} disabled={!canSettleNow}
+                        style={{ flex: 2, background: canSettleNow ? "linear-gradient(135deg, #22c55e, #16a34a)" : "var(--surface2)", border: canSettleNow ? "none" : "1px solid var(--border)", borderRadius: 12, padding: "12px", color: canSettleNow ? "#fff" : "var(--text-muted)", fontSize: 13, fontWeight: 800, cursor: canSettleNow ? "pointer" : "default", opacity: canSettleNow ? 1 : 0.6 }}>
                         ✅ 근무 완료 · 정산하기
                       </button>
-                      {!rec.checked_in_at && (
+                      {!effectiveCheckedInAt && canSettleNow && (
                         <button onClick={() => handleDaetaExtend(rec)} disabled={actionLoading}
                           style={{ flex: 1, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 12, padding: "12px", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
                           ⏳ 10분만 더
                         </button>
                       )}
+                      {canSettleNow && (
                       <button onClick={() => openConfirm("noshow", rec)}
                         style={{ flex: 1, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "12px", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         🚨 노쇼 신고
                       </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -526,24 +699,32 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                 {/* 알바생 액션 버튼 (출근/퇴근 체크인·아웃 / 임금 미지급 신고) */}
                 {!isEmployerForRecord && isPending && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-                    {!rec.checked_in_at ? (
-                      <button onClick={() => handleDaetaCheckin(rec)} disabled={actionLoading}
-                        style={{ background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
-                        ✅ 출근했어요
-                      </button>
-                    ) : !rec.checked_out_at ? (
+                    {!effectiveCheckedInAt ? (
+                      canCheckinNow ? (
+                        <button onClick={() => handleDaetaCheckin(rec)} disabled={actionLoading}
+                          style={{ background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
+                          {rec.isMultiDay ? "✅ 오늘 출근했어요" : "✅ 출근했어요"}
+                        </button>
+                      ) : (
+                        // 너무 일찍 체크인하면 실근무시간(체크아웃 - 체크인 기준 정산)이 부풀려질 수
+                        // 있어서, 크론이 "10분 전" 알림을 보내는 시점과 맞춰 그때부터만 버튼을 활성화함
+                        <div style={{ textAlign: "center", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px", color: "var(--text-muted)", fontSize: 12, fontWeight: 700 }}>
+                          ⏳ 출근 체크인은 {checkinOpensAt!.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}부터 가능해요
+                        </div>
+                      )
+                    ) : !effectiveCheckedOutAt ? (
                       <>
                         <div style={{ textAlign: "center", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 12, padding: "10px", color: "#4ade80", fontSize: 12, fontWeight: 700 }}>
-                          ✅ 출근 처리 완료 ({new Date(rec.checked_in_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })})
+                          ✅ 출근 처리 완료 ({new Date(effectiveCheckedInAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })})
                         </div>
                         <button onClick={() => handleDaetaCheckout(rec)} disabled={actionLoading}
                           style={{ background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
-                          🏁 퇴근했어요
+                          {rec.isMultiDay ? "🏁 오늘 퇴근했어요" : "🏁 퇴근했어요"}
                         </button>
                       </>
                     ) : (
                       <div style={{ textAlign: "center", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 12, padding: "10px", color: "#4ade80", fontSize: 12, fontWeight: 700 }}>
-                        ✅ 퇴근 처리 완료 — 사장님 정산을 기다리고 있어요
+                        {rec.isMultiDay ? "✅ 오늘 퇴근 처리 완료" : "✅ 퇴근 처리 완료 — 사장님 정산을 기다리고 있어요"}
                       </div>
                     )}
                     <button onClick={() => handleUnpaidReport(rec)}
@@ -559,6 +740,26 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                     style={{ width: "100%", marginTop: 8, background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 12, padding: "9px", borderRadius: 12, cursor: "pointer" }}>
                     🚫 이 대타 취소하기
                   </button>
+                )}
+
+                {/* 노쇼 신고 이의제기 — 사장님 신고는 즉시 확정 페널티라 알바생 쪽에 방어 수단이
+                    없었음. 자동으로 페널티를 되돌리진 않지만 관리자 검토 요청은 남길 수 있게 함 */}
+                {isNoShow && !isEmployerForRecord && (
+                  disputedIds.has(rec.id) ? (
+                    <div style={{ width: "100%", marginTop: 8, textAlign: "center", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 12, padding: "9px", borderRadius: 12 }}>
+                      📮 이의제기 접수됨 — 관리자 검토 대기중
+                    </div>
+                  ) : (
+                    <>
+                      <button onClick={() => handleDisputeNoShow(rec)} disabled={disputingMatchId === rec.id}
+                        style={{ width: "100%", marginTop: 8, background: "none", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: 12, padding: "9px", borderRadius: 12, cursor: "pointer", opacity: disputingMatchId === rec.id ? 0.6 : 1 }}>
+                        {disputingMatchId === rec.id ? "접수 중..." : "📮 이 노쇼 신고에 이의 있어요"}
+                      </button>
+                      {disputeError && disputeError.matchId === rec.id && (
+                        <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, textAlign: "center" }}>{disputeError.msg}</div>
+                      )}
+                    </>
+                  )
                 )}
 
               </div>
@@ -636,9 +837,27 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                 const overtimeHours = Math.max(0, Math.round((parsedHours - scheduledTotal) * 10) / 10);
                 const regularHours = parsedHours - overtimeHours;
                 const estimatedPay = Math.round(regularHours * wage + overtimeHours * wage * 1.5);
+                const estimatedTax = calcDailyTaxForPeriod(estimatedPay, days);
                 const fromActualTimes = !!(pendingAction.match.checked_in_at && pendingAction.match.checked_out_at);
+                // 시작 전은 이미 막았지만 종료 전은 안 막아뒀음 — 체크아웃 안 한 채로 "근무 완료"를
+                // 누르면 아직 안 지난 시간까지 예정 시간(scheduledTotal) 그대로 정산해버릴 수 있어서
+                // (하루짜리 공고만 판정 — 다일치는 "오늘"이 모호해서 생략) 강하게 경고만 띄운다.
+                const beforeScheduledEnd = (() => {
+                  if (fromActualTimes || days !== 1) return false;
+                  const startPart = posting?.work_hours?.split("~")[0]?.trim();
+                  const endPart = posting?.work_hours?.split("~")[1]?.trim();
+                  if (!posting?.work_date || !startPart || !endPart) return false;
+                  let end = new Date(`${posting.work_date}T${endPart}:00+09:00`);
+                  if (endPart <= startPart) end = new Date(end.getTime() + 86400000); // 야간 근무 익일 종료
+                  return !Number.isNaN(end.getTime()) && Date.now() < end.getTime();
+                })();
                 return (
                   <>
+                    {beforeScheduledEnd && (
+                      <p style={{ fontSize: 12, color: "#f87171", margin: "0 0 8px", lineHeight: 1.6, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "10px 14px", fontWeight: 700 }}>
+                        ⚠️ 아직 예정 종료 시각 전이에요. 근무가 끝나지 않았다면 아직 정산하지 말고, 정말 일찍 끝났다면 아래 시간을 실제와 맞게 수정해 주세요.
+                      </p>
+                    )}
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, lineHeight: 1.7, background: "var(--surface2)", borderRadius: 12, padding: "10px 14px" }}>
                       확인 시 임금명세서가 자동 발행되고 알바생에게 알림이 가요.
                     </p>
@@ -662,8 +881,30 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                         예정 {scheduledTotal}시간{overtimeHours > 0 ? ` · 초과근무 ${overtimeHours}시간 (할증 포함)` : ""}
                       </div>
                       {wage > 0 && (
-                        <div style={{ fontSize: 14, fontWeight: 800, color: "#4ade80", marginTop: 8, textAlign: "right" }}>
-                          예상 정산액 약 {estimatedPay.toLocaleString()}원
+                        <div style={{ marginTop: 8, textAlign: "right" }}>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            세전 {estimatedPay.toLocaleString()}원 - 세금 {estimatedTax.totalDeductions.toLocaleString()}원
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: "#4ade80" }}>
+                            예상 실수령액 약 {estimatedTax.netPay.toLocaleString()}원
+                          </div>
+                        </div>
+                      )}
+                      {/* 자동 계산값(계약/실제 출퇴근 기준)과 다르게 입력하면 "조정"으로 간주 — 사유를
+                          안 적어도 조정됐다는 사실 자체는 서버가 항상 payslip에 남기지만, 나중에 참고할
+                          수 있도록 사유를 남길 자리를 바로 붙여서 보여줌 */}
+                      {Math.abs(parsedHours - suggestedHours) > 0.05 && (
+                        <div style={{ marginTop: 10, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 12, padding: "10px 12px" }}>
+                          <p style={{ fontSize: 11, color: "#fbbf24", fontWeight: 700, margin: "0 0 6px" }}>
+                            ⚠️ {fromActualTimes ? "실제 출퇴근 기록" : "예정 시간"}({suggestedHours}시간)과 다르게 조정해서 정산해요 — 이 사실은 이력에 자동으로 남아요.
+                          </p>
+                          <textarea
+                            value={adjustReason}
+                            onChange={(e) => setAdjustReason(e.target.value)}
+                            placeholder="조정 사유 (선택 — 예: 30분 일찍 퇴근하기로 합의)"
+                            rows={2}
+                            style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12, color: "var(--text)", resize: "none" }}
+                          />
                         </div>
                       )}
                     </div>
@@ -692,6 +933,12 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
               )}
               {pendingAction.type === "cancel" && cancelPreview && (
                 <>
+                  {/* 이미 출근한 뒤 취소하면 서버가 실근무시간을 자동으로 정산해서 급여가 사라지지 않게 함 */}
+                  {pendingAction.match.checked_in_at && (
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px", lineHeight: 1.6, background: "var(--surface2)", borderRadius: 12, padding: "10px 14px" }}>
+                      💸 이미 출근했기 때문에, 취소해도 지금까지 일한 시간은 자동으로 정산돼서 급여가 지급 처리돼요.
+                    </p>
+                  )}
                   <div
                     onClick={() => setCancelMutual(v => !v)}
                     style={{
@@ -758,12 +1005,27 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                   <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--text-muted)" }}>초과근무수당</span><span>{selectedPayslip.overtime_pay?.toLocaleString()}원</span></div>
                 </>
               )}
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--text-muted)" }}>세전 총액</span><span>{selectedPayslip.total_pay?.toLocaleString()}원</span></div>
+              {(selectedPayslip.total_deductions ?? 0) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--text-muted)" }}>세금 공제 (소득세+지방소득세)</span>
+                  <span style={{ color: "#f87171" }}>-{selectedPayslip.total_deductions?.toLocaleString()}원</span>
+                </div>
+              )}
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <span style={{ fontSize: 14, fontWeight: 700 }}>실지급액 (세전)</span>
-              <span style={{ fontSize: 20, fontWeight: 900, color: "#4ade80" }}>{selectedPayslip.total_pay?.toLocaleString()}원</span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>실지급액 (세후)</span>
+              <span style={{ fontSize: 20, fontWeight: 900, color: "#4ade80" }}>{(selectedPayslip.net_pay ?? selectedPayslip.total_pay)?.toLocaleString()}원</span>
             </div>
+
+            {/* 시간 조정 이력 — 정산 당시 자동 계산값과 다르게 처리됐으면 사유 유무와 무관하게 항상 여기 남음 */}
+            {selectedPayslip.attendance_data?.adjusted && (
+              <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#fbbf24" }}>
+                ⚠️ 자동 계산 시간({selectedPayslip.attendance_data.auto_calculated_hours}시간)과 다르게 <strong>{selectedPayslip.attendance_data.settled_hours}시간</strong>으로 조정 정산됨
+                {selectedPayslip.correction_reason && <div style={{ marginTop: 4, color: "var(--text-muted)" }}>사유: {selectedPayslip.correction_reason}</div>}
+              </div>
+            )}
 
             <button onClick={() => setSelectedPayslip(null)}
               style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
@@ -802,6 +1064,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
         </div>
       )}
 
+      {ToastUI}
     </div>
   );
 }

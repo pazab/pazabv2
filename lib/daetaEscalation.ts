@@ -244,6 +244,65 @@ export async function reescalateAfterDropout(
 }
 
 /**
+ * 근무 시작 시각(expires_at)이 지나도록 아무도 못 구한 pending 공고를 expired 처리.
+ * 사용처: /api/cron/daeta-escalate(5분 주기), /api/daeta/expire-check(클라이언트가 대타 홈을 열 때 즉시 반영용).
+ * 공고만 닫고 끝내면 거기 딸린 pending 지원자가 알림도 못 받고 영원히 pending으로 방치되므로
+ * (사장님이 직접 취소하는 /api/daeta/cancel-posting과 동일하게) 지원자 정리 + 알림까지 함께 처리한다.
+ */
+export async function expireStalePostings(sb: SupabaseClient, now: Date): Promise<string[]> {
+  const { data: expiredPostings } = await sb
+    .from("daeta_postings")
+    .select("id, user_id, business_name, work_date, work_date_end, work_hours, wage")
+    .eq("status", "pending")
+    .lte("expires_at", now.toISOString());
+
+  if (!expiredPostings || expiredPostings.length === 0) return [];
+
+  const ids = expiredPostings.map((p: { id: string }) => p.id);
+  await sb.from("daeta_postings").update({ status: "expired" }).in("id", ids);
+
+  await Promise.all(expiredPostings.map((p: {
+    id: string; user_id: string; business_name: string; work_date: string; work_date_end: string | null; work_hours: string; wage: number;
+  }) =>
+    createNotification({
+      userId: p.user_id,
+      type: "daeta",
+      title: "😢 이번 대타는 결국 못 구했어요",
+      body: `${p.business_name} ${formatDaetaDateRange(p.work_date, p.work_date_end)} ${p.work_hours} · 시급 ${p.wage.toLocaleString()}원 요청이 만료됐어요. 다시 등록하거나 아는 알바생에게 카톡으로 직접 요청해보세요.`,
+      url: "/daeta",
+      data: { daetaPostingId: p.id },
+    })
+  ));
+
+  const { data: strandedApplicants } = await sb
+    .from("matches")
+    .select("id, worker_id, daeta_posting_id")
+    .in("daeta_posting_id", ids)
+    .eq("progress_status", "pending");
+
+  if (strandedApplicants?.length) {
+    const postingById = new Map(expiredPostings.map((p: { id: string; business_name: string }) => [p.id, p]));
+    await sb.from("matches")
+      .update({ progress_status: "rejected", message: "대타 요청이 만료되어 자동 종료됨" })
+      .in("id", strandedApplicants.map((m: { id: string }) => m.id));
+
+    await Promise.all(strandedApplicants.map((m: { id: string; worker_id: string; daeta_posting_id: string }) => {
+      const posting = postingById.get(m.daeta_posting_id) as { business_name: string } | undefined;
+      return createNotification({
+        userId: m.worker_id,
+        type: "daeta",
+        title: "⌛ 대타 요청이 만료됐어요",
+        body: `${posting?.business_name || "매장"} 대타는 근무 시작 시각까지 아무도 확정되지 않아 요청이 만료됐어요. 다른 대타를 찾아보세요!`,
+        url: "/daeta",
+        data: { daetaPostingId: m.daeta_posting_id },
+      });
+    }));
+  }
+
+  return ids;
+}
+
+/**
  * 단계 전진. 전진했으면 새 stage 반환, 아니면 null.
  * 규칙: 1→2 (stage1_wait 경과), 2→3 (allow_new) 또는 2→4, 3→4
  */

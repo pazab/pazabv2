@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import InviteBottomSheet from "@/components/InviteBottomSheet";
 import ImageCropModal from "@/components/ImageCropModal";
@@ -318,6 +318,7 @@ function WorkerProfileStatusInner({ profiles, userId, router, togglePublic, dele
 
 function MyPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as "worker" | "employer" | null;
   const toastParam = searchParams.get("toast");
@@ -333,10 +334,18 @@ function MyPageContent() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const { activeRole, setActiveRole, isBoth } = useActiveRole(user?.user_type);
 
-  // ?tab=worker|employer 딥링크(예: 채팅방 "대타 관리하기") — both 계정의 활성 모드를 강제 전환
+  // ?tab=worker|employer 딥링크(예: 채팅방 "대타 관리하기") — both 계정의 활성 모드를 강제 전환.
+  // 적용 후 URL에서 tab을 지워야 함 — 안 지우면 다른 페이지로 이동했다가 뒤로가기로 돌아올 때
+  // 이 effect가 다시 실행되며, 그 사이 상단 스위치로 바꾼 모드를 무시하고 예전 값으로 되돌려버림.
+  const searchParamsString = searchParams.toString();
   useEffect(() => {
-    if (isBoth && (tabParam === "worker" || tabParam === "employer")) setActiveRole(tabParam);
-  }, [isBoth, tabParam, setActiveRole]);
+    if (isBoth && (tabParam === "worker" || tabParam === "employer")) {
+      setActiveRole(tabParam);
+      const params = new URLSearchParams(searchParamsString);
+      params.delete("tab");
+      router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false });
+    }
+  }, [isBoth, tabParam, setActiveRole, pathname, router, searchParamsString]);
   const [userId, setUserId] = useState<string | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [loading, setLoading] = useState(true);

@@ -932,7 +932,7 @@ function ContractContent() {
       if (selMatch?.employer_id) {
         await supabase.from("users").update({ phone: f.ceoPhone }).eq("id", selMatch.employer_id);
       }
-      if (selMatch?.worker_id && selMatch?.id && (f.worker || f.workerBirth || f.workerPhone || f.workerAddr)) {
+      if (selMatch?.worker_id && selMatch?.id && (f.worker || f.workerBirth || f.workerPhone || f.workerAddr || (f as any).bankName || (f as any).bankNumber)) {
         // users 테이블 RLS는 본인 행만 쓰기 허용이라 사장님 세션에서 알바생 행을
         // 직접 update하면 에러 없이 조용히 0건 처리됨 — 서버 라우트(서비스 롤) 경유
         await fetch("/api/contract/sync-worker-info", {
@@ -946,6 +946,10 @@ function ContractContent() {
             phone: f.workerPhone || null,
             address: f.workerAddr || null,
             address_detail: f.workerAddrDetail || null,
+            // 평문 그대로 서버로 보냄 — 서버(서비스 롤 라우트)에서 암호화해서 users에 SOT로 저장.
+            // contract_data 쪽 bankAccount/bankNumber는 위에서 이미 암호화된 별도 사본(계약 스냅샷)이라 안 건드림.
+            bank_name: (f as any).bankName || null,
+            bank_number: (f as any).bankNumber || null,
           }),
         });
       }

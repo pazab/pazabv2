@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
 import { fetchMinWage } from "@/lib/minWage";
+import { parseWorkHoursRange, daetaDayCount } from "@/lib/utils";
 
 interface DaetaRegisterModalProps {
   userId: string;
@@ -85,6 +86,11 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const [wageTouched, setWageTouched] = useState(false); // 사장님이 직접 수정하면 자동 할증 제안 중단
   const [urgentPct, setUrgentPct] = useState({ sameDay: 20, h3: 30 }); // DB daeta_sos_config에서 로드
   const [minWage, setMinWage] = useState(10030);
+  // 근무 시작까지 최소 확보해야 하는 시간(분) — DB daeta_sos_config에서 로드, 없으면 60분 기본값.
+  // 에스컬레이션 사다리(팀내10+동네30+신규30=70분)가 돌아갈 최소한의 여유를 보장하기 위함
+  const [minLeadMinutes, setMinLeadMinutes] = useState(60);
+  // 자동 할증 상한이 설정된 채로 등록하기 전 마지막 확인 — 발행(되돌리기 힘든 액션) 직전 1회
+  const [showSurgeConfirm, setShowSurgeConfirm] = useState(false);
   const [wageHint, setWageHint] = useState("");
   // 안 잡히고 단계가 오를수록(escalation_stage) 자동으로 오르는 시급의 상한(%) — 사장님이 등록 시 직접 동의한 값만큼만 오름
   const [maxUrgentPct, setMaxUrgentPct] = useState(20); // 기본값 넛지 — 강제 아님, 0으로 낮추면 자동 할증 끔. 30%는 사장님 심리적 거부감 우려로 2026-08-13 20%로 완화
@@ -117,6 +123,16 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
     return Math.round((base * (1 + applied / 100)) / 10) * 10;
   };
 
+  // 예상 일급 미리보기 — 시급만 보고는 하루에 얼마 나가는지 감이 안 와서 등록 전에 바로 확인할 수 있게 함.
+  // 초과근무 할증 등 실제 정산 규칙(app/api/daeta/complete)까지는 반영하지 않은 단순 시간×시급 견적.
+  const estimatedPay = (() => {
+    const hoursPerDay = parseWorkHoursRange(`${startHour}:${startMin} ~ ${endHour}:${endMin}`);
+    const base = parseInt(wage) || 0;
+    if (!hoursPerDay || base <= 0) return null;
+    const days = !isSingleDay && !postingId && endDate && endDate !== workDate ? daetaDayCount(workDate, endDate) : 1;
+    return { hoursPerDay, days, totalPay: Math.round(hoursPerDay * base * days) };
+  })();
+
   useEffect(() => {
     loadCredentials();
     loadWageConfig();
@@ -133,12 +149,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
     const { data } = await supabase
       .from("daeta_sos_config")
       .select("key, value")
-      .in("key", ["urgent_pct_same_day", "urgent_pct_3h", "stage2_pct", "stage3_pct", "stage4_pct"]);
+      .in("key", ["urgent_pct_same_day", "urgent_pct_3h", "stage2_pct", "stage3_pct", "stage4_pct", "min_lead_minutes"]);
     if (data) {
       const map: Record<string, number> = {};
       data.forEach((r: { key: string; value: number }) => { map[r.key] = r.value; });
       setUrgentPct({ sameDay: map.urgent_pct_same_day ?? 20, h3: map.urgent_pct_3h ?? 30 });
       setAutoPct({ stage2: map.stage2_pct ?? 10, stage3: map.stage3_pct ?? 20, stage4: map.stage4_pct ?? 30 });
+      if (map.min_lead_minutes != null) setMinLeadMinutes(map.min_lead_minutes);
     }
   };
 
@@ -411,9 +428,20 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       fail("대타 필요 날짜가 과거예요. 날짜를 다시 확인해 주세요.");
       return;
     }
+    // 최소 리드타임 — 에스컬레이션 사다리(팀내→동네→신규, 기본 70분)가 돌아갈 최소한의 여유도
+    // 없이 등록되면(예: 10분 뒤 시작) 검증 인력에게 먼저 노출될 기회조차 없이 의미가 없어짐
+    const shiftStart = new Date(`${workDate}T${startHour}:${startMin}:00+09:00`);
+    const minutesUntilShift = (shiftStart.getTime() - Date.now()) / 60000;
+    if (minutesUntilShift < minLeadMinutes) {
+      fail(`대타는 근무 시작 최소 ${minLeadMinutes}분 전까지는 등록해야 해요. 그보다 급하면 팀원이나 아는 알바생에게 직접 연락해 주세요.`);
+      return;
+    }
     const finalWage = parseInt(wage);
-    if (isNaN(finalWage) || finalWage < 10030) {
-      fail("시급은 2026년 최저시급(10,030원) 이상이어야 합니다.");
+    // minWage는 fetchMinWage()로 DB에서 매년 갱신되는 값을 가져오는데, 정작 이 검증만 리터럴
+    // 10030으로 하드코딩돼 있었음 — 안내문구·자동제안은 맞는 값을 쓰면서 실제 차단 기준만 옛날 값에
+    // 머물러있던 불일치를 수정 (CLAUDE.md: 매년 바뀌는 숫자 하드코딩 금지)
+    if (isNaN(finalWage) || finalWage < minWage) {
+      fail(`시급은 최저시급(${minWage.toLocaleString()}원) 이상이어야 합니다.`);
       return;
     }
     if (!selectedParent) {
@@ -444,10 +472,25 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       }
     }
 
+    // 안 잡히면 시급이 자동으로 오르는 조건(상한 20%·30%처럼 낮지 않은 값)으로 등록하기 직전엔
+    // 확인 없이 그대로 발행되고 있었음 — 발행 자체가 되돌리기 힘든 액션(CLAUDE.md)인 데다,
+    // 자동 할증은 사장님이 나중에 "이런 조건인 줄 몰랐다"고 할 수 있는 금전적 약속이라 한 번 더 확인시킨다.
+    if (maxUrgentPct > 0) {
+      setShowSurgeConfirm(true);
+      return;
+    }
+    await proceedRegister();
+  };
+
+  const proceedRegister = async () => {
     setSaving(true);
     setErrMsg("");
 
     try {
+      // handleRegister에서 검증까지 마친 값을 그대로 다시 계산 — 검증과 제출 사이(자동 할증 확인
+      // 시트가 떠있는 동안)에도 상태가 바뀌지 않으므로 안전함
+      const finalWage = parseInt(wage);
+      const finalDuty = duty === "직접입력" ? customDuty.trim() : duty;
       const finalShop = shopInfo!;
       // 기간(시작일~종료일)을 고르면 한 공고가 그 기간 전체를 커버 — 지원/수락도 기간 전체 단위로 한 번에
       // 이뤄짐(하루씩 따로 지원해야 했던 이전 방식 폐기). 정산은 app/api/daeta/complete에서 일수만큼 곱해서 계산.
@@ -463,6 +506,11 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         duty: finalDuty,
         allow_new: allowNew,
         required_credentials: JSON.stringify(selectedCreds),
+        // 에스컬레이션 만료는 "첫 근무 시작 시각" 기준 — 기간 중 첫날까지 응답 없으면 만료.
+        // "Z"(UTC)를 붙이면 KST 벽시계 시각이 그대로 UTC로 오인돼 실제보다 9시간 늦게 만료되던
+        // 버그였음 — 명시적으로 +09:00을 붙여야 서버 타임존과 무관하게 항상 올바른 시각이 됨.
+        // 수정 시에도 갱신해야 함(예전엔 insert에만 있어서 시간을 바꿔 수정해도 만료 시각이 그대로였음).
+        expires_at: `${workDate}T${startHour}:${startMin}:00+09:00`,
       };
 
       if (postingId) {
@@ -485,8 +533,6 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
             lat: finalShop.lat,
             lng: finalShop.lng,
             status: "pending",
-            // 에스컬레이션 만료는 "첫 근무 시작 시각" 기준 — 기간 중 첫날까지 응답 없으면 만료
-            expires_at: `${workDate}T${startHour}:${startMin}:00Z`,
             ...sharedFields,
           })
           .select("id")
@@ -677,7 +723,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>📅 대타 필요한 날짜 *</label>
                   <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} min={todayStr} max={maxDateStr}
                     style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }} />
-                  <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 대타 구인은 오늘 기준 3일 이내 긴급 일정만 가능합니다.</span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 대타 구인은 오늘 기준 3일 이내 긴급 일정만 가능합니다. 근무 시작 최소 {minLeadMinutes}분 전까지 등록해 주세요.</span>
 
                   {/* 근무시간이 같은 기간을 한번에 등록 — 신규 등록에서만 노출(수정 중엔 하루만) */}
                   {!postingId && (
@@ -711,7 +757,12 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                       style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }}>
                       {Array.from({ length: 24 }, (_, i) => <option key={i} value={String(i).padStart(2, "0")}>{String(i).padStart(2, "0")}시</option>)}
                     </select>
-                    <select value={startMin} onChange={e => setStartMin(e.target.value)}
+                    <select value={startMin} onChange={e => {
+                      // 근무는 보통 시작·종료 분이 같음(예: 02:30~10:30) — 매번 종료 분까지 따로 고르게
+                      // 하지 말고 시작 분을 바꾸면 종료 분도 같이 맞춰줌. 다르게 하고 싶으면 종료 분을 직접 바꾸면 됨.
+                      setStartMin(e.target.value);
+                      setEndMin(e.target.value);
+                    }}
                       style={{ width: 64, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 6px", color: "var(--text)", fontSize: 14, outline: "none" }}>
                       <option value="00">00분</option><option value="30">30분</option>
                     </select>
@@ -744,6 +795,14 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                     <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 700, display: "block", marginTop: 4 }}>{wageHint}</span>
                   )}
                   <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 최저시급({minWage.toLocaleString()}원) 이상. 급한 대타일수록 할증 시급이 매칭율을 크게 높여요.</span>
+                  {estimatedPay && (
+                    <div style={{ marginTop: 8, background: "var(--surface2)", borderRadius: 10, padding: "8px 12px", fontSize: 12, color: "var(--text)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ color: "var(--text-muted)" }}>
+                        🧮 예상 {estimatedPay.days > 1 ? "총액" : "일급"} ({estimatedPay.hoursPerDay}시간{estimatedPay.days > 1 ? ` × ${estimatedPay.days}일` : ""})
+                      </span>
+                      <strong style={{ color: "#c4b5fd" }}>{estimatedPay.totalPay.toLocaleString()}원</strong>
+                    </div>
+                  )}
                 </div>
 
                 {/* 자동 할증 상한 — 착각/불이익 없도록 계산 방식과 미리보기를 명시적으로 보여줌 */}
@@ -1106,6 +1165,30 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         )}
 
       </div>
+
+      {/* 자동 할증 상한을 켠 채로 등록하기 직전 최종 확인 — 발행(되돌리기 힘든 액션) 전 1회 */}
+      {showSurgeConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 360, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: 22, color: "var(--text)" }}>
+            <div style={{ fontSize: 32, textAlign: "center", marginBottom: 8 }}>⚡</div>
+            <p style={{ fontSize: 15, fontWeight: 800, textAlign: "center", margin: "0 0 10px" }}>이 조건으로 등록할까요?</p>
+            <div style={{ background: "var(--surface2)", borderRadius: 12, padding: "12px 14px", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8, marginBottom: 16 }}>
+              시급 {parseInt(wage || "0").toLocaleString()}원으로 등록되고, 안 잡히면 최대 <strong style={{ color: "var(--text)" }}>{maxUrgentPct}%</strong> 오른
+              <strong style={{ color: "#fb923c" }}> {previewWage(maxUrgentPct).toLocaleString()}원</strong>까지 사장님 확인 없이 자동으로 시급이 인상될 수 있어요.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={() => setShowSurgeConfirm(false)}
+                style={{ flex: 1, padding: 12, borderRadius: 12, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                다시 확인할게요
+              </button>
+              <button type="button" onClick={() => { setShowSurgeConfirm(false); proceedRegister(); }}
+                style={{ flex: 1, padding: 12, borderRadius: 12, background: "var(--primary)", border: "none", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                이대로 등록
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

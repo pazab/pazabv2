@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import DaetaHistoryView from "@/components/daeta/DaetaHistoryView";
@@ -9,6 +9,7 @@ import { useActiveRole } from "@/lib/useActiveRole";
 
 function DaetaHistoryContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const focusMatchId = searchParams.get("matchId") || undefined;
@@ -31,10 +32,18 @@ function DaetaHistoryContent() {
     });
   }, []);
 
-  // ?tab=worker|employer 딥링크(예: 채팅방 "대타 관리하기") — mypage/myteam과 동일 패턴
+  // ?tab=worker|employer 딥링크(예: 채팅방 "대타 관리하기") — mypage와 동일 패턴.
+  // 적용 후 URL에서 tab을 지워야 함 — 안 지우면 다른 페이지로 이동했다가 뒤로가기로 돌아올 때
+  // 이 effect가 다시 실행되며, 그 사이 상단 스위치로 바꾼 모드를 무시하고 예전 값으로 되돌려버림.
+  const searchParamsString = searchParams.toString();
   useEffect(() => {
-    if (isBoth && (tabParam === "worker" || tabParam === "employer")) setActiveRole(tabParam);
-  }, [isBoth, tabParam, setActiveRole]);
+    if (isBoth && (tabParam === "worker" || tabParam === "employer")) {
+      setActiveRole(tabParam);
+      const params = new URLSearchParams(searchParamsString);
+      params.delete("tab");
+      router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false });
+    }
+  }, [isBoth, tabParam, setActiveRole, pathname, router, searchParamsString]);
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 80 }}>

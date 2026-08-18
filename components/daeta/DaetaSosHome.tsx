@@ -6,7 +6,7 @@
  * "직접 고르기"(카드덱, onOpenDeck)는 인력 목록과 같은 후보를 중복 노출해 2026-08-06 진입 버튼 제거 —
  * 코드/prop은 유지(강등), 필요해지면 목록 옆에 다시 노출
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
@@ -14,8 +14,9 @@ import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import SetNeighborhoodSheet from "@/components/daeta/SetNeighborhoodSheet";
-import { getWorkerTiers, TIER_LABEL } from "@/lib/daetaTier";
+import { getWorkerTiers, TIER_LABEL, DaetaTier } from "@/lib/daetaTier";
 import { getGrade } from "@/lib/trustScore";
+import TierBadge from "@/components/TierBadge";
 import { formatDaetaDateRange } from "@/lib/utils";
 
 
@@ -325,9 +326,12 @@ interface DaetaSosHomeProps {
   onOpenDeck: () => void;
   roleView?: "employer" | "worker";
   onRoleChange?: (r: "employer" | "worker") => void;
+  /** "새 지원서 도착" 알림에서 온 경우 — 해당 공고의 지원자 시트를 진입하자마자 자동으로 염 */
+  autoOpenApplicantsPostingId?: string | null;
+  onAutoOpenApplicantsConsumed?: () => void;
 }
 
-export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, onRoleChange }: DaetaSosHomeProps) {
+export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, onRoleChange, autoOpenApplicantsPostingId, onAutoOpenApplicantsConsumed }: DaetaSosHomeProps) {
   const router = useRouter();
   const { showToast, ToastUI } = useToast();
 
@@ -356,10 +360,20 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [selectedPostingId, setSelectedPostingId] = useState<string>("");
   const [sendingSos, setSendingSos] = useState(false);
   const [detailPosting, setDetailPosting] = useState<SosPosting | null>(null);
-  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number; avatarUrl?: string }[] } | null>(null);
+  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number; avatarUrl?: string; tier: DaetaTier }[] } | null>(null);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [acceptingMatchId, setAcceptingMatchId] = useState<string | null>(null);
   const [rejectingMatchId, setRejectingMatchId] = useState<string | null>(null);
+  // 대타 참여 정지 상태 — 예전엔 지원/등록을 "시도해서 실패"해야만 토스트로 알 수 있었음.
+  // 상시로 눈에 띄게 보여줘서 왜 못 하는지 매번 다시 알아내지 않게 함.
+  const [suspendedUntil, setSuspendedUntil] = useState<string | null>(null);
+  useEffect(() => {
+    supabase.from("users").select("daeta_cancel_suspended_until").eq("id", userId).maybeSingle()
+      .then(({ data }) => {
+        const until = data?.daeta_cancel_suspended_until;
+        setSuspendedUntil(until && new Date(until) > new Date() ? until : null);
+      });
+  }, [userId]);
 
   // 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸
   const [guideDismissed, setGuideDismissed] = useState(true);
@@ -434,11 +448,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       .eq("status", "pending")
       .order("created_at", { ascending: false });
 
-    // 근무 시작 시각(expires_at)이 지났는데 응답자 없이 방치된 공고는 크론 없이 조회 시점에 만료 처리
+    // 근무 시작 시각(expires_at)이 지났는데 응답자 없이 방치된 공고는 크론 없이 조회 시점에 만료 처리 —
+    // daeta_postings 상태 변경뿐 아니라 거기 딸린 pending 지원자 정리 + 알림까지 필요해서
+    // (서비스롤 권한 필요) 클라이언트에서 직접 update하지 않고 서버 라우트를 호출한다.
     const nowIso = new Date().toISOString();
     const expiredIds = (rowsRaw || []).filter(r => (r as any).expires_at && (r as any).expires_at < nowIso).map(r => r.id);
     if (expiredIds.length > 0) {
-      supabase.from("daeta_postings").update({ status: "expired" }).in("id", expiredIds);
+      fetch("/api/daeta/expire-check", { method: "POST" }).catch(() => {});
     }
     const rows = (rowsRaw || []).filter(r => !(r as any).expires_at || (r as any).expires_at >= nowIso);
 
@@ -752,15 +768,21 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       }
 
       const workerIds = pendingMatches.map(m => m.worker_id);
-      const { data: users } = await supabase.from("users").select("id, nickname, trust_score, avatar_url").in("id", workerIds);
+      const [{ data: users }, tiers] = await Promise.all([
+        supabase.from("users").select("id, nickname, trust_score, avatar_url").in("id", workerIds),
+        getWorkerTiers(supabase, workerIds),
+      ]);
       const userMap = new Map((users || []).map(u => [u.id, u]));
 
+      // 사장님이 여러 지원자 중 한 명을 고르는 가장 중요한 순간인데 예전엔 닉네임·신뢰점수만
+      // 보이고 ✅검증/🔵신규 Tier 배지가 전혀 안 떠서, 정작 이 정보가 가장 필요한 화면에 없었음
       const applicants = pendingMatches.map(m => ({
         matchId: m.id,
         workerId: m.worker_id,
         nickname: userMap.get(m.worker_id)?.nickname || "알바생",
         trustScore: userMap.get(m.worker_id)?.trust_score ?? 50,
         avatarUrl: userMap.get(m.worker_id)?.avatar_url || undefined,
+        tier: tiers[m.worker_id] || "tier2",
       }));
       setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants });
     } catch {
@@ -769,6 +791,24 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       setLoadingApplicants(false);
     }
   };
+
+  // "새 지원서 도착" 알림 → 예전엔 지원자 프로필 페이지로 보내서 정작 수락할 방법이 없는
+  // 막다른 길이었음. 이젠 이 공고의 지원자 시트로 바로 딥링크해서 알림 한 번으로 수락까지 끝나게 함.
+  // postings는 폴링마다 새 배열로 갱신되므로, ref로 "이미 처리한 postingId"를 기억해서 매번 재실행되지 않게 함.
+  const autoOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoOpenApplicantsPostingId || loading) return;
+    if (autoOpenedRef.current === autoOpenApplicantsPostingId) return;
+    autoOpenedRef.current = autoOpenApplicantsPostingId;
+    const posting = postings.find(p => p.id === autoOpenApplicantsPostingId);
+    if (posting) {
+      openApplicants(posting);
+    } else {
+      showToast("이미 마감됐거나 존재하지 않는 공고예요.", "error");
+    }
+    onAutoOpenApplicantsConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenApplicantsPostingId, loading, postings]);
 
   const acceptApplicant = async (matchId: string) => {
     setAcceptingMatchId(matchId);
@@ -908,6 +948,21 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       />
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px 0" }}>
+
+        {/* 대타 참여 정지 배너 — 지원/등록을 시도해서 막혀야만 알던 것을 상시 노출로 바꿈 */}
+        {suspendedUntil && (
+          <div style={{
+            background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 14, padding: "12px 14px", marginBottom: 14,
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <span style={{ fontSize: 20 }}>🚫</span>
+            <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>
+              <strong>무단 노쇼 이력으로 대타 참여가 제한 중이에요.</strong><br />
+              {new Date(suspendedUntil).toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}까지 새 대타 지원·등록이 안 돼요.
+            </div>
+          </div>
+        )}
 
         {/* 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸 */}
         {!guideDismissed && (
@@ -1319,7 +1374,10 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           )}
                         </div>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>{a.nickname}</div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            {a.nickname}
+                            <TierBadge tier={a.tier} size="sm" />
+                          </div>
                           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{grade.emoji} {grade.name} · 신뢰도 {a.trustScore}점</div>
                         </div>
                       </div>

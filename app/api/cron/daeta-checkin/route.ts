@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
 import { DaetaPostingRow } from "@/lib/daetaEscalation";
 import { markNoShowAndReescalate } from "@/lib/daetaNoShow";
+import { daetaDayCount } from "@/lib/utils";
 
 // 대타 출근·퇴근 타임라인 크론 (5분 주기) — app/api/cron/checkin(정규 팀원용)과 동일한 검증된 패턴을
 // 대타(daeta) 매칭에 이식. 정규직원은 +20분을 결근 기준으로 쓰지만, 대타는 그 시간에 반드시
@@ -175,6 +176,66 @@ export async function GET(req: Request) {
           data: { matchId: m.id },
         });
         results.push({ matchId: m.id, action: "checkout_alert_30m_late" });
+      }
+    }
+  }
+
+  // 다일치(기간) 대타 2일차 이후 출근 모니터링 — 예전엔 1일차만 판정해서 2일차 이후 무단 불참은
+  // 시스템이 아예 알 방법이 없었음. daeta_daily_attendance(1일차 이후부터 기록됨)로 "오늘" 출근
+  // 여부를 확인한다. 다만 이 판정 경로는 아직 신규라 자동으로 노쇼 확정·계약 종료까지는 하지 않고
+  // (오탐 시 되돌리기 어려운 정지 페널티까지 가는 건 부담) 사장님에게 알려서 직접 확인/신고하게 한다.
+  const { data: multiDayMatches } = await supabase
+    .from("matches")
+    .select("id, employer_id, worker_id, daeta_posting_id, noshow_extend_until")
+    .not("daeta_posting_id", "is", null)
+    .eq("progress_status", "accepted")
+    .not("checked_in_at", "is", null); // 최소 1일차는 출근한 건만 대상(안 그러면 위 1일차 로직이 이미 처리)
+
+  if (multiDayMatches && multiDayMatches.length > 0) {
+    const mdPostingIds = Array.from(new Set(multiDayMatches.map(m => m.daeta_posting_id)));
+    const { data: mdPostings } = await supabase
+      .from("daeta_postings")
+      .select("id, business_name, work_date, work_date_end, work_hours")
+      .in("id", mdPostingIds);
+    const mdPostingById = new Map((mdPostings || []).map(p => [p.id, p]));
+
+    for (const m of multiDayMatches) {
+      const posting = mdPostingById.get(m.daeta_posting_id);
+      if (!posting || !posting.work_date_end) continue;
+      const days = daetaDayCount(posting.work_date, posting.work_date_end);
+      if (days <= 1) continue; // 하루짜리는 위 로직이 이미 처리
+      if (todayStr <= posting.work_date || todayStr > posting.work_date_end) continue; // 2일차~마지막날 사이만
+
+      const { data: todayRow } = await supabase.from("daeta_daily_attendance")
+        .select("checked_in_at").eq("match_id", m.id).eq("work_date", todayStr).maybeSingle();
+      if (todayRow?.checked_in_at) continue; // 오늘 이미 출근함
+
+      const startMatch = posting.work_hours?.match(/\b(\d{1,2}):(\d{2})\b/);
+      if (!startMatch) continue;
+      const startMins = parseInt(startMatch[1]) * 60 + parseInt(startMatch[2]);
+      const diffMins = nowMins - startMins;
+      const timeStr = `${startMatch[1].padStart(2, "0")}:${startMatch[2]}`;
+      const extendActive = m.noshow_extend_until && new Date(m.noshow_extend_until).getTime() > Date.now();
+
+      if (diffMins >= -12 && diffMins <= -8) {
+        await createNotification({
+          userId: m.worker_id, type: "daeta",
+          title: "⏰ 대타 출근 10분 전입니다!",
+          body: `${posting.business_name} 오늘도 근무일이에요. 출근 시각은 ${timeStr}이에요.`,
+          url: "/mypage/daeta-history?tab=worker",
+          actions: [{ action: "daeta_checkin", title: "✅ 지금 출근" }],
+          data: { matchId: m.id, actionType: "daeta_checkin" },
+        });
+        results.push({ matchId: m.id, action: "multiday_alert_10m_before" });
+      } else if (diffMins >= AUTO_NOSHOW_MIN && !extendActive) {
+        await createNotification({
+          userId: m.employer_id, type: "daeta",
+          title: "🚨 오늘 대타 출근이 확인 안 돼요",
+          body: `${posting.business_name} 대타가 오늘(${todayStr}) 출근 시각(${timeStr})이 ${AUTO_NOSHOW_MIN}분 넘게 지나도록 출근 처리가 안 됐어요. 확인 후 필요하면 노쇼로 신고해주세요 — 이미 완료한 날짜들은 자동으로 정산돼요.`,
+          url: "/mypage/daeta-history?tab=employer",
+          data: { matchId: m.id },
+        });
+        results.push({ matchId: m.id, action: "multiday_noshow_alert" });
       }
     }
   }

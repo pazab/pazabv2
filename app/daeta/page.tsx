@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
 import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaSosHome from "@/components/daeta/DaetaSosHome";
-import DaetaWorkerHome from "@/components/daeta/DaetaWorkerHome";
 import TierBadge from "@/components/TierBadge";
 import { getWorkerTiers, DaetaTier } from "@/lib/daetaTier";
 import { useToast } from "@/lib/useToast";
@@ -514,6 +513,12 @@ function DaetaPageContent() {
         userType={userType}
         onOpenDeck={openDeck}
         roleView={isEmployer ? "employer" : "worker"}
+        autoOpenApplicantsPostingId={searchParams.get("applicants")}
+        onAutoOpenApplicantsConsumed={() => {
+          const params = new URLSearchParams(searchParams.toString());
+          params.delete("applicants");
+          router.replace(params.toString() ? `/daeta?${params.toString()}` : "/daeta", { scroll: false });
+        }}
       />
     );
   }

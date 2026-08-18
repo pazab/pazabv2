@@ -4,7 +4,8 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
 import { DaetaPostingRow, reescalateAfterDropout } from "@/lib/daetaEscalation";
-import { calcDaetaCancelTrustPenalty } from "@/lib/utils";
+import { calcDaetaCancelTrustPenalty, parseWorkHoursRange } from "@/lib/utils";
+import { calcSettlementPay, calcDailyTaxForPeriod, getIs5OrMore } from "@/lib/daetaSettlement";
 
 const getServiceClient = () =>
   createClient(
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
     const supabase = getServiceClient();
     const { data: match } = await supabase
       .from("matches")
-      .select("id, employer_id, worker_id, daeta_posting_id, progress_status")
+      .select("id, employer_id, worker_id, daeta_posting_id, employer_profile_id, progress_status, checked_in_at, checked_out_at")
       .eq("id", matchId)
       .maybeSingle();
 
@@ -74,6 +75,46 @@ export async function POST(req: NextRequest) {
     const isMutual = mutual === true;
     const trustPenalty = isMutual ? 0 : calcDaetaCancelTrustPenalty(hoursUntilShift);
 
+    // 이미 출근한 뒤 취소되면 그 시간만큼은 반드시 정산 — 예전엔 checked_in_at 여부와 무관하게
+    // 그냥 cancelled 처리만 해서, 실제로 일한 시간에 대한 급여가 통째로 사라졌었음.
+    let partialSettlement: { totalHours: number; totalPay: number } | null = null;
+    if (match.checked_in_at && posting?.wage) {
+      const scheduledHoursPerDay = parseWorkHoursRange(posting.work_hours) ?? 6;
+      const endTime = match.checked_out_at ? new Date(match.checked_out_at) : new Date();
+      const actualMs = endTime.getTime() - new Date(match.checked_in_at).getTime();
+      const totalHours = Math.max(0, Math.round((actualMs / 3600000) * 10) / 10);
+      if (totalHours > 0) {
+        const is5OrMore = await getIs5OrMore(supabase, match.employer_profile_id);
+        const { overtimeHours, basePay, overtimePay, totalPay } =
+          calcSettlementPay(posting.wage, scheduledHoursPerDay, 1, totalHours, is5OrMore);
+        const { incomeTax, localTax, totalDeductions, netPay } = calcDailyTaxForPeriod(totalPay, 1);
+        const now = new Date();
+        const { error: psErr } = await supabase.from("payslips").insert({
+          employer_id: match.employer_id,
+          worker_id: match.worker_id,
+          match_id: match.id,
+          year: now.getFullYear(),
+          month: now.getMonth() + 1,
+          wage: posting.wage,
+          total_hours: totalHours,
+          overtime_hours: overtimeHours,
+          base_pay: basePay,
+          overtime_pay: overtimePay,
+          total_pay: totalPay,
+          income_tax: incomeTax,
+          local_tax: localTax,
+          total_deductions: totalDeductions,
+          deductions: totalDeductions,
+          net_pay: netPay,
+          status: "issued",
+          issued_at: now.toISOString(),
+          memo: "출근 후 중도 취소 — 실근무시간 자동 정산",
+          attendance_data: { auto_calculated_hours: totalHours, settled_hours: totalHours, adjusted: false, mid_cancel: true },
+        });
+        if (!psErr) partialSettlement = { totalHours, totalPay: netPay };
+      }
+    }
+
     // 페널티 적용: 신뢰점수만 차등 감점 (하드 정지 없음). 합의 취소는 페널티 없이 로그만 남김
     const { data: u } = await supabase.from("users").select("trust_score").eq("id", user.id).maybeSingle();
     const before = u?.trust_score ?? 50;
@@ -85,18 +126,39 @@ export async function POST(req: NextRequest) {
       user_id: user.id, delta: -trustPenalty, reason: isMutual ? MUTUAL_CANCEL_REASON : CANCEL_REASON, before_score: before, after_score: after, ref_id: matchId,
     });
 
-    // 매칭·계약 취소 처리
-    await supabase.from("matches").update({ progress_status: "cancelled" }).eq("id", matchId);
+    // 매칭·계약 취소 처리 — 누가·왜 취소했는지 message에 남겨야 이력 화면(DaetaHistoryView)에서
+    // "사전 취소됨"이라고만 뜨지 않고 구체적인 사유를 보여줄 수 있음 (예전엔 이 컬럼이 항상 비어있었음)
+    const cancelMessage = isMutual
+      ? "상호 합의로 취소됨"
+      : isEmployerCancelling
+      ? "사장님이 사전 취소함"
+      : "알바생이 사전 취소함";
+    await supabase.from("matches").update({ progress_status: "cancelled", message: cancelMessage }).eq("id", matchId);
     await supabase.from("contracts").update({ status: "cancelled" }).eq("match_id", matchId).neq("status", "cancelled");
+
+    // 채팅방에 취소 사실을 남김 — 체크인/체크아웃/정산완료는 전부 시스템 메시지를 남기는데
+    // 취소만 빠져있어서, 나중에 채팅방을 다시 열어봐도 왜 매칭이 끝났는지 흔적이 전혀 없었음
+    const settlementNote = partialSettlement
+      ? `\n💸 이미 출근한 ${partialSettlement.totalHours}시간은 자동 정산돼서 ${partialSettlement.totalPay.toLocaleString()}원이 지급 처리됐어요.`
+      : "";
+    await supabase.from("chats").insert({
+      match_id: matchId,
+      sender_id: user.id,
+      receiver_id: counterpartId,
+      message: `🚫 ${cancelMessage} (${new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })})` + settlementNote,
+      message_type: "system",
+      is_read: false,
+    });
 
     // 상대방에게 알림
     await createNotification({
       userId: counterpartId,
       type: "daeta",
       title: isMutual ? "🤝 합의된 취소로 대타가 종료됐어요" : "😢 확정된 대타가 취소됐어요",
-      body: isMutual
+      body: (isMutual
         ? "서로 합의한 대로 이번 대타는 취소 처리됐어요."
-        : (isEmployerCancelling ? "사장님 사정으로 대타가 취소됐어요." : "알바생 사정으로 대타가 취소됐어요."),
+        : (isEmployerCancelling ? "사장님 사정으로 대타가 취소됐어요." : "알바생 사정으로 대타가 취소됐어요."))
+        + (partialSettlement ? ` (근무한 ${partialSettlement.totalHours}시간 자동 정산됨)` : ""),
       url: `/chat/${matchId}`,
       data: { matchId },
     });
@@ -119,7 +181,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, trustPenalty, mutual: isMutual, hoursNotice: Math.round(hoursUntilShift * 10) / 10 });
+    return NextResponse.json({ success: true, trustPenalty, mutual: isMutual, hoursNotice: Math.round(hoursUntilShift * 10) / 10, partialSettlement });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

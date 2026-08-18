@@ -334,12 +334,32 @@
 
 - **사전 취소가 노쇼보다 대우가 나빴던 버그**: `app/api/daeta/cancel/route.ts`가 취소 페널티(90일 누적 가중 정지+감점)만 적용하고 `daeta_postings`는 아예 안 건드려서, 노쇼보다 훨씬 "착한" 사전 취소가 오히려 재구인 시도조차 없이 방치되고 있었음. `lib/daetaEscalation.ts`에 신설한 `reescalateAfterDropout()`(노쇼 재확산 로직에서 신뢰점수 처리 부분만 떼어낸 공용 함수)을 알바생측 취소에도 연결 — 취소해도 노쇼와 동일하게 즉시 재오픈+재확산됨(감점은 취소 전용 페널티만 적용, 중복 감점 없음). 사장님측 취소는 재구인 의사가 없다는 뜻이라 공고를 `cancelled`로 완전 종료.
 - **경합 지원자 방치 버그**: 여러 알바생이 같은 대타 공고에 지원했을 때 사장님이 한 명을 수락해도 나머지 지원자의 매칭이 `pending`으로 계속 남아있고 알림도 안 갔음(`app/api/lovecall/route.ts` accept 분기). 수락 시 같은 공고의 다른 pending 매칭을 전부 `rejected` 처리 + "다른 분으로 확정됐어요" 알림 발송하도록 수정.
-- (참고, 미착수) 동시 수락 경합 가드 부재 — 사장님이 두 지원자를 거의 동시에 수락하면 계약서가 중복 생성될 수 있음. 발생확률 낮아 후순위로 보류.
+- ~~(참고, 미착수) 동시 수락 경합 가드 부재~~ — 2026-08-19 아래 항목에서 해결.
 - **결제/자동지급 우선순위 재확인**: 지금은 전부 무료 제공 단계라 결제 인프라 투자는 계속 보류. 정산은 이미 계산까지는 자동화됐고 계좌이체 자체는 사장님에게 큰 마찰이 아니라고 판단 — 남은 리소스는 매칭 성사율/속도(위 버그들처럼 실제로 매칭이 새는 지점)에 우선 투입. DESIGN_PLAN.md §11의 1단계(딥링크 송금)도 지금 당장은 착수하지 않음.
+
+### 후속 결정 — 전체 플로우 재점검 2차, 임금 정확성·동시성·재사용 구멍 다수 수정 (2026-08-19)
+1차 재점검(위 2026-08-13) 이후 정산/동시성/스키마 관점으로 다시 훑어서 발견한 것들. 전부 구현 완료:
+
+- **출근 후 취소·노쇼 시 급여 증발 버그**: `app/api/daeta/cancel/route.ts`·`app/api/daeta/complete/route.ts` 둘 다 `checked_in_at` 여부를 확인 안 하고 처리해서, 실제로 몇 시간 일한 사람이 취소/노쇼 처리되면 그 시간에 대한 급여가 통째로 사라졌음. 공용 정산 계산을 `lib/daetaSettlement.ts`로 뽑아서: 출근 후 취소 시 실근무시간만큼 자동 payslip 발행, 이미 출근한 사람은 노쇼 신고 자체를 막고 "완료·정산"으로 유도.
+- **다일치 공고 2일차 이후 노쇼 감지 전무**: `matches.checked_in_at`이 1일차 값 하나뿐이라 2일차 이후 무단 불참을 시스템이 아예 몰랐음. `daeta_daily_attendance` 테이블 신설(`patch_daeta_daily_attendance.sql`, 다일치 전용 — 하루짜리는 기존 그대로 `matches` 컬럼이 SOT)로 일자별 출퇴근 기록, 크론이 2일차 이후도 미출근 알림, 노쇼 확정 전 이미 완료한 날짜는 `settlePriorDailyAttendance()`로 먼저 정산.
+- **대타 정산에 세금 계산 자체가 없었음**: 정규 팀원 일급 정산(`cron/payslip`)엔 있는 `calcDailyWorkerTax` 원천징수 계산이 대타(`daeta/complete`)엔 빠져서 항상 세전 금액이 "실수령액"으로 안내되고 있었음. `payslips.income_tax/local_tax/net_pay` 채우도록 수정, 이력 화면에 세전/세후 구분 표시.
+- **동시 수락·중복 정산 가드**: 위에서 "미착수·후순위"로 남겨뒀던 동시 수락 경합 가드를 `lib/daetaEscalation.ts`의 단계전진 가드(`.eq("escalation_stage", stage)`)와 동일 패턴으로 구현(`daeta_postings.status`를 pending일 때만 원자적으로 matched 전환). 정산완료(`daeta/complete`)도 동일하게 `matches.progress_status`를 accepted일 때만 hired로 전환하는 가드 추가 — 둘 다 더블클릭/다른 탭 동시 요청으로 계약·명세서가 중복 생성되던 구멍.
+- **계좌정보 재사용 불가 — 스키마 정규화**: §11 진단(2026-08-12)에서 "계좌정보는 이미 암호화 인프라가 있다"고 적어뒀지만, 실제로는 `contracts.contract_data`에만 계약 건별로 저장돼서 재계약·대타 여러 건마다 매번 새로 입력/암호화해야 했음. `users.bank_name/bank_number_enc/bank_account_enc`(`patch_users_bank_account.sql`)를 SOT로 신설 — `app/contract/page.tsx` 저장 시 write-through, `app/api/lovecall/route.ts`의 대타 자동계약 생성 시 이 값을 그대로 복사해서 채움(암호문 그대로 이관, 재복호화 없음). `contracts.contract_data.bankAccount/bankNumber`는 계약 체결 시점 스냅샷으로 계속 유지(역할 분리). **잔여 갭**: 대타 계약서 PDF(`app/api/contract/route.ts`)는 `pay_method` 라벨만 출력하고 실제 계좌번호를 사장님에게 보여주는 화면이 없음 — §11 1단계(딥링크 송금)와 별개로 후속 필요.
+- **최저시급 검증 하드코딩**: `DaetaRegisterModal.tsx`가 `fetchMinWage()`로 최신 최저시급을 가져와 안내문구엔 쓰면서 실제 등록 차단 검증은 리터럴 `10030`을 쓰고 있었음(연도 바뀌면 안내와 실제 기준이 어긋남) — `minWage` state로 통일.
+- **대타 출근 체크인에 위치 검증 부재**: 정규 팀원 출퇴근(`myteam.tsx` `CheckInButton`)엔 있는 매장 반경(200m) 체크가 대타 체크인엔 없어서 아무 데서나 "출근했어요"가 통과됐고, 이 시각이 그대로 노쇼 면제/실근무시간(→급여) 판정에 쓰였음 — 동일 반경 검증 추가.
+- **체크인 타이밍 갭**: 체크인 자체엔 시간 제한이 없어서 근무 시작 몇 시간 전에도 눌러버릴 수 있었음 — 크론의 "10분 전" 알림 시점과 맞춰 체크인 버튼도 그때부터만 활성화(서버·클라이언트 양쪽).
+- **정산 타이밍 갭 2건**: "근무 완료·정산하기"가 (a) 근무 시작 전, (b) 예정 종료 전에도 항상 눌려있었음 — (a)는 하드 차단(서버·클라이언트), (b)는 조기 종료의 정당한 케이스가 있어 하드 차단 대신 강한 경고로 처리.
+- **지원 알림이 막다른 길이었던 버그**: 대타 지원 알림을 누르면 `/worker/[id]` 프로필로 갔는데, 그 페이지는 대타 매칭을 아예 제외하고 정규 채용만 다뤄서 수락할 방법이 없었음 — 지원자 목록(`/daeta?applicants=`)으로 직접 딥링크하도록 변경.
+- **자동계약서 가짜 사업자등록번호**: `app/api/lovecall/route.ts`의 대타 자동계약이 `bizRegNo: "123-45-67890"` 더미값을 하드코딩하고 있었음 — `employer_profiles.biz_reg_number`에서 실제 값 조회하도록 수정.
+- **등록 최소 리드타임 부재 + 만료시각 타임존 버그**: 대타 등록에 하한이 전혀 없어 근무 10분 전에도 등록 가능했음(에스컬레이션 사다리가 돌 시간이 없어짐) — `daeta_sos_config.min_lead_minutes`(기본 60분) 신설. `expires_at`을 `Z`(UTC 고정)로 저장해 실제보다 9시간 늦게 만료되던 버그도 `+09:00` 명시로 수정.
+- **죽은 코드**: `components/daeta/DaetaWorkerHome.tsx`(592줄) — import만 되고 어디서도 렌더링 안 되는 상태로 방치돼있어 삭제.
+- 그 외 UX: 지원자 수락 시트에 Tier 배지 노출, 노쇼 신고 이의제기 경로(`report-unpaid`와 대칭) 신설, 취소/노쇼 시 채팅 시스템 메시지 추가, 이력 화면 상태 배지에 "근무 중" 실시간 강조 표시.
+
+구현 상세는 `db-schema.md`(users/daeta_daily_attendance 컬럼), `supabase/patch_users_bank_account.sql`·`patch_daeta_daily_attendance.sql`·`patch_daeta_min_lead.sql` 참조.
 
 ---
 
 ## 배포 전 수동 작업 (필수)
 
-1. **SQL 패치 실행**: `supabase/patch_daeta_sos.sql` → Supabase SQL Editor에서 실행 (escalation 컬럼 + daeta_sos_config 테이블). 미실행 시 대타 등록이 실패함. 추가로 `patch_daeta_auto_premium.sql`, `patch_daeta_employer_profile_link.sql`도 실행 필요(2026-08-07 추가분). **`patch_daeta_noshow_auto.sql`도 신규 실행 필요(2026-08-13 추가분, `matches.checked_in_at`/`noshow_extend_until`) — 미실행 시 자동 노쇼 판정 크론이 에러남.**
+1. **SQL 패치 실행**: `supabase/patch_daeta_sos.sql` → Supabase SQL Editor에서 실행 (escalation 컬럼 + daeta_sos_config 테이블). 미실행 시 대타 등록이 실패함. 추가로 `patch_daeta_auto_premium.sql`, `patch_daeta_employer_profile_link.sql`도 실행 필요(2026-08-07 추가분). **`patch_daeta_noshow_auto.sql`도 신규 실행 필요(2026-08-13 추가분, `matches.checked_in_at`/`noshow_extend_until`) — 미실행 시 자동 노쇼 판정 크론이 에러남.** **2026-08-19 추가분 3건도 순서대로 실행 필요**: `patch_users_bank_account.sql`(users 계좌정보 SOT), `patch_daeta_daily_attendance.sql`(다일치 노쇼 감지용 — 미실행이어도 하루짜리 체크인/체크아웃은 에러를 삼키고 정상 동작함), `patch_daeta_min_lead.sql`(등록 최소 리드타임, `daeta_sos_config.min_lead_minutes` — 미실행 시 기본값 60분으로 코드에서 폴백되므로 필수는 아님).
 2. **크론 등록**: cron-job.org에 `GET /api/cron/daeta-escalate` 5분 주기 — ✅ 2026-08-07 등록 완료(그 전엔 코드만 있고 실제 등록이 안 돼 있었음, 여러 핸드오버 문서에 "확인 필요"로만 남아있던 항목). `GET /api/cron/doc-expiry`(팀원 보건증 만료 알림, 매일 1회)도 신규 등록 완료. **`GET /api/cron/daeta-checkin`(대타 출근 타임라인, 5분 주기) 신규 등록 필요(2026-08-13 추가분) — 미등록 시 자동 노쇼 판정이 전혀 동작하지 않음.** 전부 `Authorization: Bearer <CRON_SECRET>` 헤더 필요.
