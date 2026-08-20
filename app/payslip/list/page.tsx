@@ -3,7 +3,8 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
-import { ACTIVE_ROLE_KEY } from "@/lib/useActiveRole";
+import RoleToggleButton from "@/components/RoleToggleButton";
+import { useActiveRole } from "@/lib/useActiveRole";
 
 function PayslipListContent() {
   const router = useRouter();
@@ -15,6 +16,7 @@ function PayslipListContent() {
   const [userType, setUserType] = useState<string>("");
   const [payslips, setPayslips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { activeRole, setActiveRole, isBoth } = useActiveRole(userType || undefined);
 
   useEffect(() => {
     (async () => {
@@ -23,12 +25,18 @@ function PayslipListContent() {
       setUser(user);
       const { data: ud } = await supabase.from("users").select("user_type").eq("id", user.id).single();
       setUserType(ud?.user_type || "worker");
-      await loadPayslips(user.id, ud?.user_type || "worker");
-      setLoading(false);
     })();
   }, []);
 
-  async function loadPayslips(uid: string, ut: string) {
+  // tmId 필터가 없는 일반 목록(both 계정)은 헤더의 역할 스위치(activeRole)를 그대로 따라감 —
+  // 예전엔 로그인 시점 localStorage 값을 한 번만 읽어서, 이 화면에서 역할을 바꿀 방법이 없었음.
+  useEffect(() => {
+    if (!user || !userType) return;
+    loadPayslips(user.id, tmId ? userType : activeRole);
+    setLoading(false);
+  }, [user, userType, activeRole, tmId, workerId]);
+
+  async function loadPayslips(uid: string, effectiveMode: string) {
     let query = supabase.from("payslips")
       .select("*")
       .order("year", { ascending: false, nullsFirst: false })
@@ -37,9 +45,6 @@ function PayslipListContent() {
     if (tmId) {
       query = query.eq("team_member_id", tmId);
     } else {
-      const effectiveMode = ut === "both"
-        ? ((typeof window !== "undefined" && window.localStorage.getItem(ACTIVE_ROLE_KEY)) || "worker")
-        : ut;
       query = effectiveMode === "worker"
         ? query.eq("worker_id", workerId || uid)
         : query.eq("employer_id", uid);
@@ -49,7 +54,7 @@ function PayslipListContent() {
     setPayslips(data || []);
   }
 
-  const isEmployer = userType === "employer" || userType === "both";
+  const isEmployer = tmId ? (userType === "employer" || userType === "both") : activeRole === "employer";
 
   if (loading) return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -59,7 +64,8 @@ function PayslipListContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"var(--bg)", paddingBottom:80 }}>
-      <AppHeader title="임금 명세서 목록" showBack />
+      <AppHeader title="임금 명세서 목록" showBack
+        rightActions={!tmId && isBoth ? <RoleToggleButton activeRole={activeRole} onChange={setActiveRole} /> : undefined} />
       <div style={{ maxWidth:480, margin:"0 auto", padding:16 }}>
         {isEmployer && tmId && (
           <button onClick={() => router.push(`/payslip?tmId=${tmId}`)}

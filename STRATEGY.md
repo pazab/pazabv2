@@ -107,6 +107,8 @@
 
 이 루프 하나를 데모 가능한 상태로 만드는 것이 현재 최우선 코딩 목표.
 
+**매칭 확정 후에도 정산 전까지는 `/daeta` 홈에 계속 노출 (2026-08-20 결정)**: 예전엔 지원자 수락 즉시 `daeta_postings.status`가 `'pending'→'matched'`로 바뀌면서 그 공고 카드가 `/daeta` 홈 목록에서 통째로 사라졌음(홈 쿼리가 `status='pending'`만 조회) — 이후 출근/퇴근/정산은 이름이 전혀 다른 "대타 이력"(`/mypage/daeta-history`) 화면에서만 가능해서, 사장님이 다음 액션(정산)을 놓치기 쉬운 단절된 구조였다. 지금은 홈 쿼리가 `status IN ('pending','matched')`를 조회해서 정산 전까지 카드가 계속 남아있고, 카드 안에서 출퇴근 상태·"정산하러 가기" 버튼까지 바로 노출한다(`components/daeta/DaetaSosHome.tsx`). `status`가 `'completed'`(정산 완료)/`'cancelled'`/`'expired'`로 바뀌는 순간에만 진짜로 빠지고, 그때부터가 "대타 이력"의 진짜 의미(지나간 기록)가 된다. 남의 공고(아직 안 잡힌 것 찾아 지원하는 목록)는 여전히 `status='pending'`만 노출 — 이미 매칭된 남의 공고까지 보여주면 지원 버튼이 죽은 링크가 되므로 별도 필터 유지.
+
 ---
 
 ## 7. AI의 위치
@@ -218,6 +220,11 @@
 **적용됨**: `lib/useActiveRole.ts`(활성 모드, localStorage 전역 키, 스키마 변경 없음), `components/RoleToggleButton.tsx`(헤더용 소형 전환 버튼), `app/myteam/page.tsx`(팀 관리/내 근무 화면 분리, 활성 모드만 즉시 로드), `app/mypage/page.tsx`(신뢰등급 배지·"내 구직활동"/"내 채용활동" 섹션·"팀원 초대" 버튼 전부 활성 모드 기준 게이팅).
 
 새 기능이 "both 계정에서 두 역할 정보를 같이 보여줘야 하나?" 고민되면, 기본은 **아니다** — 활성 모드 기준으로 하나만 보여주고 전환 버튼으로 충분한지 먼저 검토.
+
+**헤더 역할 전환 버튼(`RoleToggleButton`) 배치 기준 (2026-08-20 추가)**: `AppHeader`는 이 버튼을 자동으로 붙이지 않는다 — 각 페이지가 `rightActions`로 수동 배치. 기준은 하나뿐: **이 화면의 콘텐츠가 `activeRole`(전역 활성 모드)에 따라 실제로 달라지는가.** 그렇다면 붙인다(예: `myteam`, `mypage`, `daeta`, `mypage/daeta-history`, `payslip/list`의 `tmId` 없는 일반 목록). 아니라면 붙이지 않는다 — 특히 두 갈래로 갈리기 쉬운 오해:
+- 상대방(타인) 프로필/매장을 보는 화면(`worker/[id]`, `store/[id]`)은 "내 역할"이 아니라 "누구를 보는가"가 기준이라 토글이 의미 없음.
+- 이미 특정 레코드의 소유권으로 사장님/알바생 여부가 고정되는 화면(`payslip`의 특정 명세서 상세 — `member.employer_id`/`worker_id`로 판정)도 토글이 필요 없음. `activeRole`을 바꿔도 그 명세서가 누구 것인지는 안 바뀌기 때문.
+- `showBack`(뒤로가기) 유무는 이 기준과 무관 — `daeta`/`daeta-history`/`notifications`처럼 `showBack`이면서 토글이 있는 페이지가 이미 존재.
 
 ### 12.2 초대는 사장님 전용 유지, "알바생 소속 신청" 채널은 만들지 않는다
 

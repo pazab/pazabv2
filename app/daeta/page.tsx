@@ -777,7 +777,7 @@ function DaetaPageContent() {
                     gap: "4px"
                   }}
                 >
-                  <i className="ti ti-list" aria-hidden="true" /> 내 대타내역
+                  <i className="ti ti-list" aria-hidden="true" /> 대타 이력
                 </button>
               )}
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>

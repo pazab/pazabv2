@@ -51,6 +51,8 @@ interface PostingMatchMeta {
   notified: number;
   acceptedMatchId: string | null;
   acceptedWorkerName: string | null;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
 }
 
 const STAGE_STEPS = [
@@ -117,13 +119,14 @@ interface PostingCardProps {
   onCancel?: () => void;
   onApply?: () => void;
   onGoToChat: (matchId: string) => void;
+  onGoToSettle: (matchId: string) => void;
   onViewStore?: (employerProfileId: string) => void;
   onShowDetail?: (p: SosPosting) => void;
   onShowApplicants?: (p: SosPosting) => void;
   expansionInfo?: { label: string; minutesLeft: number } | null;
 }
 
-function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onViewStore, onShowDetail, onShowApplicants, expansionInfo }: PostingCardProps) {
+function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onGoToSettle, onViewStore, onShowDetail, onShowApplicants, expansionInfo }: PostingCardProps) {
   const stage = p.escalation_stage || 1;
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
@@ -238,11 +241,28 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
       {/* 진행상황(스테퍼·응답건수)은 사장님 본인에게만 의미있는 내부 정보라 내 공고에만 노출 — 남의 공고엔 매장 홈 링크로 대체 */}
       {isMine ? (
         meta.acceptedMatchId ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); onGoToChat(meta.acceptedMatchId!); }}
-            style={{ width: "100%", padding: "10px", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 14, color: "#4ade80", fontSize: 12, fontWeight: 800, cursor: "pointer", marginTop: 8 }}>
-            🎉 {meta.acceptedWorkerName}님 매칭 완료! 채팅 →
-          </button>
+          // 매칭 확정 이후에도 정산 전까지는 이 카드가 홈에 계속 남아있음(위 load()에서 status='matched'도
+          // 계속 조회) — 출근/퇴근/정산까지 이 화면 안에서 다음 액션을 바로 알 수 있게.
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 14, marginBottom: 6, gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: "#4ade80" }}>🎉 {meta.acceptedWorkerName}님 매칭 완료</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: meta.checkedOutAt ? "#4ade80" : meta.checkedInAt ? "#fbbf24" : "var(--text-muted, rgba(255,255,255,0.5))", whiteSpace: "nowrap" }}>
+                {meta.checkedOutAt ? "🏁 퇴근함" : meta.checkedInAt ? "🔥 근무중" : "⏳ 출근 전"}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onGoToChat(meta.acceptedMatchId!); }}
+                style={{ flex: 1, padding: "10px", background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 14, color: "var(--text, #fff)", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                💬 채팅
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onGoToSettle(meta.acceptedMatchId!); }}
+                style={{ flex: 1, padding: "10px", background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 14, color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                💸 정산하러 가기
+              </button>
+            </div>
+          </div>
         ) : (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, rgba(255,255,255,0.08))" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
@@ -407,7 +427,8 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       });
       return;
     }
-    const myPostings = postings.filter(p => p.user_id === userId);
+    // 1:1 지정 요청은 아직 구인 중인(pending) 공고에만 붙일 수 있음 — 이미 매칭된(matched) 공고는 대상에서 제외
+    const myPostings = postings.filter(p => p.user_id === userId && p.status === "pending");
     if (myPostings.length > 0) {
       setSelectedPostingId(myPostings[0].id); // 이미 등록된 진행 중 대타 공고를 스마트 기본값으로 자동 세팅!
     } else {
@@ -448,21 +469,28 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
   const load = useCallback(async () => {
     const gpsBasePromise = getGpsBase(); // 다른 조회와 병렬로 미리 시작 — 뒤에서 값 필요할 때 await만
+    // 매칭 확정(status='matched')된 공고도 정산 전까지는 계속 홈에 노출 — 예전엔 수락 즉시 status가
+    // 'matched'로 바뀌면서 이 목록에서 통째로 사라져, 출근/퇴근/정산을 하려면 이름이 전혀 다른
+    // "대타 이력" 화면으로 옮겨가야 했음(사장님이 다음 액션을 놓치기 쉬운 구조). status가
+    // 'completed'/'cancelled'/'expired'로 바뀌는(=정산되거나 종료되는) 순간에만 진짜로 빠진다.
     const { data: rowsRaw } = await supabase
       .from("daeta_postings")
       .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at, lat, lng, base_wage, max_urgent_pct, employer_profile_id, image_urls")
-      .eq("status", "pending")
+      .in("status", ["pending", "matched"])
       .order("created_at", { ascending: false });
 
     // 근무 시작 시각(expires_at)이 지났는데 응답자 없이 방치된 공고는 크론 없이 조회 시점에 만료 처리 —
     // daeta_postings 상태 변경뿐 아니라 거기 딸린 pending 지원자 정리 + 알림까지 필요해서
     // (서비스롤 권한 필요) 클라이언트에서 직접 update하지 않고 서버 라우트를 호출한다.
+    // matched(이미 확정)된 공고는 expires_at이 지나 있어도 만료 대상이 아니므로 이 판정에서 제외.
     const nowIso = new Date().toISOString();
-    const expiredIds = (rowsRaw || []).filter(r => (r as any).expires_at && (r as any).expires_at < nowIso).map(r => r.id);
+    const pendingRows = (rowsRaw || []).filter(r => (r as any).status === "pending");
+    const expiredIds = pendingRows.filter(r => (r as any).expires_at && (r as any).expires_at < nowIso).map(r => r.id);
     if (expiredIds.length > 0) {
       fetch("/api/daeta/expire-check", { method: "POST" }).catch(() => {});
     }
-    const rows = (rowsRaw || []).filter(r => !(r as any).expires_at || (r as any).expires_at >= nowIso);
+    const expiredIdSet = new Set(expiredIds);
+    const rows = (rowsRaw || []).filter(r => !expiredIdSet.has(r.id));
 
     const postingList = (rows || []) as SosPosting[];
     // 내 공고가 먼저 오도록 정렬
@@ -474,20 +502,22 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       const ids = postingList.map(p => p.id);
       const { data: matches } = await supabase
         .from("matches")
-        .select("id, daeta_posting_id, worker_id, progress_status")
+        .select("id, daeta_posting_id, worker_id, progress_status, checked_in_at, checked_out_at")
         .in("daeta_posting_id", ids)
         .in("progress_status", ["pending", "accepted", "hired"]);
 
       const meta: Record<string, PostingMatchMeta> = {};
-      ids.forEach(id => { meta[id] = { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }; });
+      ids.forEach(id => { meta[id] = { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }; });
 
       const acceptedWorkerIds: string[] = [];
-      (matches || []).forEach((m: { id: string; daeta_posting_id: string; worker_id: string; progress_status: string }) => {
+      (matches || []).forEach((m: { id: string; daeta_posting_id: string; worker_id: string; progress_status: string; checked_in_at: string | null; checked_out_at: string | null }) => {
         const entry = meta[m.daeta_posting_id];
         if (!entry) return;
         entry.total += 1;
         if (m.progress_status === "accepted" || m.progress_status === "hired") {
           entry.acceptedMatchId = m.id;
+          entry.checkedInAt = m.checked_in_at;
+          entry.checkedOutAt = m.checked_out_at;
           acceptedWorkerIds.push(m.worker_id);
           (entry as PostingMatchMeta & { _workerId?: string })._workerId = m.worker_id;
         }
@@ -926,8 +956,10 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   };
 
   // 공고 정렬: 내 공고(고정) → 긴급(시작임박·확대공지, 임박한 순) → 다른 공고(거리순→최신순)
+  // 남의 공고는 아직 구인 중인(pending) 것만 지원 대상으로 노출 — 이미 matched된 건 다른 사람이 이미
+  // 잡은 자리라 지원하기를 눌러도 의미가 없음(내 공고는 진행상황 확인을 위해 matched도 계속 보여줘야 함)
   const myPostings = postings.filter(p => p.user_id === userId);
-  const othersPostings = postings.filter(p => p.user_id !== userId);
+  const othersPostings = postings.filter(p => p.user_id !== userId && p.status === "pending");
   const urgentOthers = othersPostings
     .filter(p => isUrgentPosting(p, now))
     .sort((a, b) => hoursUntilShiftStart(a, now) - hoursUntilShiftStart(b, now));
@@ -1149,12 +1181,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                         p={p}
                         isMine
                         urgent={false}
-                        meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                        meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
                         isApplied={false}
                         isLoading={false}
                         onEdit={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
                         onCancel={() => cancelPosting(p)}
                         onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                        onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                         onShowDetail={setDetailPosting}
                         onShowApplicants={openApplicants}
                         expansionInfo={nextExpansionInfo(p)}
@@ -1178,12 +1211,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                             isMine={false}
                             urgent
                             width={280}
-                            meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                            meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
                             isApplied={appliedIds.has(p.id)}
                             isLoading={actionLoading === p.id}
                             myBase={myBase}
                             onApply={() => applyPosting(p)}
                             onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                        onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                             onViewStore={(id) => router.push(`/store/${id}`)}
                             onShowDetail={setDetailPosting}
                           />
@@ -1203,12 +1237,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           p={p}
                           isMine={false}
                           urgent={false}
-                          meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null }}
+                          meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
                           isApplied={appliedIds.has(p.id)}
                           isLoading={actionLoading === p.id}
                           myBase={myBase}
                           onApply={() => applyPosting(p)}
                           onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                        onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                           onViewStore={(id) => router.push(`/store/${id}`)}
                           onShowDetail={setDetailPosting}
                         />
@@ -1326,7 +1361,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
           <button
             onClick={() => router.push(`/mypage/daeta-history?tab=${roleView || (userType === "employer" ? "employer" : "worker")}`)}
             style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            <i className="ti ti-list" aria-hidden="true" /> 대타 내역 {historyCount > 0 ? `(${historyCount}건)` : ""}
+            <i className="ti ti-list" aria-hidden="true" /> 대타 이력 {historyCount > 0 ? `(${historyCount}건)` : ""}
           </button>
         </div>
       </div>
@@ -1556,7 +1591,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             </div>
 
             {(() => {
-              const myPostings = postings.filter(p => p.user_id === userId);
+              const myPostings = postings.filter(p => p.user_id === userId && p.status === "pending");
               return myPostings.length > 0 ? (
                 <div style={{ marginBottom: 20 }}>
                   <label style={{ fontSize: 13, fontWeight: 900, color: "var(--text, #fff)", display: "block", marginBottom: 8 }}>

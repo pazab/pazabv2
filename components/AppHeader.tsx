@@ -12,7 +12,6 @@ interface AppHeaderProps {
   onSearchChange?: (v: string) => void;
   onSearchSubmit?: (v: string) => void;
   rightActions?: React.ReactNode;
-  showSettings?: boolean;
   showBack?: boolean;
   onBack?: () => void;
   noSticky?: boolean;
@@ -26,7 +25,6 @@ export default function AppHeader({
   onSearchChange,
   onSearchSubmit,
   rightActions,
-  showSettings = false,
   showBack = false,
   onBack,
   noSticky = false,
@@ -92,7 +90,8 @@ export default function AppHeader({
 
         <div style={{ flex: 1 }} />
 
-        {/* 오른쪽 커스텀 액션 */}
+        {/* 오른쪽 커스텀 액션 — RoleToggleButton 배치 기준은 STRATEGY.md §12.1 참고
+            (콘텐츠가 activeRole에 따라 실제로 달라지는 화면에만 페이지가 직접 끼워 넣음) */}
         {rightActions}
 
         {/* 알림 벨 */}

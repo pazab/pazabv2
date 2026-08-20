@@ -16,6 +16,22 @@ const mutedChip: CSSProperties = {
   color: "var(--text-muted)",
 };
 
+// contracts는 두 가지 키로 매칭에 연결됨 — 정규 계약(team_member_id 경유)과 대타 자동계약(match_id
+// 직접). app/contract/page.tsx doSave()가 이제 두 경로 모두에서 match_id를 채워두므로 match_id로
+// 먼저 찾고, 아직 백필 안 된 옛날 정규 계약만 team_member_id로 폴백한다(supabase/patch_contracts_match_id_backfill.sql
+// 실행 후엔 이 폴백이 실질적으로 안 타게 됨).
+async function findContractByMatch(matchId: string, select: string): Promise<any> {
+  const { data } = await supabase.from("contracts").select(select).eq("match_id", matchId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (data) return data;
+
+  const { data: tm } = await supabase.from("team_members").select("id").eq("match_id", matchId).maybeSingle();
+  if (!tm) return null;
+  const { data: legacy } = await supabase.from("contracts").select(select).eq("team_member_id", tm.id)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return legacy;
+}
+
 export default function ChatRoomPage() {
   const router = useRouter();
   const params = useParams();
@@ -137,13 +153,7 @@ export default function ChatRoomPage() {
   }, [matchId]);
 
   const checkContractStatus = async () => {
-    const { data: tm } = await supabase.from("team_members")
-      .select("id").eq("match_id", matchId).maybeSingle();
-    if (!tm) { setContractStatus("none"); return; }
-    const { data } = await supabase.from("contracts")
-      .select("id, worker_signed, employer_signed, status")
-      .eq("team_member_id", tm.id)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const data = await findContractByMatch(matchId, "id, worker_signed, employer_signed, status");
     if (!data) setContractStatus("none");
     else if (data.status === "cancelled") setContractStatus("cancelled");
     else if (data.worker_signed) setContractStatus("done");
@@ -199,8 +209,8 @@ export default function ChatRoomPage() {
             ));
           });
 
-        // hired 상태면 항상 계약서 상태 체크
-        if (ps === "hired") {
+        // hired 상태(정규 채용)면 항상 계약서 상태 체크 — 대타는 정산 전까지 계속 accepted라 이 조건도 같이 봄
+        if (ps === "hired" || (data.match?.daeta_posting_id && ps === "accepted")) {
           checkContractStatus();
         }
 
@@ -367,13 +377,7 @@ export default function ChatRoomPage() {
   };
 
   const loadContract = async () => {
-    // contracts에 match_id 없음 → team_members 경유
-    const { data: tm } = await supabase.from("team_members")
-      .select("id").eq("match_id", matchId).maybeSingle();
-    const { data } = await supabase.from("contracts")
-      .select("*")
-      .eq(tm ? "team_member_id" : "employer_id", tm ? tm.id : "")
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const data = await findContractByMatch(matchId, "*");
     if (data) {
       if (data.contract_data && (data.contract_data.bankAccount || data.contract_data.bankNumber)) {
         try {
@@ -730,8 +734,9 @@ export default function ChatRoomPage() {
               <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>탭하면 프로필 보기</p>
             </div>
           </div>
-          {/* 계약서 아이콘 버튼 (hired 상태) */}
-          {progressStatus === "hired" && (
+          {/* 계약서 아이콘 버튼 — 정규 채용은 hired 상태, 대타는 progress_status가 정산 전까지 계속
+              accepted라(hired는 정산 완료 시점에만 붙음) 그 기간에도 계약서를 열어볼 수 있어야 함 */}
+          {(progressStatus === "hired" || (isDaetaMatch && progressStatus === "accepted")) && (
             <button onClick={loadContract}
               style={{
                 width: 34, height: 34, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
@@ -1094,7 +1099,9 @@ export default function ChatRoomPage() {
           gap: 12,
         }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--success)" }}>✅ 대타 확정 — 자동계약 완료</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--success)" }}>
+              {isEmployer ? "✅ 대타 확정" : contractStatus === "done" ? "✅ 대타 확정 — 서명 완료" : "✅ 대타 확정 — 계약서 서명 필요"}
+            </span>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
               {daetaContract?.work_hours ? `근무: ${daetaContract.work_hours}` : "면접·채용 제안 없이 바로 근무 협의만 하면 돼요"}
               {daetaContract?.wage ? ` · 시급 ${Number(daetaContract.wage).toLocaleString()}원` : ""}

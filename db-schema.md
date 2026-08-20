@@ -298,7 +298,7 @@
 |------|------|------|--------|
 | id | uuid | NO | gen_random_uuid() |
 | employer_id/worker_id | uuid | NO | |
-| team_member_id/match_id | uuid | YES | |
+| team_member_id/match_id | uuid | YES | | ✅ 2026-08-20부터 신규/수정 계약은 두 컬럼 다 채움(`app/contract/page.tsx` doSave, `app/api/lovecall/route.ts` 대타 자동계약) — matchId 하나로도 항상 계약을 찾을 수 있게 하기 위함. `team_member_id`는 팀원 기준 조회(payslip·employer/team·cron 등)에 계속 쓰여서 유지, 없애지 않음. 그 이전에 만들어진 정규 계약도 `supabase/patch_contracts_match_id_backfill.sql` 실행 완료(2026-08-20)로 `match_id` 소급 채워짐 — `team_member_id` 폴백 경로(`app/chat/[id]/page.tsx`의 `findContractByMatch()`)는 이제 사실상 안 탐, 신규 유령 데이터 방어용으로만 유지 |
 | contract_type | text | YES | 'parttime' |
 | start_date/end_date | date | YES | |
 | wage | integer | YES | |
@@ -445,6 +445,7 @@
   - `onboarding_data` (users.onboarded 여부만 확인)
 
 ### ✅ 완료된 정리
+- [x] `contracts.match_id` 백필 (2026-08-20, `patch_contracts_match_id_backfill.sql` 실행 완료) — 기존 정규 계약에도 소급 반영, `team_member_id`/`match_id` 이중 조회 폴백은 방어용으로만 유지
 - [x] `matches.status` DROP (progress_status SOT로 완전 교체 완료)
 - [x] `worker_profiles.hexaco_data` DROP (users.worker_result.hexaco SOT로 완전 교체 완료)
 - [x] 이미지 중복 컬럼 정리 (profile_image_url / business_image_url DROP 완료)

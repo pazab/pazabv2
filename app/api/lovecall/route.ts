@@ -352,9 +352,13 @@ export async function PATCH(req: NextRequest) {
                 workPlace: daetaPosting.region || "",
                 jobDesc: `${daetaPosting.business_type || "기타"} 대타 근무`,
                 worker: worker?.real_name || worker?.nickname || "알바생",
-                workerBirth: worker?.birth_date?.replace(/-/g, ". ") || "2000. 01. 01",
+                // 생년월일/주소를 가짜값("2000. 01. 01"/"서울시내")으로 채우면 안 됨 — 법적 문서인
+                // 근로계약서에 허위 정보가 그대로 들어가고, 특히 미성년자라도 계약서상 성인으로
+                // 영구히 남는 문제가 있었음. 비워두면 app/chat/[id]/page.tsx의 서명 화면이 알아서
+                // 입력창(생년월일은 만 18세 미만 감지 포함)을 띄워 실제 값을 받는다.
+                workerBirth: worker?.birth_date?.replace(/-/g, ". ") || "",
                 workerPhone: worker?.phone || "",
-                workerAddr: worker?.address || "서울시내",
+                workerAddr: worker?.address || "",
                 startDate: formattedDate,
                 endDate: formattedEndDate,
                 workDaysMode: "check",
@@ -371,6 +375,12 @@ export async function PATCH(req: NextRequest) {
                 contractDate: formattedDate,
               };
 
+              // 알바생 서명은 자동으로 처리하지 않음 — 예전엔 여기서 바로 worker_signed:true로
+              // 확정해버려서, 실제로는 알바생이 한 번도 본 적 없는 계약서가 "서명 완료"로 남고
+              // (개인정보 정확성을 확인할 기회 자체가 없었음), 생년월일이 비어있으면 위에서 가짜값을
+              // 채워넣던 탓에 미성년자 감지(app/chat/[id]/page.tsx 서명 화면)도 항상 우회됐음.
+              // 정규 계약(app/contract/page.tsx)과 동일하게 employer_signed만 true로 두고
+              // worker_signed는 알바생이 채팅에서 실제로 계약서를 열어 확인/서명해야 true가 되게 함.
               await supabase.from("contracts").insert({
                 employer_id: acceptMatchData.employer_id,
                 worker_id: acceptMatchData.worker_id,
@@ -381,10 +391,9 @@ export async function PATCH(req: NextRequest) {
                 work_days: dayKo,
                 work_hours: daetaPosting.work_hours,
                 contract_data: contractData,
-                status: "signed",
+                status: "pending",
                 employer_signed: true,
-                worker_signed: true,
-                signed_at: new Date().toISOString(),
+                worker_signed: false,
               });
 
               // 채팅방에도 확정 사실을 남겨둠 — 채팅 상단 "대타 확정" 배너는 항상 같은 문구라
@@ -393,7 +402,10 @@ export async function PATCH(req: NextRequest) {
                 match_id: matchId,
                 sender_id: acceptMatchData.employer_id,
                 receiver_id: acceptMatchData.worker_id,
-                message: `✅ 대타가 확정됐어요! 근로계약서가 자동으로 체결됐습니다.\n근무일: ${formattedDate}${formattedDate !== formattedEndDate ? ` ~ ${formattedEndDate}` : ""} · ${daetaPosting.work_hours}\n근무 당일 잊지 말고 출근/퇴근 처리해주세요.`,
+                // "근로계약서가 발행" 문구는 채팅 화면(app/chat/[id]/page.tsx)이 메시지 본문을 그대로
+                // 매칭해서 그 아래에 [📄 계약서 확인하기] 버튼을 붙이는 트리거 — 정규 계약(app/contract/page.tsx)과
+                // 동일 문구를 써야 그 버튼이 뜬다. 다르게 쓰면 알바생이 계약서를 열 방법 자체가 없어짐.
+                message: `✅ 대타가 확정됐어요! 근로계약서가 발행됐어요. 채팅방에서 확인 후 서명해주세요.\n근무일: ${formattedDate}${formattedDate !== formattedEndDate ? ` ~ ${formattedEndDate}` : ""} · ${daetaPosting.work_hours}\n근무 당일 잊지 말고 출근/퇴근 처리해주세요.`,
                 message_type: "system",
                 is_read: false,
               });

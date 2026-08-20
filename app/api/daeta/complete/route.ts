@@ -86,12 +86,16 @@ export async function POST(req: NextRequest) {
 
       // 실제 출퇴근 기록이 있으면(하루짜리 공고 한정) 그 시간을 자동 기준선으로, 없으면 예정 시간×일수로 폴백.
       let autoHours: number;
-      if (days === 1 && match.checked_in_at && match.checked_out_at) {
+      const fromActualTimes = days === 1 && !!match.checked_in_at && !!match.checked_out_at;
+      if (fromActualTimes) {
         const actualMs = new Date(match.checked_out_at).getTime() - new Date(match.checked_in_at).getTime();
         autoHours = Math.max(0, Math.round((actualMs / 3600000) * 10) / 10);
       } else {
         autoHours = scheduledHoursPerDay * days;
       }
+      // 퇴근 체크아웃 없이(예정 시간 기준으로만) 정산된 건은 나중에 분쟁이 생겼을 때 구분할 수 있도록
+      // payslip.attendance_data에 항상 표시해 둠 — 실제 근무시간과 다를 수 있다는 신호.
+      const checkoutMissing = days === 1 && !fromActualTimes;
 
       // 사장님이 확인 화면에서 이 값을 직접 수정해서 보낼 수도 있음(hoursOverride) — 계약/실제 기록과
       // 다르게 합의해서 정산하는 경우(예: 계약 4시간이지만 3시간만 하고 정산 합의). 메모 유무와 무관하게
@@ -151,6 +155,7 @@ export async function POST(req: NextRequest) {
           settled_hours: totalHours,
           adjusted: wasAdjusted,
           adjusted_by: wasAdjusted ? match.employer_id : null,
+          checkout_missing: checkoutMissing,
         },
       });
       if (psErr) {

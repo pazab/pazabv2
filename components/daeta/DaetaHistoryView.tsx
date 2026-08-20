@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { formatDaetaDateRange, parseWorkHoursRange, daetaDayCount, calcDaetaCancelTrustPenalty } from "@/lib/utils";
 import { calcDailyTaxForPeriod } from "@/lib/daetaSettlement";
 import { useToast } from "@/lib/useToast";
+import { decryptBankFields } from "@/lib/bankCryptoClient";
 
 // 매장-현위치 거리(m) — myteam.tsx CheckInButton과 동일한 haversine 공식(이 저장소는 이 계산을
 // 파일마다 로컬로 두는 관례라 그대로 따름)
@@ -50,6 +51,9 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   // 사유 입력칸을 보여주고, 메모가 없어도 조정 사실 자체는 서버에서 항상 기록됨
   const [suggestedHours, setSuggestedHours] = useState(0);
   const [adjustReason, setAdjustReason] = useState("");
+  // 정산 확인 모달에 보여줄 알바생 수령 계좌 — 계약서 체결 시점 스냅샷(contracts.contract_data)에서
+  // 가져와 복호화. 사장님이 실제 이체 직전에 볼 화면에 계좌가 안 보이면 다른 화면을 오가며 찾아야 함.
+  const [completeBankAccount, setCompleteBankAccount] = useState<string | null>(null);
   // 취소 확인 화면에서 "상대방과 미리 합의된 취소예요" 체크박스 — 켜면 페널티 없이 처리됨
   const [cancelMutual, setCancelMutual] = useState(false);
   // "지난 기록"은 계속 쌓이는 정보라 최근 1건만 접어서 보여주고, 필요할 때만 펼쳐서 전체를 봄
@@ -224,6 +228,20 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
       setCompleteHours(String(suggested));
       setSuggestedHours(suggested);
       setAdjustReason("");
+      setCompleteBankAccount(null);
+      // 계약서 스냅샷의 계좌(암호화)를 불러와 복호화 — 실패해도 정산 확인 자체는 막지 않음(계좌 표시는 보조 정보)
+      (async () => {
+        try {
+          const { data: contract } = await supabase
+            .from("contracts").select("contract_data")
+            .eq("match_id", match.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          const encAccount = (contract?.contract_data as any)?.bankAccount;
+          if (encAccount) {
+            const [decAccount] = await decryptBankFields([encAccount]);
+            setCompleteBankAccount(decAccount || null);
+          }
+        } catch (e) { console.error("정산 확인 계좌 조회 실패:", e); }
+      })();
     }
     if (type === "cancel") {
       setCancelMutual(false);
@@ -862,6 +880,16 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                       확인 시 임금명세서가 자동 발행되고 알바생에게 알림이 가요.
                     </p>
 
+                    <div style={{
+                      marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center",
+                      background: "var(--surface2)", borderRadius: 12, padding: "10px 14px",
+                    }}>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>🏦 수령 계좌</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: completeBankAccount ? "var(--text)" : "#fb923c" }}>
+                        {completeBankAccount || "계좌 미등록"}
+                      </span>
+                    </div>
+
                     <div style={{ marginTop: 12, textAlign: "left" }}>
                       <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
                         {fromActualTimes ? "실제 출퇴근 기록 기준 근무시간" : "출퇴근 기록이 없어 예정 시간 기준으로 채웠어요"} · 필요하면 수정하세요
@@ -1024,6 +1052,12 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
               <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#fbbf24" }}>
                 ⚠️ 자동 계산 시간({selectedPayslip.attendance_data.auto_calculated_hours}시간)과 다르게 <strong>{selectedPayslip.attendance_data.settled_hours}시간</strong>으로 조정 정산됨
                 {selectedPayslip.correction_reason && <div style={{ marginTop: 4, color: "var(--text-muted)" }}>사유: {selectedPayslip.correction_reason}</div>}
+              </div>
+            )}
+            {/* 퇴근 체크아웃 없이(예정 시간 기준으로) 정산된 건 — 실제 근무시간과 다를 수 있다는 표시 */}
+            {selectedPayslip.attendance_data?.checkout_missing && (
+              <div style={{ background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#fb923c" }}>
+                ⚠️ 퇴근 체크아웃 기록 없이 예정 시간 기준으로 정산됐어요.
               </div>
             )}
 

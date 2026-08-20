@@ -900,7 +900,38 @@ function ContractContent() {
 
     setShowSaveModal(false);
     setSaving(true);
-    const payload = buildPayload();
+
+    // contracts.match_id를 team_member_id와 함께 항상 채워둠 — 대타 자동계약(match_id만 있음)과
+    // 조회 방식을 통일하기 위함. 예전엔 정규 계약이 match_id를 아예 안 채워서, matchId 하나로
+    // 계약을 찾아야 하는 화면(채팅방 등)마다 "team_members 먼저 거쳐서 못 찾으면 포기" 식의
+    // 별도 폴백 로직이 필요했음. 이제 어느 경로로 만든 계약이든 match_id 하나로 바로 찾을 수 있음.
+    let sendMatchId = matchId || selMatch.match_id;
+    if (!sendMatchId && selMatch.id) {
+      const { data: tmRow } = await supabase.from("team_members")
+        .select("match_id").eq("id", selMatch.id).maybeSingle();
+      sendMatchId = tmRow?.match_id || null;
+    }
+    // 채팅방(matches)이 아직 연동 안 된 팀원이면 accepted 상태로 신규 개설 — 계약 저장 시점에
+    // 미리 만들어둬야 계약 row에 match_id를 바로 채울 수 있음(예전엔 이 생성이 저장 이후였음)
+    if (!sendMatchId && selMatch.employer_id && selMatch.worker_id) {
+      const { data: newMatch, error: matchErr } = await supabase
+        .from("matches")
+        .insert({
+          employer_id: selMatch.employer_id,
+          worker_id: selMatch.worker_id,
+          status: "accepted"
+        })
+        .select("id")
+        .single();
+      if (!matchErr && newMatch) {
+        sendMatchId = newMatch.id;
+        await supabase.from("team_members")
+          .update({ match_id: sendMatchId })
+          .eq("id", selMatch.id);
+      }
+    }
+
+    const payload = { ...buildPayload(), match_id: sendMatchId || null };
     const cdForSave = payload.contract_data as { bankAccount?: string; bankNumber?: string };
     if (cdForSave.bankAccount || cdForSave.bankNumber) {
       try {
@@ -977,33 +1008,7 @@ function ContractContent() {
         }).eq("id", selMatch.id);
       }
 
-      // 3. 채팅방 알림 메시지 전송 및 채팅방 연동
-      let sendMatchId = matchId || selMatch.match_id;
-      if (!sendMatchId && selMatch.id) {
-        const { data: tmRow } = await supabase.from("team_members")
-          .select("match_id").eq("id", selMatch.id).maybeSingle();
-        sendMatchId = tmRow?.match_id || null;
-      }
-
-      // 만약 채팅방(matches)이 연동되어 있지 않다면 accepted 상태로 신규 개설
-      if (!sendMatchId && selMatch.employer_id && selMatch.worker_id) {
-        const { data: newMatch, error: matchErr } = await supabase
-          .from("matches")
-          .insert({
-            employer_id: selMatch.employer_id,
-            worker_id: selMatch.worker_id,
-            status: "accepted"
-          })
-          .select("id")
-          .single();
-        if (!matchErr && newMatch) {
-          sendMatchId = newMatch.id;
-          await supabase.from("team_members")
-            .update({ match_id: sendMatchId })
-            .eq("id", selMatch.id);
-        }
-      }
-
+      // 3. 채팅방 알림 메시지 전송 — match_id는 위에서 이미 확정해둠(sendMatchId)
       if (sendMatchId) {
         // match가 pending 상태면 accepted로 올려야 채팅방에 표시됨
         await supabase.from("matches")

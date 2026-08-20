@@ -672,7 +672,7 @@ function MyPageContent() {
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", paddingBottom: 120 }}>
-      <AppHeader title="마이페이지" showSettings
+      <AppHeader title="마이페이지"
         rightActions={isBoth ? <RoleToggleButton activeRole={activeRole} onChange={setActiveRole} /> : undefined} />
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px" }}>
