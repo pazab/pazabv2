@@ -6,6 +6,10 @@ import { useToast } from "@/lib/useToast";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
 import { fetchMinWage } from "@/lib/minWage";
 import { parseWorkHoursRange, daetaDayCount } from "@/lib/utils";
+import { convertHeicIfNeeded } from "@/lib/heicConvert";
+import ImageCropModal from "@/components/ImageCropModal";
+
+const MAX_DAETA_PHOTOS = 3;
 
 interface DaetaRegisterModalProps {
   userId: string;
@@ -98,6 +102,14 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const [duty, setDuty] = useState("");
   const [allowNew, setAllowNew] = useState(false); // 🔵 신규(Tier2) 알바생에게도 노출 opt-in
 
+  // 업무 사진 — 인터뷰 없이 바로 수락 여부를 결정해야 하는 대타 특성상 미스매치/노쇼 방지용
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [pastPhotos, setPastPhotos] = useState<string[]>([]); // 이 사장님이 예전 공고에 올렸던 사진 재사용 후보
+  // 여러 장을 한 번에 고르면 한 장씩 순서대로 구도 보정(크롭) 화면을 거침 — PostComposeModal과 동일 패턴
+  const [cropQueue, setCropQueue] = useState<File[]>([]);
+  const [cropTarget, setCropTarget] = useState<{ file: File; url: string } | null>(null);
+
   // 자격 요건 마스터 및 선택 상태
   const [credentialsMaster, setCredentialsMaster] = useState<any[]>([]);
   const [selectedCreds, setSelectedCreds] = useState<any[]>([]);
@@ -136,12 +148,116 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   useEffect(() => {
     loadCredentials();
     loadWageConfig();
+    loadPastPhotos();
     if (postingId) {
       loadPostingDetails(postingId);
     } else {
       checkEmployerProfile();
     }
   }, [postingId, userId]);
+
+  // 이 사장님이 예전 대타 공고에 올렸던 사진들을 모아 재사용 후보로 보여줌 — 매번 새로 찍게 하지 않기 위함
+  const loadPastPhotos = async () => {
+    const { data } = await supabase
+      .from("daeta_postings")
+      .select("image_urls")
+      .eq("user_id", userId)
+      .not("image_urls", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) {
+      const urls = Array.from(new Set(data.flatMap((d: { image_urls: string[] | null }) => d.image_urls || [])));
+      setPastPhotos(urls.slice(0, 12));
+    }
+  };
+
+  // heic2any는 WASM 디코더라 번들이 무거워서 최초 1회 동적 import 시 1~2초 정도 아무 반응 없이
+  // 멈춘 것처럼 보이는 원인이 됨 — 사진 등록 단계에 들어오면 미리 백그라운드로 받아둬서
+  // 실제로 아이폰 사진을 고를 때는 이미 캐시돼 있게 한다(변환 자체는 그대로 필요할 때만 실행).
+  useEffect(() => {
+    if (step === "form") import("heic2any").catch(() => {});
+  }, [step]);
+
+  const openCrop = (file: File) => setCropTarget({ file, url: URL.createObjectURL(file) });
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+    e.target.value = ""; // 같은 파일 재선택도 onChange가 다시 뜨도록
+
+    const room = MAX_DAETA_PHOTOS - imageUrls.length;
+    if (room <= 0) {
+      showToast(`사진은 최대 ${MAX_DAETA_PHOTOS}장까지 올릴 수 있어요.`, "error");
+      return;
+    }
+    // HEIC 변환이 끝날 때까지 버튼에 아무 표시가 없으면 멈춘 것처럼 보이므로, 선택 즉시 로딩 상태부터 표시
+    setImageUploading(true);
+    try {
+      // HEIC(아이폰 기본 포맷)는 크롭 미리보기 <img>가 디코딩을 못 해 검정 화면만 뜨므로 큐에 넣기 전에 변환
+      const converted = await Promise.all(files.slice(0, room).map(convertHeicIfNeeded));
+      const [first, ...rest] = converted;
+      setCropQueue(rest);
+      openCrop(first);
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const uploadPhoto = async (file: File) => {
+    setImageUploading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const randId = Math.random().toString(36).substring(2, 9);
+      const fileName = `${Date.now()}-${randId}.${fileExt}`;
+      const path = `daeta/${userId}/${fileName}`;
+      const { error: uploadError } = await supabase.storage.from("media").upload(path, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from("media").getPublicUrl(path);
+      if (data?.publicUrl) setImageUrls(prev => [...prev, data.publicUrl]);
+    } catch (err: any) {
+      console.error(err);
+      showToast("사진 업로드에 실패했습니다: " + err.message, "error");
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const advanceCropQueue = () => {
+    if (cropQueue.length > 0) {
+      const [next, ...rest] = cropQueue;
+      setCropQueue(rest);
+      openCrop(next);
+    } else {
+      setCropTarget(null);
+    }
+  };
+
+  const handleCropDone = async (blob: Blob) => {
+    if (!cropTarget) return;
+    const croppedFile = new File([blob], cropTarget.file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+    await uploadPhoto(croppedFile);
+    advanceCropQueue();
+  };
+
+  const handleCropCancel = () => {
+    if (!cropTarget) return;
+    advanceCropQueue();
+  };
+
+  const removeImage = (idx: number) => {
+    setImageUrls(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const togglePastPhoto = (url: string) => {
+    setImageUrls(prev => {
+      if (prev.includes(url)) return prev.filter(u => u !== url);
+      if (prev.length >= MAX_DAETA_PHOTOS) {
+        showToast(`사진은 최대 ${MAX_DAETA_PHOTOS}장까지 선택할 수 있어요.`, "error");
+        return prev;
+      }
+      return [...prev, url];
+    });
+  };
 
   const loadWageConfig = async () => {
     const mw = await fetchMinWage();
@@ -214,6 +330,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         setMaxUrgentPct(data.max_urgent_pct ?? 0);
         setDuty(data.duty || "");
         setAllowNew(!!data.allow_new);
+        setImageUrls(data.image_urls || []);
         if (data.required_credentials) {
           const parsed = typeof data.required_credentials === "string"
             ? JSON.parse(data.required_credentials)
@@ -505,6 +622,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         max_urgent_pct: maxUrgentPct,
         duty: finalDuty,
         allow_new: allowNew,
+        image_urls: imageUrls,
         required_credentials: JSON.stringify(selectedCreds),
         // 에스컬레이션 만료는 "첫 근무 시작 시각" 기준 — 기간 중 첫날까지 응답 없으면 만료.
         // "Z"(UTC)를 붙이면 KST 벽시계 시각이 그대로 UTC로 오인돼 실제보다 9시간 늦게 만료되던
@@ -886,6 +1004,52 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   )}
                 </div>
 
+                {/* 업무 이해를 돕는 사진 — 인터뷰 없이 바로 지원 여부를 결정해야 하는 대타 특성상 미스매치·노쇼를 줄여줌 */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>📸 업무 사진 (선택)</label>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 8, lineHeight: 1.5 }}>
+                    업무 이해를 돕는 사진 위주로 올려주세요 (예: 작업 공간, 사용 장비 등). 처음 지원하는 분도 감이 잡혀요.
+                  </span>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: pastPhotos.length > 0 ? 10 : 0 }}>
+                    {imageUrls.map((url, idx) => (
+                      <div key={url + idx} style={{ position: "relative", width: 72, height: 72, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
+                        <img src={url} alt="업무 사진" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <button type="button" onClick={() => removeImage(idx)}
+                          style={{ position: "absolute", top: 2, right: 2, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    {imageUrls.length < MAX_DAETA_PHOTOS && (
+                      <label style={{ width: 72, height: 72, borderRadius: 12, border: "1px dashed var(--border)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: imageUploading ? "default" : "pointer", color: "var(--text-muted)", fontSize: 11 }}>
+                        {imageUploading ? "업로드 중" : (<><span style={{ fontSize: 18, lineHeight: 1 }}>＋</span>사진 추가</>)}
+                        <input type="file" accept="image/*" multiple disabled={imageUploading} onChange={handlePhotoUpload} style={{ display: "none" }} />
+                      </label>
+                    )}
+                  </div>
+
+                  {pastPhotos.length > 0 && (
+                    <div>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>최근 올린 사진에서 선택</span>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {pastPhotos.map(url => {
+                          const selected = imageUrls.includes(url);
+                          return (
+                            <button key={url} type="button" onClick={() => togglePastPhoto(url)}
+                              style={{ position: "relative", width: 56, height: 56, borderRadius: 10, overflow: "hidden", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", padding: 0, cursor: "pointer" }}>
+                              <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              {selected && (
+                                <span style={{ position: "absolute", inset: 0, background: "rgba(124,58,237,0.35)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 16, fontWeight: 900 }}>✓</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* 필수/우대 자격 요건 선택 */}
                 {duty && (
                   <div>
@@ -1165,6 +1329,16 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         )}
 
       </div>
+
+      {/* 업무 사진 구도 보정 — 여러 장을 골랐으면 한 장씩 순서대로 */}
+      {cropTarget && (
+        <ImageCropModal
+          imageSrc={cropTarget.url}
+          aspect={1}
+          onClose={handleCropCancel}
+          onCrop={handleCropDone}
+        />
+      )}
 
       {/* 자동 할증 상한을 켠 채로 등록하기 직전 최종 확인 — 발행(되돌리기 힘든 액션) 전 1회 */}
       {showSurgeConfirm && (

@@ -117,3 +117,48 @@ export async function checkAndAwardBadges(supabase: SupabaseClient, userId: stri
   }
   return toAward;
 }
+
+// "고평점"·"즉시출근" 뱃지는 BADGE_DEFS에 정의만 돼 있고 정작 어디서도 수여되지 않던 죽은 뱃지였음.
+// 대타(daeta_postings) 완료가 정확히 이 두 조건(사장님 평가 누적, 당일 긴급요청 대응 이력)에
+// 맞는 데이터를 만들어내므로, 대타 정산 완료 시점(app/api/daeta/complete)에 함께 체크한다.
+export async function checkAndAwardDaetaBadges(supabase: SupabaseClient, workerId: string) {
+  const { data: existing } = await supabase
+    .from("user_badges").select("badge_key").eq("user_id", workerId);
+  const earned = new Set((existing || []).map((b: { badge_key: string }) => b.badge_key));
+  const toAward: string[] = [];
+
+  // 고평점: 사장님 평가 3건 이상 + 평균 4.5점 이상 (employer_rating은 현재 대타 완료 시에만 기록됨)
+  if (!earned.has("highrate")) {
+    const { data: rated } = await supabase
+      .from("matches").select("employer_rating").eq("worker_id", workerId).not("employer_rating", "is", null);
+    const ratings = (rated || []).map((r: { employer_rating: number }) => r.employer_rating);
+    if (ratings.length >= 3) {
+      const avg = ratings.reduce((s: number, n: number) => s + n, 0) / ratings.length;
+      if (avg >= 4.5) toAward.push("highrate");
+    }
+  }
+
+  // 즉시출근: 당일(공고 등록일=근무일) 긴급 대타 요청을 수락해 완료한 이력 3회 이상
+  if (!earned.has("quick")) {
+    const { data: hiredMatches } = await supabase
+      .from("matches").select("daeta_posting_id").eq("worker_id", workerId).eq("progress_status", "hired").not("daeta_posting_id", "is", null);
+    const postingIds = (hiredMatches || []).map((m: { daeta_posting_id: string }) => m.daeta_posting_id);
+    if (postingIds.length >= 3) {
+      const { data: postings } = await supabase
+        .from("daeta_postings").select("work_date, created_at").in("id", postingIds);
+      const sameDayCount = (postings || []).filter((p: { work_date: string; created_at: string }) => {
+        const createdKst = new Date(new Date(p.created_at).getTime() + 9 * 3600000).toISOString().split("T")[0];
+        return p.work_date === createdKst;
+      }).length;
+      if (sameDayCount >= 3) toAward.push("quick");
+    }
+  }
+
+  if (toAward.length > 0) {
+    await supabase.from("user_badges").upsert(
+      toAward.map(badge_key => ({ user_id: workerId, badge_key })),
+      { onConflict: "user_id,badge_key", ignoreDuplicates: true }
+    );
+  }
+  return toAward;
+}

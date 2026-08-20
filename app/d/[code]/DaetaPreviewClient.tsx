@@ -18,6 +18,7 @@ interface Posting {
   wage: number
   duty: string
   short_code: string
+  image_urls?: string[] | null
 }
 
 interface Props {
@@ -69,6 +70,15 @@ export default function DaetaPreviewClient({ posting, shortCode }: Props) {
               <h1 className="text-xl font-bold">{posting.business_name}</h1>
               <p className="text-sm opacity-80 mt-0.5">{posting.business_type}</p>
             </div>
+
+            {/* 업무 사진 — 인터뷰 없이 바로 지원 여부를 결정해야 해서, 어떤 일인지 감을 잡게 해줌 */}
+            {posting.image_urls && posting.image_urls.length > 0 && (
+              <div className="flex gap-2 px-6 pt-4 overflow-x-auto">
+                {posting.image_urls.map((url, i) => (
+                  <img key={url + i} src={url} alt="업무 사진" className="w-28 h-28 rounded-xl object-cover flex-shrink-0" />
+                ))}
+              </div>
+            )}
 
             {/* 상세 정보 */}
             <div className="px-6 py-5 space-y-3">

@@ -15,7 +15,7 @@ import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import SetNeighborhoodSheet from "@/components/daeta/SetNeighborhoodSheet";
 import { getWorkerTiers, TIER_LABEL, DaetaTier } from "@/lib/daetaTier";
-import { getGrade } from "@/lib/trustScore";
+import { getGrade, getBadgesByRole } from "@/lib/trustScore";
 import TierBadge from "@/components/TierBadge";
 import { formatDaetaDateRange } from "@/lib/utils";
 
@@ -40,6 +40,7 @@ interface SosPosting {
   base_wage?: number | null;
   max_urgent_pct?: number | null;
   employer_profile_id?: string | null;
+  image_urls?: string[] | null;
 }
 
 // 서버 기본 대기시간(lib/daetaEscalation.ts DEFAULT_CONFIG)과 동일 — 관리자 설정 변경 시 다소 어긋날 수 있는 근사치
@@ -147,6 +148,10 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
       justifyContent: "space-between",
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
+        {p.image_urls && p.image_urls[0] && (
+          <img src={p.image_urls[0]} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
+        )}
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
             {!isMine && p.employer_profile_id ? (
@@ -189,6 +194,7 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
               ⚡ 안 잡히면 최대 +{p.max_urgent_pct}%까지 자동 할증돼요
             </div>
           )}
+        </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           {isMine ? (
@@ -360,7 +366,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [selectedPostingId, setSelectedPostingId] = useState<string>("");
   const [sendingSos, setSendingSos] = useState(false);
   const [detailPosting, setDetailPosting] = useState<SosPosting | null>(null);
-  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number; avatarUrl?: string; tier: DaetaTier }[] } | null>(null);
+  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number; avatarUrl?: string; tier: DaetaTier; badges: { key: string; emoji: string; name: string }[] }[] } | null>(null);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [acceptingMatchId, setAcceptingMatchId] = useState<string | null>(null);
   const [rejectingMatchId, setRejectingMatchId] = useState<string | null>(null);
@@ -444,7 +450,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     const gpsBasePromise = getGpsBase(); // 다른 조회와 병렬로 미리 시작 — 뒤에서 값 필요할 때 await만
     const { data: rowsRaw } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at, lat, lng, base_wage, max_urgent_pct, employer_profile_id")
+      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at, lat, lng, base_wage, max_urgent_pct, employer_profile_id, image_urls")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
 
@@ -768,11 +774,18 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       }
 
       const workerIds = pendingMatches.map(m => m.worker_id);
-      const [{ data: users }, tiers] = await Promise.all([
+      const [{ data: users }, tiers, { data: badgeRows }] = await Promise.all([
         supabase.from("users").select("id, nickname, trust_score, avatar_url").in("id", workerIds),
         getWorkerTiers(supabase, workerIds),
+        supabase.from("user_badges").select("user_id, badge_key").in("user_id", workerIds),
       ]);
       const userMap = new Map((users || []).map(u => [u.id, u]));
+      const badgesByWorker = new Map<string, { badge_key: string }[]>();
+      (badgeRows || []).forEach((b: { user_id: string; badge_key: string }) => {
+        const list = badgesByWorker.get(b.user_id) || [];
+        list.push({ badge_key: b.badge_key });
+        badgesByWorker.set(b.user_id, list);
+      });
 
       // 사장님이 여러 지원자 중 한 명을 고르는 가장 중요한 순간인데 예전엔 닉네임·신뢰점수만
       // 보이고 ✅검증/🔵신규 Tier 배지가 전혀 안 떠서, 정작 이 정보가 가장 필요한 화면에 없었음
@@ -783,6 +796,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         trustScore: userMap.get(m.worker_id)?.trust_score ?? 50,
         avatarUrl: userMap.get(m.worker_id)?.avatar_url || undefined,
         tier: tiers[m.worker_id] || "tier2",
+        badges: getBadgesByRole(badgesByWorker.get(m.worker_id) || [], "worker"),
       }));
       setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants });
     } catch {
@@ -1379,6 +1393,15 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                             <TierBadge tier={a.tier} size="sm" />
                           </div>
                           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{grade.emoji} {grade.name} · 신뢰도 {a.trustScore}점</div>
+                          {a.badges.length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                              {a.badges.map(b => (
+                                <span key={b.key} title={b.name} style={{ fontSize: 10, background: "rgba(139,92,246,0.14)", color: "#a78bfa", padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>
+                                  {b.emoji} {b.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
@@ -1411,6 +1434,14 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>{detailPosting.business_name}</h3>
               <button onClick={() => setDetailPosting(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
             </div>
+
+            {detailPosting.image_urls && detailPosting.image_urls.length > 0 && (
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
+                {detailPosting.image_urls.map((url, i) => (
+                  <img key={url + i} src={url} alt="업무 사진" style={{ width: 140, height: 140, borderRadius: 14, objectFit: "cover", flexShrink: 0 }} />
+                ))}
+              </div>
+            )}
 
             {detailPosting.lat != null && detailPosting.lng != null && (
               <iframe

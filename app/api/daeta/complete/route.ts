@@ -7,6 +7,7 @@ import { daetaDayCount, parseWorkHoursRange } from "@/lib/utils";
 import { DaetaPostingRow } from "@/lib/daetaEscalation";
 import { markNoShowAndReescalate } from "@/lib/daetaNoShow";
 import { calcSettlementPay, calcDailyTaxForPeriod, getIs5OrMore, settlePriorDailyAttendance } from "@/lib/daetaSettlement";
+import { checkAndAwardDaetaBadges } from "@/lib/trustScore";
 
 function todayKstStr(): string {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
@@ -169,6 +170,13 @@ export async function POST(req: NextRequest) {
         await supabase.from("trust_score_logs").insert({
           user_id: match.worker_id, delta, reason: `대타 완료 후 사장님 평가 ${rating}/5점`, before_score: before, after_score: after, ref_id: matchId,
         });
+      }
+
+      // 뱃지는 "표시" 실패가 정산 완료 자체를 막으면 안 되므로 별도로 감싸서 무시
+      try {
+        await checkAndAwardDaetaBadges(supabase, match.worker_id);
+      } catch (badgeErr) {
+        console.error("대타 뱃지 체크 실패:", badgeErr);
       }
 
       // 조정된 정산은 채팅 기록에도 시간 변경 사실을 남김 — 메모를 안 써도 이 메시지 자체가 증거가 됨

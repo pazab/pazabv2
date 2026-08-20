@@ -1,6 +1,22 @@
 # TO-DO: 사장님 플로우 UX 개선 및 계약서 시스템
 
-> 최종 업데이트: 2026-07-24 | 우선순위 순 정렬
+> 최종 업데이트: 2026-08-20 | 우선순위 순 정렬
+
+---
+
+## ⑨ 대타 SOS 업무 사진 등록 + 죽어있던 뱃지 활성화 ★★☆ [완료]
+
+**문제:** 일본 초단기 알바 앱(타이미 등)은 업무 사진으로 인터뷰 없이도 미스매치·노쇼를 줄이는데, 대타 공고엔 텍스트뿐이었음. 또한 `BADGE_DEFS`에 "고평점⭐"·"즉시출근⚡" 뱃지가 정의만 돼 있고 실제로 수여하는 로직이 어디에도 없어 아무도 받을 수 없는 죽은 뱃지였음.
+
+**완료 (2026-08-20):**
+- 대타 등록/수정 폼에 업무 사진 업로드(최대 3장), 기존 `ImageCropModal`로 구도 보정(1:1), 이전에 올린 사진 재사용 그리드, HEIC 변환 프리로드(선택 시 "멈춘 것처럼" 보이던 지연 해소)
+- 사진을 지원자 목록 카드·상세모달·카톡 딥링크 미리보기(`/d/[code]`)에 노출
+- `checkAndAwardDaetaBadges()` 신설 — 대타 완료 시 사장님 평가 3건+평균 4.5점 이상이면 고평점, 당일 등록된 긴급요청을 3회 이상 수락 완료했으면 즉시출근 뱃지를 자동 수여
+- 지원자 목록(사장님이 수락 여부를 정하는 결정 순간)에 뱃지 칩 노출 — 새 테이블 없이 기존 `user_badges`/`getBadgesByRole` 재사용이라 `/worker/[id]`·`/mypage`·`/store/[id]`에도 자동 반영됨
+
+**보류:** 당일 즉시 정산(即時払い) — 임팩트는 크지만 작업량이 큰 편이라 다음 순번으로 미룸
+
+**관련 파일:** `components/daeta/DaetaRegisterModal.tsx`, `components/daeta/DaetaSosHome.tsx`, `app/d/[code]/DaetaPreviewClient.tsx`, `lib/trustScore.ts`, `app/api/daeta/complete/route.ts`, `supabase/patch_daeta_images.sql`
 
 ---
 
