@@ -26,7 +26,7 @@ export default function OnboardingPage() {
       if (err) throw err
 
 
-      router.replace(role === 'employer' ? '/myteam' : '/explore')
+      router.replace('/myteam')
     } catch (e) {
       setError('저장 중 오류가 발생했어요. 다시 시도해주세요.')
     } finally {

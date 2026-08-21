@@ -24,7 +24,7 @@ export default function ConsentPage() {
 
   const handleConsent = async (agreed: boolean) => {
     if (agreed) {
-      router.replace("/explore");
+      router.replace("/myteam");
     } else {
       if (userId) {
         await fetch("/api/withdraw", {

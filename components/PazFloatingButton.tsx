@@ -356,7 +356,7 @@ export default function PazFloatingButton() {
     { icon: "ti-robot", label: "PAZ 대화방", sub: isEmployer ? "AI HR 에이전트" : "AI 커리어 코치", path: "/paz", color: "rgba(139,92,246,0.15)", iconColor: "#c4b5fd" },
     isEmployer
       ? { icon: "ti-clipboard-plus", label: "공고 등록", sub: "알바생 구인하기", path: "/employer/register", color: "rgba(236,72,153,0.15)", iconColor: "#f9a8d4" }
-      : { icon: "ti-user-circle", label: "내 프로필", sub: "구직 조건 설정", path: "/worker/profile", color: "rgba(236,72,153,0.15)", iconColor: "#f9a8d4" },
+      : { icon: "ti-user-circle", label: "내 이력서", sub: "경력·자격증 관리", path: "/worker/profile", color: "rgba(236,72,153,0.15)", iconColor: "#f9a8d4" },
     { icon: "ti-message-2", label: "채팅 목록", sub: "매칭된 대화", path: "/chat", color: "rgba(16,185,129,0.15)", iconColor: "#6ee7b7" },
     { icon: "ti-compass", label: "탐색", sub: isEmployer ? "구직자 찾기" : "공고 찾기", path: "/explore", color: "rgba(14,165,233,0.15)", iconColor: "#7dd3fc", divider: true },
   ];

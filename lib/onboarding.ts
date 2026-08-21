@@ -204,6 +204,21 @@ export async function addRole(
 }
 
 // ============================================================
+// 3-2. ensureUserRow — auth 세션은 있는데 public.users 행이 없는 계정 자가치유
+//    (레거시 가입/콜백 삽입 실패 등으로 users 행이 비면 worker_profiles/employer_profiles
+//    등 users(id) FK를 참조하는 모든 upsert가 "violates foreign key constraint"로 깨짐 —
+//    그 upsert들 직전에 호출해서 없으면 최소 행만 만들어준다)
+// ============================================================
+export async function ensureUserRow(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<void> {
+  const { data } = await supabase.from('users').select('id').eq('id', userId).maybeSingle()
+  if (data) return
+  await supabase.from('users').upsert({ id: userId }, { onConflict: 'id' })
+}
+
+// ============================================================
 // 헬퍼
 // ============================================================
 function availabilityToDays(av?: string): string[] {

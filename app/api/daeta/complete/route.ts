@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     const { data: posting } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, lat, lng, work_date, work_date_end, work_hours, wage, base_wage, max_urgent_pct, duty, status, escalation_stage, stage_updated_at, allow_new, created_at, expires_at")
+      .select("id, user_id, business_name, region, lat, lng, work_date, work_date_end, work_hours, wage, base_wage, max_urgent_pct, duty, status, escalation_stage, stage_updated_at, allow_new, created_at, expires_at, break_minutes")
       .eq("id", match.daeta_posting_id)
       .maybeSingle();
 
@@ -79,8 +79,10 @@ export async function POST(req: NextRequest) {
 
       const wage = posting?.wage || 10030;
       // 예정 시간(공고에 적힌 시간대) — 분 단위까지 정확히 파싱. 실제 출퇴근 기록이 없을 때의
-      // 폴백이자, 초과근무 여부를 판정하는 기준선.
-      const scheduledHoursPerDay = parseWorkHoursRange(posting?.work_hours) ?? 6;
+      // 폴백이자, 초과근무 여부를 판정하는 기준선. 근로기준법 54조 휴게시간은 근무가 아니므로
+      // 하루 기준에서 미리 빼둔다(기간 공고는 일수만큼 곱하기 전에 하루분만 뺌 — 매일 휴게이므로).
+      const breakHoursPerDay = (posting?.break_minutes || 0) / 60;
+      const scheduledHoursPerDay = Math.max(0, (parseWorkHoursRange(posting?.work_hours) ?? 6) - breakHoursPerDay);
       // 시작일~종료일 기간 전체를 한 공고로 등록한 경우(work_date_end) 일수만큼 곱해서 정산
       const days = posting ? daetaDayCount(posting.work_date, posting.work_date_end) : 1;
 
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
       const fromActualTimes = days === 1 && !!match.checked_in_at && !!match.checked_out_at;
       if (fromActualTimes) {
         const actualMs = new Date(match.checked_out_at).getTime() - new Date(match.checked_in_at).getTime();
-        autoHours = Math.max(0, Math.round((actualMs / 3600000) * 10) / 10);
+        autoHours = Math.max(0, Math.round((actualMs / 3600000 - breakHoursPerDay) * 10) / 10);
       } else {
         autoHours = scheduledHoursPerDay * days;
       }

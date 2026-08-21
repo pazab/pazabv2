@@ -2459,9 +2459,9 @@ function MyTeamPageContent() {
                   current.length === 0 ? (
                     <div style={{ ...cardStyle, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                       <span style={{ color:"var(--text-muted)", fontSize:13 }}>소속 매장이 없어요</span>
-                      <button onClick={() => router.push("/explore")}
+                      <button onClick={() => router.push("/daeta")}
                         style={{ background:"var(--primary)", border:"none", borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", whiteSpace:"nowrap" }}>
-                        공고 탐색 →
+                        ⚡ 대타 찾아보기 →
                       </button>
                     </div>
                   ) : (() => {
@@ -2588,34 +2588,6 @@ function MyTeamPageContent() {
               </section>
             )}
 
-            {!isBoth && mode === "worker" && (
-              <div style={{
-                ...cardStyle,
-                padding: "16px",
-                background: "rgba(124, 58, 237, 0.04)",
-                border: "1px dashed rgba(124, 58, 237, 0.25)",
-                borderRadius: 16,
-                display: "flex",
-                flexDirection: "row",
-                gap: 12,
-                alignItems: "center",
-                marginTop: -10,
-                marginBottom: 10
-              }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px", display:"flex", alignItems:"center", gap:4 }}><i className="ti ti-building-store" aria-hidden="true" /> 매장 운영하세요?</p>
-                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>사장님 역할을 추가하면 직원 구인이 가능해요</p>
-                </div>
-                <button onClick={() => upgradeToBoth("employer")}
-                  style={{
-                    background: "var(--primary)",
-                    border: "none", borderRadius: 20, padding: "6px 14px",
-                    color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0
-                  }}>
-                  추가하기 →
-                </button>
-              </div>
-            )}
 
             {/* ── 내 팀 (employer / both) ── */}
             {mode === "employer" && (

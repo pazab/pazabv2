@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams
   const provider = sp.get('provider') as 'google' | 'kakao' | null
-  const next = sp.get('next') || '/explore'
+  const next = sp.get('next') || '/myteam'
 
   if (provider !== 'google' && provider !== 'kakao') {
     return NextResponse.redirect(new URL('/login?error=invalid_provider', request.url))

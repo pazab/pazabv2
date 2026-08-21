@@ -11,6 +11,8 @@ import TierBadge from "@/components/TierBadge";
 import { btnPrimary, btnSecondary, modalOverlay, modalSheet } from "@/lib/styles";
 import AppHeader from "@/components/AppHeader";
 import PersonalFeedSection from "@/components/profile/PersonalFeedSection";
+import ResumeEditForm from "@/components/worker/ResumeEditForm";
+import GalleryEditForm from "@/components/worker/GalleryEditForm";
 
 function FitSection({ fit }: { fit: { wage_ok: boolean | null; days_overlap: number } }) {
   const chips = getFitChips(fit);
@@ -65,10 +67,13 @@ export default function WorkerDetailPage() {
   const [employerProfiles, setEmployerProfiles] = useState<{ id: string; business_name: string }[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [activeTeamMemberId, setActiveTeamMemberId] = useState<string | null>(null);
+  const [pendingDaetaApplication, setPendingDaetaApplication] = useState<{ postingId: string } | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [successMatchId, setSuccessMatchId] = useState<string | null>(null);
   const [matchModal, setMatchModal] = useState<{ matchId: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [showGalleryModal, setShowGalleryModal] = useState(false);
   const [navHidden, setNavHidden] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [workerTier, setWorkerTier] = useState<DaetaTier | null>(null);
@@ -131,7 +136,17 @@ export default function WorkerDetailPage() {
 
   const loadCareerEntries = async () => {
     const { data } = await supabase.from("worker_career_entries").select("*").eq("worker_id", id).order("start_date", { ascending: false });
-    setCareerEntries(data || []);
+    const entries = data || [];
+    setCareerEntries(entries);
+    return entries;
+  };
+
+  // 대타 홈 인력카드의 "경력 N개월" 배지가 여전히 worker_profiles.experience_months를 그대로 읽어서 —
+  // 구조화된 경력(검증된 파잡 이력 + 직접입력)을 바꿀 때마다 그 합계를 캐시로 다시 써준다.
+  const syncExperienceMonths = async (entries: typeof careerEntries) => {
+    const total = careerHistory.reduce((sum, h) => sum + calcCareerMonths(h.hireDate, h.endDate, h.status === "active"), 0)
+      + entries.reduce((sum, e) => sum + calcCareerMonths(e.start_date, e.end_date, e.is_current), 0);
+    await supabase.from("worker_profiles").update({ experience_months: total }).eq("user_id", id);
   };
 
   const openAddCareer = () => setCareerModal({ company_name: "", role_desc: "", start_date: "", end_date: "", is_current: false, description: "" });
@@ -158,13 +173,19 @@ export default function WorkerDetailPage() {
     setSavingCareer(false);
     if (error) { showToast("저장 중 오류가 발생했어요", "error"); return; }
     setCareerModal(null);
-    loadCareerEntries();
+    const entries = await loadCareerEntries();
+    await syncExperienceMonths(entries);
     showToast("경력이 저장됐어요");
   };
 
   const deleteCareerEntry = async (entryId: string) => {
     const { error } = await supabase.from("worker_career_entries").delete().eq("id", entryId);
-    if (!error) { setCareerEntries(prev => prev.filter(e => e.id !== entryId)); showToast("삭제됐어요"); }
+    if (!error) {
+      const next = careerEntries.filter(e => e.id !== entryId);
+      setCareerEntries(next);
+      await syncExperienceMonths(next);
+      showToast("삭제됐어요");
+    }
   };
 
   const openBotChat = () => {
@@ -212,7 +233,7 @@ export default function WorkerDetailPage() {
         .select("*").eq("user_id", id)
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("users")
-        .select("id, nickname, avatar_url, trust_score, user_type, created_at, worker_result").eq("id", id).maybeSingle(),
+        .select("id, nickname, avatar_url, trust_score, user_type, created_at, worker_result, real_name, phone, address, address_detail").eq("id", id).maybeSingle(),
       supabase.from("user_badges").select("badge_key").eq("user_id", id),
     ]);
 
@@ -257,6 +278,18 @@ export default function WorkerDetailPage() {
         const { data: activeTeam } = await supabase.from("team_members")
           .select("id").eq("employer_id", uid).eq("worker_id", id).eq("status", "active").maybeSingle();
         setActiveTeamMemberId(activeTeam?.id || null);
+
+        // 위 existingMatch 조회는 daeta_posting_id를 일부러 제외하는데(정규 채용과 별개 트랙),
+        // 그래서 이 알바생이 내 대타 SOS 공고에 이미 지원해 응답 대기중이어도 "대타 SOS 요청" 버튼이
+        // 아무 일도 없었던 것처럼 계속 활성 상태로 보였음 — 눌러도 중복 요청만 하나 더 쌓이는 상태.
+        const { data: daetaApp } = await supabase.from("matches")
+          .select("daeta_posting_id")
+          .eq("employer_id", uid).eq("worker_id", id)
+          .eq("progress_status", "pending")
+          .not("daeta_posting_id", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1).maybeSingle();
+        setPendingDaetaApplication(daetaApp?.daeta_posting_id ? { postingId: daetaApp.daeta_posting_id as string } : null);
       }
 
       if (uid !== id) {
@@ -375,6 +408,10 @@ export default function WorkerDetailPage() {
 
   const w = worker || {};
   const name = String(profileUser.nickname || "알바생");
+  const realName = String((profileUser as any).real_name || "");
+  const phone = String((profileUser as any).phone || "");
+  const address = String((profileUser as any).address || "");
+  const addressDetail = String((profileUser as any).address_detail || "");
   const credentials = Array.isArray(w.credentials) ? w.credentials as { name: string; is_mandatory_by_law?: boolean; is_preset?: boolean }[] : [];
   const desiredTypes = w.category_ids && Array.isArray(w.custom_categories) && w.custom_categories.length > 0
     ? w.custom_categories as string[]
@@ -451,9 +488,11 @@ export default function WorkerDetailPage() {
         <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", width: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 50 }}>
           {isOwner ? (
             <>
-              <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&start=gallery&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>🖼️ 구직카드 사진</button>
-              <button onClick={() => { setShowMenu(false); router.push(`/worker/profile?edit=true&return=${encodeURIComponent(`/worker/${id}`)}`); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>{hasWorkerProfile ? "📝 구직 조건 전체 수정" : "💼 구직 정보 등록하기"}</button>
-              {hasWorkerProfile && <button onClick={() => { setShowMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🗑️ 삭제하기</button>}
+              {hasWorkerProfile ? (
+                <button onClick={() => { setShowMenu(false); showToast("삭제됐어요"); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--danger)" }}>🗑️ 삭제하기</button>
+              ) : (
+                <button onClick={() => { setShowMenu(false); setShowResumeModal(true); }} style={{ width: "100%", background: "none", border: "none", padding: "12px 16px", cursor: "pointer", textAlign: "left", fontSize: 13, color: "var(--text)" }}>📝 이력서 작성하기</button>
+              )}
             </>
           ) : (
             <>
@@ -504,6 +543,13 @@ export default function WorkerDetailPage() {
 
           {/* 히어로 오버레이 컨트롤 */}
           <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, zIndex: 30 }}>
+            {isOwner && (
+              <button onClick={() => setShowGalleryModal(true)}
+                title="사진 수정"
+                style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <i className="ti ti-pencil" aria-hidden="true" />
+              </button>
+            )}
             {ownerMenu}
           </div>
 
@@ -604,6 +650,18 @@ export default function WorkerDetailPage() {
         </div>
       )}
 
+      {/* 👤 개인정보 — 본인에게만 노출(계약서 SOT 미리보기용). 다른 사람에겐 절대 안 보임 — 실제 공개는 계약서 작성 시 상대 사장님에게만 */}
+      {isOwner && (realName || phone || address) && (
+        <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 10px", letterSpacing: "0.5px" }}>👤 개인정보 <span style={{ fontWeight: 400 }}>(나만 볼 수 있어요 · 계약서 자동입력용)</span></p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--text)" }}>
+            {realName && <div>{realName}</div>}
+            {phone && <div style={{ color: "var(--text-muted)" }}>{phone}</div>}
+            {address && <div style={{ color: "var(--text-muted)" }}>{address}{addressDetail ? ` ${addressDetail}` : ""}</div>}
+          </div>
+        </div>
+      )}
+
       {/* 💼 경력 (파잡 근무이력 + 직접입력 경력을 하나의 타임라인으로 통합) */}
       {isWorkerRole && (timelineItems.length > 0 || isOwner) && (
         <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
@@ -653,27 +711,6 @@ export default function WorkerDetailPage() {
       )}
 
       {isWorkerRole && (hasWorkerProfile ? (<>
-        {/* 구직 희망 조건 — 대타 SOS는 이 값들을 전혀 안 씀(available_now·팀이력만 봄), 일반 채용매칭 전용이라
-            실제로 입력한 적 있는 사람에게만 노출 — 대타만 켜둔 사람에게 무관한 "협의" placeholder를 안 보여줌 */}
-        {(Number(w.desired_wage) > 0 || w.work_days || w.work_hours) && (
-          <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 12px", letterSpacing: "0.5px" }}>📋 구직 희망 조건</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              {[
-                { icon: "₩", label: "희망 시급", value: Number(w.desired_wage) > 0 ? `${Number(w.desired_wage).toLocaleString()}원` : "협의", sub: w.wage_negotiable ? "협의 가능" : null, color: "var(--danger)" },
-                { icon: "📅", label: "근무요일", value: String(w.work_days || "협의"), sub: null, color: null },
-                { icon: "⏰", label: "근무시간", value: String(w.work_hours || "협의"), sub: null, color: null },
-              ].map(item => (
-                <div key={item.label} style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 14, padding: "12px 14px" }}>
-                  <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 4px", fontWeight: 600 }}>{item.icon} {item.label}</p>
-                  <p style={{ fontSize: 16, fontWeight: 800, margin: 0, color: item.color || "var(--text)" }}>{item.value}</p>
-                  {item.sub && <p style={{ fontSize: 10, color: "var(--purple-text)", margin: "3px 0 0" }}>💬 {item.sub}</p>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* 보유 자격증 & 실무기술 */}
         {credentials.length > 0 && (
           <div style={{ padding: "20px 0", borderBottom: "1px solid var(--card-inner-border)" }}>
@@ -706,6 +743,15 @@ export default function WorkerDetailPage() {
         {/* 조건 적합도 */}
         {fit && <FitSection fit={fit} />}
 
+        {/* 이력서 수정 — "⋯" 메뉴 안에 숨겨두던 걸 여기로 꺼냄. 사진은 위쪽 연필 아이콘으로 따로 편집 */}
+        {isOwner && (
+          <div style={{ padding: "20px 0" }}>
+            <button onClick={() => setShowResumeModal(true)}
+              style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "13px", color: "var(--text)", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <i className="ti ti-pencil" aria-hidden="true" /> 이력서 수정
+            </button>
+          </div>
+        )}
 
       </>) : (
         isOwner && (
@@ -715,7 +761,7 @@ export default function WorkerDetailPage() {
                 <p style={{ fontSize: 13, fontWeight: 700, color: "var(--purple-text)", margin: "0 0 2px" }}>💼 구직 정보를 아직 등록 안 하셨어요</p>
                 <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>등록하면 대타 요청도 받을 수 있어요</p>
               </div>
-              <button onClick={() => router.push(`/worker/profile?edit=true&return=${encodeURIComponent(`/worker/${id}`)}`)} style={{ flexShrink: 0, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <button onClick={() => setShowResumeModal(true)} style={{ flexShrink: 0, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
                 등록하기 →
               </button>
             </div>
@@ -783,7 +829,28 @@ export default function WorkerDetailPage() {
             <button onClick={handleLoveCall} disabled={sending} style={{ flex: 1, height: 52, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontWeight: 700, borderRadius: 14, fontSize: 14, cursor: "pointer" }}>💔 결렬됨 · 다시 보내기</button>
           ) : (
             <div style={{ display: "flex", gap: 8, flex: 1 }}>
-              {Boolean(worker?.available_now) && (
+              {pendingDaetaApplication ? (
+                <button
+                  onClick={() => router.push(`/daeta?applicants=${pendingDaetaApplication.postingId}`)}
+                  style={{
+                    flex: 1,
+                    height: 52,
+                    background: "var(--success-bg)",
+                    border: "1px solid var(--success-border)",
+                    color: "var(--success)",
+                    fontWeight: 800,
+                    borderRadius: 14,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4
+                  }}
+                >
+                  📥 이미 지원함 · 확인하기
+                </button>
+              ) : Boolean(worker?.available_now) && (
                 <button
                   onClick={handleSosClick}
                   style={{
@@ -813,6 +880,46 @@ export default function WorkerDetailPage() {
           )}
         </div>
       </div>
+      {/* 사진 수정 모달 — 히어로 사진 위 연필 아이콘 */}
+      {showGalleryModal && userId && (
+        <div style={{ ...modalOverlay }} onClick={() => setShowGalleryModal(false)}>
+          <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto", maxHeight: "88dvh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>사진 수정</h3>
+              <button onClick={() => setShowGalleryModal(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer" }}>✕</button>
+            </div>
+            <GalleryEditForm
+              userId={userId}
+              onSaved={() => {
+                setShowGalleryModal(false);
+                showToast("사진이 저장됐어요");
+                fetchProfile(userId, null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 이력서 수정 모달 — /worker/profile로 페이지 이동하지 않고 바로 여기서 편집 */}
+      {showResumeModal && userId && (
+        <div style={{ ...modalOverlay }} onClick={() => setShowResumeModal(false)}>
+          <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto", maxHeight: "88dvh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>이력서 수정</h3>
+              <button onClick={() => setShowResumeModal(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer" }}>✕</button>
+            </div>
+            <ResumeEditForm
+              userId={userId}
+              onSaved={() => {
+                setShowResumeModal(false);
+                showToast("이력서가 저장됐어요");
+                fetchProfile(userId, null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* 경력 추가/수정 모달 */}
       {careerModal && (
         <div style={{ ...modalOverlay }}>

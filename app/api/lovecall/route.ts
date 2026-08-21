@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
           type: "lovecall",
           title: `📤 지원 완료 (${businessName})`,
           body: `✨ ${businessName} 매장에 지원이 완료되었습니다. 사장님의 답변을 기다려주세요.`,
-          url: `/mypage`,
+          url: `/mypage/applications?tab=worker`,
           data: { matchId: data.id }
         });
       } else {
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
           type: "lovecall",
           title: `📤 채용 제안 완료 (${workerName}님)`,
           body: `✨ ${workerName}님에게 채용 제안을 정상적으로 보냈습니다.`,
-          url: `/mypage`,
+          url: `/mypage/applications?tab=employer`,
           data: { matchId: data.id }
         });
       }
@@ -253,7 +253,7 @@ export async function GET(req: NextRequest) {
 // 수락/거절/취소/진행단계 (PATCH)
 export async function PATCH(req: NextRequest) {
   try {
-    const { matchId, action, interviewAt, interviewMemo, userId: actionUserId } = await req.json();
+    const { matchId, action, interviewAt, interviewMemo, userId: actionUserId, reason } = await req.json();
 
     if (!matchId || !action) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
@@ -542,7 +542,7 @@ export async function PATCH(req: NextRequest) {
                   userId: rejectMatchData.employer_id,
                   type: "lovecall",
                   title: `😔 채용 제안 거절 (${businessName})`,
-                  body: `${workerName}님이 채용 제안을 거절했어요.`,
+                  body: `${workerName}님이 채용 제안을 거절했어요. 다른 분을 찾아보세요!`,
                   url: `/mypage`,
                   data: { matchId }
                 });
@@ -555,6 +555,9 @@ export async function PATCH(req: NextRequest) {
         break;
       case "cancel":
         updateData.progress_status = "cancelled";
+        // 겹치는 다른 근무가 확정돼서 정중히 취소하는 경우 등 — 사유를 남겨두면 상대방 알림에도
+        // 그대로 실려서 "왜 취소했는지" 알 수 있음(대타 이력 화면도 이 message 필드를 그대로 읽음)
+        if (reason) updateData.message = String(reason).slice(0, 300);
         const { data: cancelMatchData } = await supabase
           .from("matches")
           .select("worker_id, employer_id, employer_profile_id, job_id, daeta_posting_id, initiated_by")
@@ -593,7 +596,7 @@ export async function PATCH(req: NextRequest) {
                 userId: cancelMatchData.employer_id,
                 type: "lovecall",
                 title: `🚫 지원 취소 (${businessName})`,
-                body: `💡 ${workerName}님이 매장 지원을 취소했습니다.`,
+                body: reason ? `💡 ${workerName}님이 지원을 취소했습니다. "${reason}"` : `💡 ${workerName}님이 지원을 취소했어요. 다른 지원자를 찾아보세요!`,
                 url: `/mypage`,
                 data: { matchId }
               });
@@ -602,7 +605,7 @@ export async function PATCH(req: NextRequest) {
                 userId: cancelMatchData.worker_id,
                 type: "lovecall",
                 title: `🚫 채용 제안 취소 (${businessName})`,
-                body: `💌 ${businessName} 사장님이 채용 제안을 취소했습니다.`,
+                body: reason ? `💌 ${businessName} 사장님이 채용 제안을 취소했습니다. "${reason}"` : `💌 ${businessName} 사장님이 채용 제안을 취소했어요. 다른 좋은 곳도 찾아보세요!`,
                 url: `/mypage`,
                 data: { matchId }
               });
@@ -649,7 +652,7 @@ export async function PATCH(req: NextRequest) {
               userId: hireRejectMatch.employer_id,
               type: "lovecall",
               title: `💔 채용 거절 (${businessName})`,
-              body: `💡 ${workerName}님이 채용 제안을 거절했습니다.`,
+              body: `💡 ${workerName}님이 채용 제안을 거절했어요. 다른 분을 찾아보세요!`,
               url: `/mypage`,
               data: { matchId }
             });

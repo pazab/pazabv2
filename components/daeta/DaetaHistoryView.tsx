@@ -105,7 +105,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
       const [postingsRes, usersRes] = await Promise.all([
         supabase
           .from("daeta_postings")
-          .select("id, business_name, business_type, region, wage, work_hours, work_date, work_date_end, lat, lng, employer_profile_id")
+          .select("id, business_name, business_type, region, wage, work_hours, work_date, work_date_end, lat, lng, employer_profile_id, break_minutes")
           .in("id", postingIds),
         supabase
           .from("users")
@@ -211,11 +211,12 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   // 기본값으로 — /api/daeta/complete의 서버 계산과 동일 기준. 사장님이 확인 화면에서 직접 고칠 수 있음.
   const computeSuggestedHours = (match: any): number => {
     const posting = match.daeta_postings;
-    const scheduled = parseWorkHoursRange(posting?.work_hours) ?? 6;
+    const breakHoursPerDay = (posting?.break_minutes || 0) / 60;
+    const scheduled = Math.max(0, (parseWorkHoursRange(posting?.work_hours) ?? 6) - breakHoursPerDay);
     const days = posting ? daetaDayCount(posting.work_date, posting.work_date_end) : 1;
     if (days === 1 && match.checked_in_at && match.checked_out_at) {
       const actualMs = new Date(match.checked_out_at).getTime() - new Date(match.checked_in_at).getTime();
-      return Math.max(0, Math.round((actualMs / 3600000) * 10) / 10);
+      return Math.max(0, Math.round((actualMs / 3600000 - breakHoursPerDay) * 10) / 10);
     }
     return Math.round(scheduled * days * 10) / 10;
   };
@@ -848,7 +849,8 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
               {pendingAction.type === "complete" && (() => {
                 const posting = pendingAction.match.daeta_postings;
                 const wage = posting?.wage || 0;
-                const scheduledPerDay = parseWorkHoursRange(posting?.work_hours) ?? 6;
+                const breakHoursPerDay = (posting?.break_minutes || 0) / 60;
+                const scheduledPerDay = Math.max(0, (parseWorkHoursRange(posting?.work_hours) ?? 6) - breakHoursPerDay);
                 const days = posting ? daetaDayCount(posting.work_date, posting.work_date_end) : 1;
                 const scheduledTotal = Math.round(scheduledPerDay * days * 10) / 10;
                 const parsedHours = parseFloat(completeHours) || 0;
@@ -906,7 +908,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                         <span style={{ fontSize: 13, color: "var(--text-muted)" }}>시간</span>
                       </div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
-                        예정 {scheduledTotal}시간{overtimeHours > 0 ? ` · 초과근무 ${overtimeHours}시간 (할증 포함)` : ""}
+                        예정 {scheduledTotal}시간{overtimeHours > 0 ? ` · 초과근무 ${overtimeHours}시간 (할증 포함)` : ""}{(posting?.break_minutes || 0) > 0 ? ` · 휴게 ${posting.break_minutes}분 제외됨` : ""}
                       </div>
                       {wage > 0 && (
                         <div style={{ marginTop: 8, textAlign: "right" }}>

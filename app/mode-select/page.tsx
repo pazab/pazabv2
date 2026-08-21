@@ -8,7 +8,7 @@ export default function ModeSelectPage() {
 
   const selectMode = (mode: "worker" | "employer") => {
     localStorage.setItem("current_mode", mode);
-    router.replace("/explore?type=" + mode);
+    router.replace("/myteam");
   };
 
   return (

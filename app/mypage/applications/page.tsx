@@ -32,8 +32,12 @@ function ApplicationsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const received = loveCalls.filter(lc => lc.myRole === tab && !lc.isSent);
-  const sent = loveCalls.filter(lc => lc.myRole === tab && lc.isSent);
+  // 알바생이 사장님에게 직접 받은 대타(SOS) 1:1 요청도 이제 /daeta 홈 카드에서 수락/거절이 바로 되니 제외 —
+  // 정규 채용 제안(잡보드/프로필발 러브콜)은 그런 인라인 표시가 없어서 계속 여기서 보여줘야 함
+  const received = loveCalls.filter(lc => lc.myRole === tab && !lc.isSent && !(tab === "worker" && lc.daeta_posting_id));
+  // 알바생이 보낸 대타(SOS) 지원도 마찬가지로 카드에서 "지원 완료"+취소로 바로 보여서 여기선 제외 —
+  // 일반 채용(잡보드) 지원은 그런 인라인 표시가 없어서 계속 여기서 보여줘야 함
+  const sent = loveCalls.filter(lc => lc.myRole === tab && lc.isSent && !(tab === "worker" && lc.daeta_posting_id));
 
   const onNavigate = (lc: any) => isEmployer
     ? router.push(`/worker/${lc.worker_id}`)

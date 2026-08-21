@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; background:#18181b; }
+    #map { width:100%; height:100%; }
+    #pin {
+      position:absolute; top:50%; left:50%;
+      transform: translate(-50%, -100%);
+      font-size:32px; line-height:1; pointer-events:none; z-index:10;
+      filter: drop-shadow(0 3px 4px rgba(0,0,0,0.45));
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="pin">📍</div>
+  <script>
+    var p = new URLSearchParams(location.search);
+    var lat = parseFloat(p.get('lat'));
+    var lng = parseFloat(p.get('lng'));
+    if (isNaN(lat) || isNaN(lng)) { lat = 36.7909; lng = 127.1136; } // 기본값: 아산 탕정 (파잡 집중 상권)
+
+    var REST_KEY = '02e1711115a492598ea97b18764fc597';
+    var map = null;
+
+    function reverseGeocode(la, ln) {
+      fetch('https://dapi.kakao.com/v2/local/geo/coord2address.json?x=' + ln + '&y=' + la, {
+        headers: { Authorization: 'KakaoAK ' + REST_KEY }
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var doc = data.documents && data.documents[0];
+          var jibun = doc && doc.address;
+          var road = doc && doc.road_address;
+          // 표시용 주소 문자열은 도로명 우선(더 읽기 쉬움), 행정구역 파싱은 항상 지번주소 기준 —
+          // road_address.region_3depth_name은 "리"가 빠져서(예: "신창면"), 검색 결과 선택(selectResult)과
+          // 다르게 지도 드래그로는 리 단위 라벨이 안 나오던 문제
+          var regionSrc = jibun || road;
+          window.parent.postMessage({
+            type: 'paz-map-picked',
+            lat: la, lng: ln,
+            address: (road && road.address_name) || (jibun && jibun.address_name) || '',
+            sido: regionSrc ? (regionSrc.region_1depth_name || '') : '',
+            sigungu: regionSrc ? (regionSrc.region_2depth_name || '') : '',
+            eupmyeondong: regionSrc ? (regionSrc.region_3depth_name || '') : '',
+          }, '*');
+        })
+        .catch(function () {});
+    }
+
+    var script = document.createElement('script');
+    script.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=e86fd6c4b97c3607fb429d8f75526f41&autoload=false';
+    script.onload = function () {
+      if (!window.kakao || !window.kakao.maps) return;
+      window.kakao.maps.load(function () {
+        var container = document.getElementById('map');
+        map = new window.kakao.maps.Map(container, {
+          center: new window.kakao.maps.LatLng(lat, lng),
+          level: 4,
+        });
+        // idle: 드래그/확대축소가 끝났을 때 + 지도가 처음 표시될 때도 발생 → 별도 초기 호출 불필요
+        window.kakao.maps.event.addListener(map, 'idle', function () {
+          var c = map.getCenter();
+          reverseGeocode(c.getLat(), c.getLng());
+        });
+      });
+    };
+    document.head.appendChild(script);
+
+    window.addEventListener('message', function (e) {
+      var d = e.data || {};
+      if (d.type === 'paz-map-recenter' && map && typeof d.lat === 'number' && typeof d.lng === 'number') {
+        map.setCenter(new window.kakao.maps.LatLng(d.lat, d.lng));
+      }
+    });
+  </script>
+</body>
+</html>

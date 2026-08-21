@@ -205,7 +205,7 @@ export default function PersonalityPage() {
       {/* 헤더 */}
       <div style={{ position: "sticky", top: 0, zIndex: 30, background: "rgba(24,24,27,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => router.push("/explore")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <button onClick={() => router.push("/myteam")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             <span style={{ fontSize: 17, fontWeight: 900, background: "linear-gradient(135deg, #8b5cf6, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: "-0.5px" }}>PAZAB</span>
           </button>
           <div style={{ width: 1, height: 14, background: "rgba(255,255,255,0.1)" }} />

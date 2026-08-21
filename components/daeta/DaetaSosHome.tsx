@@ -15,6 +15,7 @@ import DaetaRegisterModal from "@/components/daeta/DaetaRegisterModal";
 import DaetaRoleTabBar from "@/components/daeta/DaetaRoleTabBar";
 import SetNeighborhoodSheet from "@/components/daeta/SetNeighborhoodSheet";
 import { getWorkerTiers, TIER_LABEL, DaetaTier } from "@/lib/daetaTier";
+import { ensureUserRow } from "@/lib/onboarding";
 import { getGrade, getBadgesByRole } from "@/lib/trustScore";
 import TierBadge from "@/components/TierBadge";
 import { formatDaetaDateRange } from "@/lib/utils";
@@ -41,6 +42,7 @@ interface SosPosting {
   max_urgent_pct?: number | null;
   employer_profile_id?: string | null;
   image_urls?: string[] | null;
+  required_credentials?: string | null;
 }
 
 // 서버 기본 대기시간(lib/daetaEscalation.ts DEFAULT_CONFIG)과 동일 — 관리자 설정 변경 시 다소 어긋날 수 있는 근사치
@@ -106,18 +108,42 @@ function isUrgentPosting(p: SosPosting, now: number): boolean {
   return hoursUntilShiftStart(p, now) <= 3;
 }
 
+// 공고의 실제 근무 시작~종료 시각 범위(ms) — 시간 겹침 판정용. 야간 근무(종료<시작)와 기간 공고
+// (work_date_end)도 처리. 파싱 실패 시 null(겹침 판정에서 조용히 제외).
+function getShiftRange(p: SosPosting): { start: number; end: number } | null {
+  const startPart = p.work_hours?.split("~")[0]?.trim();
+  const endPart = p.work_hours?.split("~")[1]?.trim();
+  if (!p.work_date || !startPart || !endPart) return null;
+  const start = new Date(`${p.work_date}T${startPart}:00+09:00`).getTime();
+  let end = new Date(`${p.work_date_end || p.work_date}T${endPart}:00+09:00`).getTime();
+  if (endPart <= startPart) end += 86400000; // 익일까지 이어지는 야간 근무
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return { start, end };
+}
+
+function shiftsOverlap(a: SosPosting, b: SosPosting): boolean {
+  const ra = getShiftRange(a);
+  const rb = getShiftRange(b);
+  if (!ra || !rb) return false;
+  return ra.start < rb.end && rb.start < ra.end;
+}
+
 interface PostingCardProps {
   p: SosPosting;
   isMine: boolean;
   urgent: boolean;
   meta: PostingMatchMeta;
   isApplied: boolean;
+  isReceivedRequest?: boolean;
   isLoading: boolean;
   width?: number | string;
   myBase?: { lat: number; lng: number } | null;
   onEdit?: () => void;
   onCancel?: () => void;
   onApply?: () => void;
+  onCancelApply?: () => void;
+  onAcceptRequest?: () => void;
+  onRejectRequest?: () => void;
   onGoToChat: (matchId: string) => void;
   onGoToSettle: (matchId: string) => void;
   onViewStore?: (employerProfileId: string) => void;
@@ -126,7 +152,7 @@ interface PostingCardProps {
   expansionInfo?: { label: string; minutesLeft: number } | null;
 }
 
-function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myBase, onEdit, onCancel, onApply, onGoToChat, onGoToSettle, onViewStore, onShowDetail, onShowApplicants, expansionInfo }: PostingCardProps) {
+function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, isLoading, width, myBase, onEdit, onCancel, onApply, onCancelApply, onAcceptRequest, onRejectRequest, onGoToChat, onGoToSettle, onViewStore, onShowDetail, onShowApplicants, expansionInfo }: PostingCardProps) {
   const stage = p.escalation_stage || 1;
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
@@ -174,14 +200,20 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
             ) : (
               <span style={{ fontSize: 10, background: "rgba(139,92,246,0.18)", color: "#a78bfa", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>📢 동네 매장 SOS</span>
             )}
+            {isReceivedRequest && (
+              <span style={{ fontSize: 10, background: "rgba(139,92,246,0.22)", color: "#c4b5fd", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>📥 나에게 직접 요청함</span>
+            )}
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", marginTop: 3, wordBreak: "keep-all", overflowWrap: "break-word" }}>
-            {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours} · {p.duty}
+            {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours}
             {dist != null && ` · 🚶 ${dist < 10 ? dist.toFixed(1) : Math.round(dist)}km`}
           </div>
+          <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.5))", marginTop: 2, wordBreak: "keep-all", overflowWrap: "break-word" }}>
+            {p.duty}
+          </div>
           {p.region && (
-            <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.45))", marginTop: 3, display: "flex", alignItems: "center", gap: 3 }}>
-              <i className="ti ti-map-pin" style={{ fontSize: 11 }} aria-hidden="true" /> {p.region}
+            <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.45))", marginTop: 3, display: "flex", alignItems: "flex-start", gap: 3, wordBreak: "keep-all", overflowWrap: "break-word" }}>
+              <i className="ti ti-map-pin" style={{ fontSize: 11, marginTop: 1, flexShrink: 0 }} aria-hidden="true" /> {p.region}
             </div>
           )}
           <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c", marginTop: 3 }}>
@@ -215,24 +247,58 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isLoading, width, myB
                 </button>
               </>
             )
+          ) : isReceivedRequest ? (
+            // 사장님이 나를 콕 찍어 보낸 1:1 SOS 요청 — 내가 지원한 게 아니라 저쪽이 나한테 제안한 거라
+            // "지원 완료/취소"가 아니라 수락/거절이 맞음. 예전엔 이것도 isApplied로 뭉뚱그려서
+            // "지원 완료"로만 보이고 취소 버튼만 있어서, 진짜 요청인 줄 모르고 거절하기 쉬웠음.
+            // "나에게 직접 요청함" 표시는 상단 뱃지 줄로 옮김(여기 두면 거절/수락 버튼보다 넓어져서 삐져나왔음).
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRejectRequest?.(); }}
+                disabled={isLoading}
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1 }}
+              >
+                거절
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onAcceptRequest?.(); }}
+                disabled={isLoading}
+                style={{ background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 800, cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1 }}
+              >
+                {isLoading ? "..." : "수락"}
+              </button>
+            </div>
+          ) : isApplied ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+              <span style={{ background: "var(--surface2, rgba(255,255,255,0.1))", border: "1px solid var(--border)", borderRadius: 10, padding: "6px 12px", color: "var(--text-muted)", fontSize: 11, fontWeight: 800 }}>
+                ✅ 지원 완료
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onCancelApply?.(); }}
+                disabled={isLoading}
+                style={{ background: "none", border: "none", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1, padding: "2px 4px" }}
+              >
+                {isLoading ? "..." : "지원 취소"}
+              </button>
+            </div>
           ) : (
             <button
               onClick={(e) => { e.stopPropagation(); onApply?.(); }}
-              disabled={isApplied || isLoading}
+              disabled={isLoading}
               style={{
-                background: isApplied ? "var(--surface2, rgba(255,255,255,0.1))" : "linear-gradient(135deg, #f97316, #ef4444)",
-                border: isApplied ? "1px solid var(--border)" : "none",
+                background: "linear-gradient(135deg, #f97316, #ef4444)",
+                border: "none",
                 borderRadius: 10,
                 padding: "8px 14px",
-                color: isApplied ? "var(--text-muted)" : "#fff",
+                color: "#fff",
                 fontSize: 12,
                 fontWeight: 800,
-                cursor: isApplied ? "default" : "pointer",
+                cursor: "pointer",
                 opacity: isLoading ? 0.6 : 1,
-                boxShadow: isApplied ? "none" : "0 2px 8px rgba(249,115,22,0.3)",
+                boxShadow: "0 2px 8px rgba(249,115,22,0.3)",
               }}
             >
-              {isLoading ? "..." : isApplied ? "지원 완료" : "🚀 지원하기"}
+              {isLoading ? "..." : "🚀 지원하기"}
             </button>
           )}
         </div>
@@ -366,6 +432,8 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [matchMeta, setMatchMeta] = useState<Record<string, PostingMatchMeta>>({});
   const [availableWorkers, setAvailableWorkers] = useState<any[]>([]);
   const [workerProfile, setWorkerProfile] = useState<{ id: string; available_now: boolean } | null>(null);
+  // 내 이력에 등록된 자격증/보건증 목록(worker_profiles.credentials) — 지원 전 필수 자격 확인용
+  const [myCredentials, setMyCredentials] = useState<{ name: string; is_mandatory_by_law?: boolean }[]>([]);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [editingPostingId, setEditingPostingId] = useState<string | null>(null);
   const [historyCount, setHistoryCount] = useState(0);
@@ -379,7 +447,16 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
+  // postingId → matchId (취소 시 어떤 match를 취소할지 알아야 해서 postingId만 있던 Set에서 확장)
+  const [appliedMatchIds, setAppliedMatchIds] = useState<Record<string, string>>({});
+  // postingId → matchId — 사장님이 나를 콕 찍어 보낸 1:1 SOS 요청(내가 지원한 게 아니라 받은 것). appliedMatchIds와
+  // 같은 원본 조회에서 initiated_by로 갈라 나온다.
+  const [receivedRequestMatchIds, setReceivedRequestMatchIds] = useState<Record<string, string>>({});
+  // 확정된 근무와 시간이 겹치는 다른 대기중 지원/요청 발견 시 취소를 정중히 유도하는 팝업
+  const [conflictWarning, setConflictWarning] = useState<{ matchId: string; confirmedPosting: SosPosting; conflictPosting: SosPosting } | null>(null);
+  const [cancelingConflict, setCancelingConflict] = useState(false);
+  // 같은 matchId로 반복 팝업하지 않게(취소든 나중에든 한 번 보면 이번 세션에선 다시 안 뜸) — 리렌더로 리셋되면 안 되므로 ref
+  const promptedConflictRef = useRef<Set<string>>(new Set());
   const [hasEmployerProfile, setHasEmployerProfile] = useState(false);
 
   const [targetWorkerForSos, setTargetWorkerForSos] = useState<any | null>(null);
@@ -475,7 +552,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     // 'completed'/'cancelled'/'expired'로 바뀌는(=정산되거나 종료되는) 순간에만 진짜로 빠진다.
     const { data: rowsRaw } = await supabase
       .from("daeta_postings")
-      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at, lat, lng, base_wage, max_urgent_pct, employer_profile_id, image_urls")
+      .select("id, user_id, business_name, region, work_date, work_date_end, work_hours, wage, duty, escalation_stage, allow_new, status, created_at, stage_updated_at, expires_at, lat, lng, base_wage, max_urgent_pct, employer_profile_id, image_urls, required_credentials")
       .in("status", ["pending", "matched"])
       .order("created_at", { ascending: false });
 
@@ -502,7 +579,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       const ids = postingList.map(p => p.id);
       const { data: matches } = await supabase
         .from("matches")
-        .select("id, daeta_posting_id, worker_id, progress_status, checked_in_at, checked_out_at")
+        .select("id, daeta_posting_id, worker_id, progress_status, checked_in_at, checked_out_at, initiated_by")
         .in("daeta_posting_id", ids)
         .in("progress_status", ["pending", "accepted", "hired"]);
 
@@ -538,9 +615,37 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       // 내가 지원한 공고 — 세션 안에서 방금 지원한 것만이 아니라 이전에 지원해둔 것도
       // 새로고침/재진입 시 그대로 "지원 완료"로 보여야 함 (예전엔 로컬 state만 믿어서 리셋됨)
-      setAppliedIds(new Set(
-        (matches || []).filter(m => m.worker_id === userId).map(m => m.daeta_posting_id)
-      ));
+      const appliedMap: Record<string, string> = {};
+      const receivedMap: Record<string, string> = {};
+      (matches || []).forEach(m => {
+        if (m.worker_id !== userId) return;
+        // initiated_by === 나 → 내가 지원한 것. 그 외(사장님이 initiated) → 사장님이 나한테 직접 보낸 요청.
+        if (m.initiated_by === userId) appliedMap[m.daeta_posting_id] = m.id;
+        else receivedMap[m.daeta_posting_id] = m.id;
+      });
+      setAppliedMatchIds(appliedMap);
+      setReceivedRequestMatchIds(receivedMap);
+
+      // 확정된(accepted) 내 근무와 시간이 겹치는 다른 대기중 지원/요청 감지 — 강제 취소는 안 하고
+      // 정중하게 취소를 유도하는 팝업만 한 번 띄움(무시해도 그만, 본인 자유). matchId 하나당
+      // 세션 내 한 번만 뜨도록 promptedConflictRef로 관리(무시했든 취소했든 다시 안 물어봄).
+      const confirmedMine = (matches || []).filter(m => m.worker_id === userId && m.progress_status === "accepted");
+      const pendingMine = (matches || []).filter(m => m.worker_id === userId && m.progress_status === "pending");
+      outer: for (const cm of confirmedMine) {
+        const confirmedPosting = postingList.find(p => p.id === cm.daeta_posting_id);
+        if (!confirmedPosting) continue;
+        for (const pm of pendingMine) {
+          if (pm.daeta_posting_id === cm.daeta_posting_id) continue;
+          if (promptedConflictRef.current.has(pm.id)) continue;
+          const conflictPosting = postingList.find(p => p.id === pm.daeta_posting_id);
+          if (!conflictPosting) continue;
+          if (shiftsOverlap(confirmedPosting, conflictPosting)) {
+            promptedConflictRef.current.add(pm.id);
+            setConflictWarning({ matchId: pm.id, confirmedPosting, conflictPosting });
+            break outer;
+          }
+        }
+      }
 
       // 내 공고에만 필요한 "알림 간 인원" — 응답건수(meta.total)의 분모. notifications RLS(본인만 SELECT)상
       // 사장님이 직접 못 읽으므로 서버 라우트(서비스롤+소유권검증) 경유해서 근사치를 채운다(비동기, 실패해도 무시)
@@ -566,7 +671,8 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       }
     } else {
       setMatchMeta({});
-      setAppliedIds(new Set());
+      setAppliedMatchIds({});
+      setReceivedRequestMatchIds({});
     }
 
     // ⚡ 사장님 프로필(매장) 존재 여부 조회
@@ -580,7 +686,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     // ⚡ 내 알바 프로필 상태 조회
     const { data: wpRows } = await supabase
       .from("worker_profiles")
-      .select("id, available_now, lat, lng, eupmyeondong, sigungu")
+      .select("id, available_now, lat, lng, eupmyeondong, sigungu, credentials")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(1);
@@ -589,6 +695,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     } else {
       setWorkerProfile(null);
     }
+    setMyCredentials(Array.isArray(wpRows?.[0]?.credentials) ? wpRows[0].credentials : []);
 
     // ⚡ 내 위치 기준점 — 실시간 GPS 1순위, 거부·미지원 시엔 "내 동네"(worker_profiles, 수동 설정)로 대체.
     // 매장 주소는 기준으로 안 씀 — 이 거리는 "대타 뛰러 갈 통근 거리"라 본인 가게 위치와는 무관함.
@@ -705,6 +812,9 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     }
 
     if (!currentProfile) {
+      // users(id) FK 자가치유 — 레거시 계정 등으로 public.users 행이 없으면 아래 upsert가
+      // "violates foreign key constraint"로 항상 실패했음
+      await ensureUserRow(supabase, userId);
       const { data: newP, error: upsertErr } = await supabase
         .from("worker_profiles")
         .upsert({
@@ -896,7 +1006,19 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
     }
   };
 
-  const applyPosting = async (posting: SosPosting) => {
+  // posting.required_credentials(JSON 문자열)를 파싱 — 등록 폼에서 저장한 배열, 각 항목 is_mandatory_by_law로
+  // 법적 필수(보건증 등)와 우대를 구분
+  const parseRequiredCreds = (posting: SosPosting): { name: string; is_mandatory_by_law?: boolean }[] => {
+    if (!posting.required_credentials) return [];
+    try {
+      const parsed = typeof posting.required_credentials === "string" ? JSON.parse(posting.required_credentials) : posting.required_credentials;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const doApplyPosting = async (posting: SosPosting) => {
     setActionLoading(posting.id);
     try {
       // 무단 노쇼 이력이 있으면 정지 기간 동안 지원 제한 (사전 취소는 신뢰점수만 깎일 뿐 정지는 안 걸림)
@@ -919,9 +1041,117 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "지원 실패");
       showToast("🚀 지원 완료! 사장님의 수락을 기다려요");
-      setAppliedIds(prev => new Set([...prev, posting.id]));
+      setAppliedMatchIds(prev => ({ ...prev, [posting.id]: data.data.id }));
     } catch (err) {
       const message = err instanceof Error ? err.message : "지원 중 오류";
+      showToast(message, "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // 지원 전 필수 자격 확인 — 보건증처럼 법적 필수 자격이 내 이력(worker_profiles.credentials)에
+  // 없으면 사장님이 나중에 거절할 가능성이 높으니 미리 알려주고 그래도 지원할지 물어봄(강제 차단은 아님)
+  const applyPosting = (posting: SosPosting) => {
+    const mandatoryMissing = parseRequiredCreds(posting)
+      .filter(c => c.is_mandatory_by_law && !myCredentials.some(mc => mc.name === c.name));
+    if (mandatoryMissing.length > 0) {
+      setPendingConfirm({
+        title: "필수 자격 확인 필요",
+        message: `이 공고는 [${mandatoryMissing.map(c => c.name).join(", ")}]이(가) 필수예요. 내 이력에는 등록돼 있지 않아서 사장님이 나중에 거절할 수 있어요. 그래도 지원하시겠어요?`,
+        onConfirm: () => {
+          setPendingConfirm(null);
+          doApplyPosting(posting);
+        },
+      });
+      return;
+    }
+    doApplyPosting(posting);
+  };
+
+  // 남의 공고에 낸 내 지원을 취소 — 응답 대기 중에 마음이 바뀌었거나 다른 곳에 확정됐을 때
+  const cancelApplication = (posting: SosPosting) => {
+    const matchId = appliedMatchIds[posting.id];
+    if (!matchId) return;
+    setPendingConfirm({
+      title: "지원 취소",
+      message: "이 공고에 낸 지원을 취소할까요?",
+      onConfirm: async () => {
+        setPendingConfirm(null);
+        setActionLoading(posting.id);
+        try {
+          const res = await fetch("/api/lovecall", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ matchId, action: "cancel" }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "취소 실패");
+          showToast("지원을 취소했어요", "info");
+          setAppliedMatchIds(prev => {
+            const next = { ...prev };
+            delete next[posting.id];
+            return next;
+          });
+          await load();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "취소 중 오류";
+          showToast(message, "error");
+        } finally {
+          setActionLoading(null);
+        }
+      },
+    });
+  };
+
+  // 시간 겹침 경고 팝업에서 "취소하고 안내 보내기" — 정중한 사유를 자동으로 붙여서 취소
+  const cancelConflictingApplication = async () => {
+    if (!conflictWarning) return;
+    const { matchId, confirmedPosting } = conflictWarning;
+    setCancelingConflict(true);
+    try {
+      const dateLabel = formatDaetaDateRange(confirmedPosting.work_date, confirmedPosting.work_date_end);
+      const reason = `다른 대타 근무(${confirmedPosting.business_name}, ${dateLabel} · ${confirmedPosting.work_hours})가 먼저 확정되어 부득이하게 취소하게 됐어요. 좋은 분 빨리 구하시길 바랄게요. 죄송합니다.`;
+      const res = await fetch("/api/lovecall", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId, action: "cancel", reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "취소 실패");
+      showToast("정중하게 취소 안내를 보냈어요", "info");
+      setConflictWarning(null);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "취소 중 오류";
+      showToast(message, "error");
+    } finally {
+      setCancelingConflict(false);
+    }
+  };
+
+  // 사장님이 나한테 직접 보낸 1:1 SOS 요청에 응답 — 수락하면 채팅방이 열리고, 거절하면 그냥 종료됨
+  const respondToSosRequest = async (posting: SosPosting, action: "accept" | "reject") => {
+    const matchId = receivedRequestMatchIds[posting.id];
+    if (!matchId) return;
+    setActionLoading(posting.id);
+    try {
+      const res = await fetch("/api/lovecall", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || (action === "accept" ? "수락 실패" : "거절 실패"));
+      showToast(action === "accept" ? "🎉 수락 완료! 채팅방이 열렸어요" : "요청을 거절했어요", action === "accept" ? "success" : "info");
+      setReceivedRequestMatchIds(prev => {
+        const next = { ...prev };
+        delete next[posting.id];
+        return next;
+      });
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "처리 중 오류";
       showToast(message, "error");
     } finally {
       setActionLoading(null);
@@ -960,12 +1190,18 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   // 잡은 자리라 지원하기를 눌러도 의미가 없음(내 공고는 진행상황 확인을 위해 matched도 계속 보여줘야 함)
   const myPostings = postings.filter(p => p.user_id === userId);
   const othersPostings = postings.filter(p => p.user_id !== userId && p.status === "pending");
+  // 내가 이미 지원했거나 사장님에게 직접 요청받은 공고는 각 섹션(긴급/다른 공고) 안에서 맨 앞으로 —
+  // 특히 받은 요청은 내가 액션(수락/거절)해야 하는 쪽이라 지원한 것보다도 더 우선. 섹션 자체(긴급 vs
+  // 일반)는 그대로 유지해서 "긴급 옆"에 붙는 느낌을 살림.
+  const appliedFirst = (p: SosPosting) => (receivedRequestMatchIds[p.id] ? 0 : appliedMatchIds[p.id] ? 1 : 2);
   const urgentOthers = othersPostings
     .filter(p => isUrgentPosting(p, now))
-    .sort((a, b) => hoursUntilShiftStart(a, now) - hoursUntilShiftStart(b, now));
+    .sort((a, b) => appliedFirst(a) - appliedFirst(b) || hoursUntilShiftStart(a, now) - hoursUntilShiftStart(b, now));
   const generalOthers = othersPostings
     .filter(p => !isUrgentPosting(p, now))
     .sort((a, b) => {
+      const af = appliedFirst(a) - appliedFirst(b);
+      if (af !== 0) return af;
       const da = myBase && a.lat != null && a.lng != null ? distanceKm(myBase, { lat: a.lat, lng: a.lng }) : Infinity;
       const db = myBase && b.lat != null && b.lng != null ? distanceKm(myBase, { lat: b.lat, lng: b.lng }) : Infinity;
       if (da !== db) return da - db;
@@ -1006,6 +1242,35 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>
               <strong>무단 노쇼 이력으로 대타 참여가 제한 중이에요.</strong><br />
               {new Date(suspendedUntil).toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}까지 새 대타 지원·등록이 안 돼요.
+            </div>
+          </div>
+        )}
+
+        {/* 시작 전 설정 안내 — 동네 미설정/알림 꺼짐 상태에서만 노출, 설정하면 자동으로 사라짐(닫기 버튼 없음) */}
+        {!loading && (!neighborhoodLabel || !workerProfile?.available_now) && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(14,165,233,0.12), rgba(139,92,246,0.06))",
+            border: "1px solid rgba(14,165,233,0.35)",
+            borderRadius: 16,
+            padding: "14px 16px",
+            marginBottom: 16,
+          }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
+              👋 대타 SOS, 시작 전에 이것부터 해보세요
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              {!neighborhoodLabel && (
+                <button onClick={() => setShowNeighborhoodSheet(true)}
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 8px", background: "rgba(14,165,233,0.18)", border: "1px solid rgba(14,165,233,0.45)", borderRadius: 12, color: "#38bdf8", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                  <i className="ti ti-map-pin" style={{ fontSize: 13 }} aria-hidden="true" /> 동네 설정하기
+                </button>
+              )}
+              {!workerProfile?.available_now && (
+                <button onClick={toggleAvailable}
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 8px", background: "rgba(34,197,94,0.14)", border: "1px solid rgba(34,197,94,0.4)", borderRadius: 12, color: "#4ade80", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                  <i className="ti ti-bell" style={{ fontSize: 13 }} aria-hidden="true" /> 대타 알림 켜기
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1109,32 +1374,6 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
           </div>
         </button>
 
-        {/* 내 지원 현황 — 지원 후 화면을 나가면 상태를 다시 확인할 방법이 없었음. 지원한 게 있을 때만 노출 */}
-        {appliedIds.size > 0 && (
-          <button
-            onClick={() => router.push("/mypage/applications?tab=worker")}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              background: "var(--surface, rgba(255,255,255,0.04))",
-              border: "1px solid var(--border, rgba(255,255,255,0.1))",
-              borderRadius: 14,
-              padding: "11px 14px",
-              marginBottom: 16,
-              cursor: "pointer",
-            }}
-          >
-            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800, color: "var(--text, #fff)" }}>
-              📋 내 지원 현황
-              <span style={{ background: "#f97316", color: "#fff", fontSize: 10, fontWeight: 900, borderRadius: 20, padding: "2px 7px" }}>
-                {appliedIds.size}건 대기중
-              </span>
-            </span>
-            <span style={{ fontSize: 12, color: "var(--primary, #8b5cf6)", fontWeight: 800 }}>전체보기 →</span>
-          </button>
-        )}
 
         {/* 공고 ⇄ 인력 탭 전환 — 지원(pull)할 공고와 직접 지목(push)할 인력은 액션이 달라 한 화면에 섞지 않음 */}
         <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "var(--surface, rgba(255,255,255,0.04))", borderRadius: 16, padding: 4 }}>
@@ -1212,10 +1451,14 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                             urgent
                             width={280}
                             meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
-                            isApplied={appliedIds.has(p.id)}
+                            isApplied={Boolean(appliedMatchIds[p.id])}
+                            isReceivedRequest={Boolean(receivedRequestMatchIds[p.id])}
                             isLoading={actionLoading === p.id}
                             myBase={myBase}
                             onApply={() => applyPosting(p)}
+                            onCancelApply={() => cancelApplication(p)}
+                            onAcceptRequest={() => respondToSosRequest(p, "accept")}
+                            onRejectRequest={() => respondToSosRequest(p, "reject")}
                             onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                         onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                             onViewStore={(id) => router.push(`/store/${id}`)}
@@ -1238,10 +1481,14 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           isMine={false}
                           urgent={false}
                           meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
-                          isApplied={appliedIds.has(p.id)}
+                          isApplied={Boolean(appliedMatchIds[p.id])}
+                          isReceivedRequest={Boolean(receivedRequestMatchIds[p.id])}
                           isLoading={actionLoading === p.id}
                           myBase={myBase}
                           onApply={() => applyPosting(p)}
+                          onCancelApply={() => cancelApplication(p)}
+                          onAcceptRequest={() => respondToSosRequest(p, "accept")}
+                          onRejectRequest={() => respondToSosRequest(p, "reject")}
                           onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                         onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                           onViewStore={(id) => router.push(`/store/${id}`)}
@@ -1424,6 +1671,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <i className="ti ti-home" style={{ fontSize: 12, color: "var(--text-muted)" }} aria-hidden="true" />
                             {a.nickname}
                             <TierBadge tier={a.tier} size="sm" />
                           </div>
@@ -1521,6 +1769,35 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               <button onClick={() => setPendingConfirm(null)}
                 style={{ flex: 1, padding: "14px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, color: "var(--text-muted)", fontWeight: 700, cursor: "pointer" }}>
                 취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 확정된 근무와 시간 겹치는 다른 지원/요청 발견 시 취소 유도 팝업 — 강제 아님, 무시 가능 */}
+      {conflictWarning && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: 24, width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(239,68,68,0.3)", color: "var(--text, #fff)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 24 }}>⚠️</span>
+              <h3 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: "#f87171" }}>근무 시간이 겹쳐요</h3>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--text, rgba(255,255,255,0.9))", margin: "0 0 10px", lineHeight: 1.7, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 12, padding: "10px 14px" }}>
+              ✅ <strong>{conflictWarning.confirmedPosting.business_name}</strong> 근무가 확정됐어요<br />
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{formatDaetaDateRange(conflictWarning.confirmedPosting.work_date, conflictWarning.confirmedPosting.work_date_end)} · {conflictWarning.confirmedPosting.work_hours}</span>
+            </p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.7 }}>
+              그런데 <strong style={{ color: "var(--text)" }}>{conflictWarning.conflictPosting.business_name}</strong>에 낸 지원/요청(<span style={{ color: "var(--text-muted)" }}>{formatDaetaDateRange(conflictWarning.conflictPosting.work_date, conflictWarning.conflictPosting.work_date_end)} · {conflictWarning.conflictPosting.work_hours}</span>)이 시간이 겹쳐서 두 곳 다 갈 수 없어요. 이건 취소 안 하셔도 되고, 원하시면 정중한 사유와 함께 대신 취소해드릴게요.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConflictWarning(null)} disabled={cancelingConflict}
+                style={{ flex: 1, padding: "14px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, color: "var(--text-muted)", fontWeight: 700, cursor: "pointer" }}>
+                나중에 할게요
+              </button>
+              <button onClick={cancelConflictingApplication} disabled={cancelingConflict}
+                style={{ flex: 2, padding: "14px", background: "var(--danger)", border: "none", borderRadius: 14, color: "#fff", fontWeight: 800, cursor: cancelingConflict ? "default" : "pointer", opacity: cancelingConflict ? 0.7 : 1 }}>
+                {cancelingConflict ? "취소하는 중..." : "취소하고 안내 보내기"}
               </button>
             </div>
           </div>

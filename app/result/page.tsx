@@ -185,7 +185,7 @@ function ResultContent() {
             <i className="ti ti-arrow-left" style={{ fontSize: 20, display: "block" }} aria-hidden="true" />
           </button>
           <div style={{ width: 1, height: 14, background: "rgba(255,255,255,0.1)" }} />
-          <button onClick={() => router.push("/explore")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <button onClick={() => router.push("/myteam")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             <span style={{ fontSize: 17, fontWeight: 900, background: "linear-gradient(135deg, #8b5cf6, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>PAZAB</span>
           </button>
           <div style={{ width: 1, height: 14, background: "rgba(255,255,255,0.1)" }} />

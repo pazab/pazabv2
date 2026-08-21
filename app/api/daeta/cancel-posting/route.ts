@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         userId: m.worker_id,
         type: "daeta",
         title: "🚫 대타 요청이 취소됐어요",
-        body: `${posting.business_name || "매장"} 사장님이 대타 요청을 취소했어요.`,
+        body: `${posting.business_name || "매장"} 사장님이 대타 요청을 취소했어요. 다른 대타를 찾아보세요!`,
         url: "/daeta",
         data: { daetaPostingId: postingId },
       })));

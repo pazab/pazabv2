@@ -51,6 +51,14 @@ export function parseWorkHoursRange(hoursStr: string | null | undefined): number
   return Math.round((diffMin / 60) * 10) / 10;
 }
 
+// 근로기준법 제54조 — 4시간 이상 근무 시 30분, 8시간 이상 근무 시 1시간 이상의 휴게시간을
+// 근무 도중에 부여해야 함(초단기·일용직도 예외 없음). 법정 최소 기준값(등록 폼 기본값 제안용).
+export function calcLegalBreakMinutes(hoursWorked: number): number {
+  if (hoursWorked >= 8) return 60;
+  if (hoursWorked >= 4) return 30;
+  return 0;
+}
+
 // "HH:MM ~ HH:MM" 형식의 근무시간이 야간(22~06시)을 포함하는지 판정.
 // calcWorkPay의 hasNight와 동일 기준(22시 이후 시작 또는 06시 이전 종료) — 근로기준법상 연소근로자(만 18세 미만) 야간근무 제한 판단 기준.
 export function isNightWorkHours(workHours: string | null | undefined): boolean {

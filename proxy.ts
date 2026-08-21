@@ -12,6 +12,8 @@ const PUBLIC_PATHS = [
   '/d',      // 대타 딥링크 (STEP 3)
   '/i',      // 초대 링크 (STEP 4)
   '/sudoku', // 수도쿠 (비로그인 허용)
+  '/map.html',        // 정적 지도 뷰어 iframe (public/)
+  '/map-picker.html',  // 정적 지도 핀 선택 iframe (public/) — SetNeighborhoodSheet
 ]
 
 function isPublicPath(pathname: string): boolean {

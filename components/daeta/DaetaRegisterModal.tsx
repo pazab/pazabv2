@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
 import { fetchMinWage } from "@/lib/minWage";
-import { parseWorkHoursRange, daetaDayCount } from "@/lib/utils";
+import { parseWorkHoursRange, daetaDayCount, calcLegalBreakMinutes } from "@/lib/utils";
 import { convertHeicIfNeeded } from "@/lib/heicConvert";
 import ImageCropModal from "@/components/ImageCropModal";
 
@@ -101,6 +101,8 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const [autoPct, setAutoPct] = useState({ stage2: 10, stage3: 20, stage4: 30 }); // DB daeta_sos_config에서 로드
   const [duty, setDuty] = useState("");
   const [allowNew, setAllowNew] = useState(false); // 🔵 신규(Tier2) 알바생에게도 노출 opt-in
+  const [breakMinutes, setBreakMinutes] = useState(0); // 근로기준법 54조 — 근무시간대 바뀔 때 법정 최소로 자동 제안
+  const [breakTouched, setBreakTouched] = useState(false); // 사장님이 직접 수정하면 자동 제안 중단(수정 모드는 저장값 유지 위해 처음부터 true)
 
   // 업무 사진 — 인터뷰 없이 바로 수락 여부를 결정해야 하는 대타 특성상 미스매치/노쇼 방지용
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -138,9 +140,10 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   // 예상 일급 미리보기 — 시급만 보고는 하루에 얼마 나가는지 감이 안 와서 등록 전에 바로 확인할 수 있게 함.
   // 초과근무 할증 등 실제 정산 규칙(app/api/daeta/complete)까지는 반영하지 않은 단순 시간×시급 견적.
   const estimatedPay = (() => {
-    const hoursPerDay = parseWorkHoursRange(`${startHour}:${startMin} ~ ${endHour}:${endMin}`);
+    const rawHoursPerDay = parseWorkHoursRange(`${startHour}:${startMin} ~ ${endHour}:${endMin}`);
     const base = parseInt(wage) || 0;
-    if (!hoursPerDay || base <= 0) return null;
+    if (!rawHoursPerDay || base <= 0) return null;
+    const hoursPerDay = Math.max(0, Math.round((rawHoursPerDay - breakMinutes / 60) * 10) / 10);
     const days = !isSingleDay && !postingId && endDate && endDate !== workDate ? daetaDayCount(workDate, endDate) : 1;
     return { hoursPerDay, days, totalPay: Math.round(hoursPerDay * base * days) };
   })();
@@ -303,6 +306,13 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
     }
   }, [workDate, startHour, startMin, urgentPct, minWage, wageTouched]);
 
+  // 휴게시간 법정 최소 자동 제안 — 근무시간을 바꿀 때마다 재계산, 사장님이 직접 고치면 중단
+  useEffect(() => {
+    if (breakTouched) return;
+    const hoursPerDay = parseWorkHoursRange(`${startHour}:${startMin} ~ ${endHour}:${endMin}`);
+    if (hoursPerDay != null) setBreakMinutes(calcLegalBreakMinutes(hoursPerDay));
+  }, [startHour, startMin, endHour, endMin, breakTouched]);
+
   const loadPostingDetails = async (id: string) => {
     setLoading(true);
     try {
@@ -327,6 +337,8 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         }
         setWage(String(data.base_wage || data.wage || 10030));
         setWageTouched(true); // 수정 모드에서는 저장된 시급 유지
+        setBreakMinutes(data.break_minutes ?? 0);
+        setBreakTouched(true); // 수정 모드에서는 저장된 휴게시간 유지(자동 재계산으로 덮어쓰지 않음)
         setMaxUrgentPct(data.max_urgent_pct ?? 0);
         setDuty(data.duty || "");
         setAllowNew(!!data.allow_new);
@@ -561,6 +573,20 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       fail(`시급은 최저시급(${minWage.toLocaleString()}원) 이상이어야 합니다.`);
       return;
     }
+    // 최소 근무시간(정책값, 법정 의무 아님) — 어뷰징·비현실적 초단기 등록 방지. 1시간 미만 차단.
+    const hoursPerDayForBreak = parseWorkHoursRange(`${startHour}:${startMin} ~ ${endHour}:${endMin}`);
+    if (hoursPerDayForBreak != null && hoursPerDayForBreak < 1) {
+      fail("대타 근무시간은 최소 1시간 이상이어야 해요.");
+      return;
+    }
+    // 근로기준법 54조 — 4시간↑ 30분, 8시간↑ 1시간 이상 휴게 필수(초단기도 예외 없음)
+    if (hoursPerDayForBreak != null) {
+      const legalBreakMin = calcLegalBreakMinutes(hoursPerDayForBreak);
+      if (breakMinutes < legalBreakMin) {
+        fail(`근무시간이 ${hoursPerDayForBreak}시간이라 휴게시간을 최소 ${legalBreakMin}분 이상 줘야 해요(근로기준법 제54조).`);
+        return;
+      }
+    }
     if (!selectedParent) {
       fail("업종을 선택해 주세요.");
       return;
@@ -617,6 +643,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
         work_date: workDate,
         work_date_end: finalEndDate,
         work_hours: `${startHour}:${startMin} ~ ${endHour}:${endMin}`,
+        break_minutes: breakMinutes,
         wage: finalWage,
         base_wage: finalWage, // 자동 할증 계산의 기준값 — 수정 시 새로 입력한 시급이 새 기준이 됨
         max_urgent_pct: maxUrgentPct,
@@ -899,6 +926,28 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                       🌙 종료시간이 시작시간보다 빨라요 — 익일까지 이어지는 야간 근무로 등록돼요. 잘못 고르셨다면 다시 확인해 주세요.
                     </span>
                   )}
+                </div>
+
+                {/* 휴게시간 — 근로기준법 54조: 4시간↑ 30분, 8시간↑ 1시간 이상 근무 도중 부여 필수(초단기도 예외 없음) */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>😴 휴게시간</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 12px" }}>
+                    <input type="number" min={0} step={10} value={breakMinutes}
+                      onChange={e => { setBreakTouched(true); setBreakMinutes(Math.max(0, parseInt(e.target.value) || 0)); }}
+                      style={{ width: 64, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px", color: "var(--text)", fontSize: 14, outline: "none" }} />
+                    <span style={{ fontSize: 13, color: "var(--text-muted)" }}>분</span>
+                    {breakTouched && (() => {
+                      const hoursPerDay = parseWorkHoursRange(`${startHour}:${startMin} ~ ${endHour}:${endMin}`);
+                      const legalMin = hoursPerDay != null ? calcLegalBreakMinutes(hoursPerDay) : 0;
+                      return legalMin > 0 ? (
+                        <button type="button" onClick={() => { setBreakTouched(false); setBreakMinutes(legalMin); }}
+                          style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--purple-text)", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                          법정 최소 {legalMin}분으로
+                        </button>
+                      ) : null;
+                    })()}
+                  </div>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 근로기준법상 근무 4시간↑ 30분, 8시간↑ 1시간 이상 근무 도중 휴게를 줘야 해요.</span>
                 </div>
 
                 {/* 제시 시급 */}

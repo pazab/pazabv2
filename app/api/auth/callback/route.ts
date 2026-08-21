@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams
   const code = sp.get('code')
-  const next = sp.get('next') || '/explore'
+  const next = sp.get('next') || '/myteam'
   const errorParam = sp.get('error')
   const errorDesc = sp.get('error_description')
 
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   }
 
   const dest = new URL('/auth/callback', request.url)
-  if (next && next !== '/explore') {
+  if (next && next !== '/myteam') {
     dest.searchParams.set('next', next)
   }
 

@@ -12,7 +12,7 @@ export default function CallbackPage() {
 
   const handleConsent = async (agreed: boolean) => {
     if (agreed) {
-      router.replace("/explore");
+      router.replace("/myteam");
     } else {
       if (userId) {
         await fetch("/api/withdraw", {
@@ -105,7 +105,7 @@ export default function CallbackPage() {
         setStatus("");
       } else {
         setStatus("이동 중...");
-        router.replace(redirectTo && redirectTo !== "/" && !redirectTo.includes("localhost:3000/login") ? redirectTo.replace(window.location.origin, "") : "/explore");
+        router.replace(redirectTo && redirectTo !== "/" && !redirectTo.includes("localhost:3000/login") ? redirectTo.replace(window.location.origin, "") : "/myteam");
       }
     } catch (err: any) {
       console.error("Save and redirect error:", err);
