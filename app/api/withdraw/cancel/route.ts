@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { hideFromMarketplace } from "@/lib/withdrawal";
+import { restoreMarketplaceVisibility } from "@/lib/withdrawal";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// 회원 탈퇴 "신청" — 즉시 익명화하지 않고 7일 유예기간을 둔다(실수 탈퇴 방지 + 되돌릴 기회).
-// 로그인은 계속 허용하고(재로그인 차단은 확정 시점에만), 대신 공개 노출만 바로 차단한다.
-// 실제 개인정보 익명화·로그인 차단은 app/api/cron/finalize-withdrawal이 7일 뒤 처리한다.
+// 탈퇴 유예기간(7일) 중 취소 — withdrawal_requested_at을 지우고 마켓플레이스 노출을 되돌린다.
+// 유예기간이 지나 이미 확정(finalize-withdrawal)된 계정은 로그인 자체가 막혀있어 여기까지
+// 올 수 없다.
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await req.json();
@@ -28,16 +28,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
     }
 
+    const { data: existing } = await supabaseAdmin.from("users")
+      .select("withdrawal_requested_at").eq("id", userId).maybeSingle();
+    if (!existing?.withdrawal_requested_at) {
+      return NextResponse.json({ error: "진행 중인 탈퇴 신청이 없어요." }, { status: 400 });
+    }
+
     const { error: userErr } = await supabaseAdmin.from("users")
-      .update({ withdrawal_requested_at: new Date().toISOString() })
+      .update({ withdrawal_requested_at: null })
       .eq("id", userId);
     if (userErr) throw userErr;
 
-    await hideFromMarketplace(userId);
+    await restoreMarketplaceVisibility(userId);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error("withdraw request error:", error);
-    return NextResponse.json({ error: error.message || "탈퇴 처리 중 오류가 발생했어요." }, { status: 500 });
+    console.error("withdraw cancel error:", error);
+    return NextResponse.json({ error: error.message || "취소 처리 중 오류가 발생했어요." }, { status: 500 });
   }
 }

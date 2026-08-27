@@ -514,7 +514,10 @@ function PayslipContent() {
     bizRegNo: contractData?.bizRegNo || "",
     bizAddr: [contractData?.bizAddr, contractData?.bizAddrDetail].filter(Boolean).join(" "),
     ceo: contractData?.ceo || "",
-    workerName: member?.worker?.nickname || contractData?.worker || "",
+    // 계약 체결 시점 스냅샷(contractData.worker)이 있으면 그걸 우선한다 — 알바생이 탈퇴하면
+    // users.nickname이 "탈퇴한 사용자"로 바뀌는데, 그게 실명 대신 법정 보존 문서(임금명세서)에
+    // 찍히면 안 되기 때문. 스냅샷이 없는 옛 명세서에 한해 nickname으로 폴백.
+    workerName: contractData?.worker || member?.worker?.nickname || "",
     workerBirth: contractData?.workerBirth || "",
     year, month,
     payDate: existingPayslip?.issued_at ? new Date(existingPayslip.issued_at).toISOString().split("T")[0] : "",
