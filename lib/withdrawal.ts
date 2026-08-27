@@ -53,36 +53,34 @@ export async function restoreMarketplaceVisibility(userId: string) {
 export async function finalizeWithdrawal(userId: string) {
   const supabaseAdmin = getServiceClient();
 
-  // 0. 성향분석 파생값을 지우기 전에 비식별 연구 데이터로 먼저 떼어낸다 (users와 FK 없음 —
-  // 재식별 불가). 원본 대화·자유서술 텍스트는 제외하고 구조화된 결과만 남긴다.
+  // 0. 지우기 전에 비식별 연구 데이터로 먼저 떼어낸다 (users와 FK 없음 — 재식별 불가).
+  // HEXACO/bio5 원본은 실제로는 worker_profiles/employer_profiles가 아니라 users.worker_result/
+  // employer_result에 있는데, 그 안에 원본 인터뷰 대화(자유서술 텍스트)가 섞여 있을 수 있어
+  // 구조를 정확히 검증하기 전까진 그대로 옮기지 않는다 — 지금은 컬럼이 확실한 인구통계/활동
+  // 지표만 안전하게 남긴다.
   const { data: userRow } = await supabaseAdmin.from("users")
     .select("created_at").eq("id", userId).maybeSingle();
   const { data: wpRow } = await supabaseAdmin.from("worker_profiles")
-    .select("birth_year, sido, sigungu, hexaco_data, bio5_data, analyzed_mbti, work_count, is_verified")
+    .select("birth_year, sido, sigungu, work_count, is_verified")
     .eq("user_id", userId).maybeSingle();
   const { data: epRow } = await supabaseAdmin.from("employer_profiles")
-    .select("sido, sigungu, bio5_data, analyzed_mbti, business_type")
+    .select("sido, sigungu, business_type")
     .eq("user_id", userId).maybeSingle();
 
-  if (wpRow && (wpRow.hexaco_data || wpRow.bio5_data || wpRow.analyzed_mbti)) {
+  if (wpRow) {
     await supabaseAdmin.from("research_snapshots").insert({
       role: "worker",
       region_bucket: [wpRow.sido, wpRow.sigungu].filter(Boolean).join(" ") || null,
       age_decade: wpRow.birth_year ? `${Math.floor(wpRow.birth_year / 10) * 10}년대생` : null,
-      hexaco_data: wpRow.hexaco_data,
-      bio5_data: wpRow.bio5_data,
-      analyzed_mbti: wpRow.analyzed_mbti,
       work_count: wpRow.work_count,
       is_verified: wpRow.is_verified,
       account_created_at: userRow?.created_at || null,
     });
   }
-  if (epRow && (epRow.bio5_data || epRow.analyzed_mbti)) {
+  if (epRow) {
     await supabaseAdmin.from("research_snapshots").insert({
       role: "employer",
       region_bucket: [epRow.sido, epRow.sigungu].filter(Boolean).join(" ") || null,
-      bio5_data: epRow.bio5_data,
-      analyzed_mbti: epRow.analyzed_mbti,
       business_type: epRow.business_type,
       account_created_at: userRow?.created_at || null,
     });
@@ -106,9 +104,6 @@ export async function finalizeWithdrawal(userId: string) {
     bank_name: null,
     bank_number_enc: null,
     bank_account_enc: null,
-    kakao_id: null,
-    onboarding_data: null,
-    push_token: null,
     withdrawal_requested_at: null,
   }).eq("id", userId);
   if (userErr) throw userErr;
@@ -117,11 +112,11 @@ export async function finalizeWithdrawal(userId: string) {
   // is_active/is_deleted는 꺼뒀지만, 실제 값 컬럼은 아직 안 지워져 있음)
   await supabaseAdmin.from("worker_profiles").update({
     is_active: false, is_public: false,
-    name: null, birth_year: null, gender: null, bio: null, video_url: null,
+    birth_year: null, gender: null, bio: null, video_url: null,
     image_url: null, image_urls: [],
     address: null, sido: null, sigungu: null, eupmyeondong: null, region: null,
     lat: null, lng: null,
-    hexaco_data: null, bio5_data: null, analyzed_mbti: null, tagline: null,
+    bio5_data: null, analyzed_mbti: null, tagline: null,
     best_matches: [], worst_matches: [],
   }).eq("user_id", userId);
   // employer_profiles는 business_name/주소 등이 과거 소속 직원 쪽 계약서에도 참조 맥락으로
@@ -129,8 +124,6 @@ export async function finalizeWithdrawal(userId: string) {
   await supabaseAdmin.from("employer_profiles").update({
     is_deleted: true,
     ceo_name: null, biz_tel: null,
-    bio5_data: null, analyzed_mbti: null, tagline: null,
-    best_matches: [], worst_matches: [], caution: null,
   }).eq("user_id", userId);
 
   // 3. 공개 노출 중인 공고 비공개 전환 (요청 시점에 이미 한 번 처리됐지만, 유예기간
