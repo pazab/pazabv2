@@ -472,14 +472,14 @@ function MyPageContent() {
     }
   }, [searchParams, searchParamsString, pathname, router]);
 
-  const handleWithdraw = async () => {
+  const handleWithdraw = async (immediate = false) => {
     if (!userId) return;
     setWithdrawing(true);
     try {
       const res = await fetch("/api/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, immediate }),
       });
       if (res.ok) {
         await supabase.auth.signOut();
@@ -494,27 +494,15 @@ function MyPageContent() {
     setWithdrawing(false);
   };
 
-  const [cancelingWithdraw, setCancelingWithdraw] = useState(false);
-  const handleCancelWithdraw = async () => {
-    if (!userId) return;
-    setCancelingWithdraw(true);
-    try {
-      const res = await fetch("/api/withdraw/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-      if (res.ok) {
-        setUser((prev: any) => prev ? { ...prev, withdrawal_requested_at: null } : prev);
-        setToastMsg("탈퇴 신청을 취소했어요.");
-      } else {
-        setToastMsg("취소 처리 중 오류가 발생했어요. 다시 시도해주세요.");
-      }
-    } catch (e) {
-      console.error("탈퇴 취소 오류:", e);
-      setToastMsg("취소 처리 중 오류가 발생했어요. 다시 시도해주세요.");
-    }
-    setCancelingWithdraw(false);
+  const handleImmediateWithdrawClick = () => {
+    setShowWithdrawModal(false);
+    setConfirmModal({
+      title: "정말 지금 바로 삭제할까요?",
+      desc: "7일 유예기간 없이 즉시 처리돼요. 이후엔 취소할 수 없어요.",
+      confirmLabel: "즉시 삭제",
+      confirmColor: "#ef4444",
+      onConfirm: () => { setConfirmModal(null); handleWithdraw(true); },
+    });
   };
 
   const loadResultsForType = async (uType: string, uid?: string) => {
@@ -568,25 +556,6 @@ function MyPageContent() {
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px" }}>
         <div style={{ padding: "0 0px" }}>
 
-        {/* 탈퇴 유예기간 배너 */}
-        {(user as any)?.withdrawal_requested_at && (() => {
-          const requestedAt = new Date((user as any).withdrawal_requested_at);
-          const finalizeAt = new Date(requestedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-          const daysLeft = Math.max(0, Math.ceil((finalizeAt.getTime() - Date.now()) / 86400000));
-          return (
-            <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12, padding: "12px 14px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <div>
-                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)", margin: "0 0 2px" }}>탈퇴 처리 예정 (D-{daysLeft})</p>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{finalizeAt.toLocaleDateString("ko-KR")}에 계정이 정리돼요.</p>
-              </div>
-              <button onClick={handleCancelWithdraw} disabled={cancelingWithdraw}
-                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 10, cursor: "pointer", flexShrink: 0 }}>
-                {cancelingWithdraw ? "처리 중..." : "탈퇴 취소"}
-              </button>
-            </div>
-          );
-        })()}
-
         {/* 프로필 카드 */}
         <div style={{ ...glassProfileCard, marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
@@ -632,12 +601,10 @@ function MyPageContent() {
                   style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 10, padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
                   닉네임 변경
                 </button>
-                {!(user as any)?.withdrawal_requested_at && (
-                  <button onClick={() => setShowWithdrawModal(true)}
-                    style={{ background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 10, padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
-                    탈퇴
-                  </button>
-                )}
+                <button onClick={() => setShowWithdrawModal(true)}
+                  style={{ background: "none", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 10, padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
+                  탈퇴
+                </button>
               </div>
               <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{authEmail}</p>
             </div>
@@ -719,7 +686,7 @@ function MyPageContent() {
             <div style={{ ...modalSheet, margin: "0 auto" }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>정말 탈퇴하시겠어요?</h3>
               <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 12px", lineHeight: 1.7 }}>
-                신청 즉시 공고/프로필은 비공개 처리되고, <strong style={{ color: "var(--text)" }}>7일 유예기간</strong> 동안은 로그인해서 취소할 수 있어요. 이후엔 아래와 같이 처리돼요.
+                신청 즉시 공고/프로필은 비공개 처리되고, <strong style={{ color: "var(--text)" }}>7일 유예기간</strong> 동안은 로그인해도 취소 화면 말고는 다른 기능을 쓸 수 없어요. 7일 후엔 아래와 같이 처리돼요.
               </p>
               <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
                 {[
@@ -736,11 +703,15 @@ function MyPageContent() {
                   style={{ ...btnSecondary, flex: 1 }}>
                   취소
                 </button>
-                <button onClick={handleWithdraw} disabled={withdrawing}
+                <button onClick={() => handleWithdraw()} disabled={withdrawing}
                   style={{ ...btnDanger, flex: 1 }}>
                   {withdrawing ? "처리 중..." : "탈퇴 신청"}
                 </button>
               </div>
+              <button onClick={handleImmediateWithdrawClick} disabled={withdrawing}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 11, textDecoration: "underline", padding: "12px 0 0", width: "100%", cursor: "pointer" }}>
+                유예기간 없이 지금 바로 삭제할게요
+              </button>
             </div>
           </div>
         )}
