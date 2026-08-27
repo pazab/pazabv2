@@ -45,7 +45,7 @@ export async function restoreMarketplaceVisibility(userId: string) {
 }
 
 // 유예기간이 끝난 뒤 실제로 실행되는 탈퇴 확정 — 개인정보(연락처/주소/생년월일/실명/
-// 프로필사진/계좌/HEXACO 결과 등)를 익명화하고 재로그인을 차단한다. 근로기준법상 보존
+// 프로필사진/계좌/HEXACO 결과 등)를 익명화하고 재로그인을 7일간 차단한다. 근로기준법상 보존
 // 의무가 있는 계약서/임금명세서/근태 기록은 상대방(사장님·알바생)의 정산·분쟁 대비
 // 기록이기도 해 삭제하지 않고, 사용자 식별 정보만 제거한다(계약서 쪽은 계약 체결
 // 시점 성명 스냅샷(contract_data)이 별도로 있어 이 익명화의 영향을 받지 않음).
@@ -215,8 +215,11 @@ export async function finalizeWithdrawal(userId: string) {
   // 5. 푸시 구독 해지
   await supabaseAdmin.from("push_subscriptions").delete().eq("user_id", userId);
 
-  // 6. 재로그인 차단 (auth 계정 자체는 남기되 로그인 불가 처리 — 계약서 등 참조 무결성 보존)
-  await supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: "876000h" });
+  // 6. 재로그인 7일 쿨다운 (영구 락아웃 대신 — 당근마켓 등 유사 서비스 관행 참고).
+  // 계정 자체(및 id)는 남기고 이미 PII는 위에서 다 익명화했으니, 쿨다운 지나서 다시
+  // 로그인하면 onboarded=false라 자연스럽게 온보딩부터 다시 밟게 된다 — 트러스트 이력
+  // (trust_score 등)은 같은 id에 남아있어 탈퇴→재가입으로 이력 세탁은 안 됨.
+  await supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: "168h" });
 
   // 7. 본인 전용 데이터 하드삭제 — 상대방이 조회할 권리가 없고(알림함/게임기록/차단목록)
   // 법정 보존 근거도 없는 데이터라 익명화가 아니라 완전 삭제한다. 유예기간(7일) 동안 취소하면

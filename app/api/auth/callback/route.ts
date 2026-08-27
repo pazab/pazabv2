@@ -37,8 +37,14 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code)
 
   if (error) {
+    // GoTrue가 밴 상태를 "User is banned" 같은 영문 원문 그대로 내려주는데, 관리자한테
+    // 정지당한 것처럼 보여서 탈퇴 유예 쿨다운 중이라는 걸 알 수 있게 문구를 바꿔준다
+    // (지금 이 앱엔 탈퇴 외의 밴 사유가 없음 — lib/withdrawal.ts 참고).
+    const message = /banned/i.test(error.message)
+      ? '최근 탈퇴 처리된 계정이에요. 7일 후 다시 로그인하실 수 있어요.'
+      : error.message
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(error.message)}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(message)}`, request.url)
     )
   }
 
