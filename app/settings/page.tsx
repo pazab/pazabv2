@@ -120,7 +120,7 @@ export default function SettingsPage() {
 
         {/* 계정 삭제 */}
         <Section title="위험 구역">
-          <Row icon="🗑" label="계정 삭제" sub="모든 데이터가 삭제돼요" danger onClick={() => router.push("/delete-account")} right={<span style={{ color: "#ef4444", fontSize: 14 }}>›</span>} />
+          <Row icon="🗑" label="계정 삭제" sub="신청 후 7일 유예기간을 거쳐 처리돼요" danger onClick={() => router.push("/mypage?action=withdraw")} right={<span style={{ color: "#ef4444", fontSize: 14 }}>›</span>} />
         </Section>
 
         {saving && (

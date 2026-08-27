@@ -462,6 +462,16 @@ function MyPageContent() {
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
 
+  // /settings의 "계정 삭제" 메뉴가 여기 탈퇴 플로우를 그대로 재사용하도록 쿼리 파라미터로 진입
+  useEffect(() => {
+    if (searchParams.get("action") === "withdraw") {
+      setShowWithdrawModal(true);
+      const params = new URLSearchParams(searchParamsString);
+      params.delete("action");
+      router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false });
+    }
+  }, [searchParams, searchParamsString, pathname, router]);
+
   const handleWithdraw = async () => {
     if (!userId) return;
     setWithdrawing(true);
