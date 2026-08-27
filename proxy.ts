@@ -62,15 +62,26 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // 로그인 + 온보딩 미완료 → 온보딩으로
-    if (user && !pathname.startsWith('/onboarding') && !pathname.startsWith('/auth')) {
+    // /api는 리다이렉트 대상에서 항상 제외 — fetch()가 307을 그대로 따라가버리면
+    // /account/pending-deletion의 취소 버튼 같은 POST 호출이 HTML 응답을 JSON인 것처럼
+    // 오인해 "성공"으로 잘못 처리하는 문제가 생긴다(API 라우트는 자체 인증을 처리함).
+    if (user && !pathname.startsWith('/onboarding') && !pathname.startsWith('/auth') && !pathname.startsWith('/api')) {
       const { data: userData } = await supabase
         .from('users')
-        .select('onboarded')
+        .select('onboarded, withdrawal_requested_at')
         .eq('id', user.id)
         .maybeSingle()
 
-      if (userData && !userData.onboarded) {
+      // 탈퇴 유예기간 중 → 전용 안내 페이지(취소/로그아웃만 가능) 말고는 전부 차단.
+      // 온보딩보다 우선 — 떠나려는 계정에게 온보딩을 다시 시킬 이유가 없음.
+      if (userData?.withdrawal_requested_at && !pathname.startsWith('/account/pending-deletion')) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/account/pending-deletion'
+        return NextResponse.redirect(url)
+      }
+
+      // 로그인 + 온보딩 미완료 → 온보딩으로
+      if (userData && !userData.onboarded && !userData.withdrawal_requested_at) {
         const url = request.nextUrl.clone()
         url.pathname = '/onboarding'
         return NextResponse.redirect(url)
