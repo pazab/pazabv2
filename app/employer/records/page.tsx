@@ -22,6 +22,7 @@ type Member = {
   payslip_auto_issue_offset: number;
   payslip_payday_fallback: number;
   worker: { nickname: string | null; email: string | null; avatar_url: string | null } | null;
+  contract_name_snapshot: string | null;
   contracts: Contract[];
   attendance_count: number;
   retention_expires: string | null; // hire_date + 3년
@@ -227,6 +228,10 @@ export default function EmployerRecordsPage() {
       }
 
       const hireDate = m.hire_date || m.created_at?.slice(0, 10);
+      // 계약 체결 시점 성명 스냅샷 — 알바생이 탈퇴하면 users.nickname이 "탈퇴한 사용자"로
+      // 바뀌어서, 근로기준법상 3년 보존 대상인 이 직원 기록에서 실명이 사라져 보이는 문제가
+      // 있었음. 계약서에 박제된 이름을 우선 사용하고, 계약서가 없는 레거시 건만 nickname 폴백.
+      const contractNameSnapshot = (contract?.contract_data as any)?.worker || null;
       return {
         ...m,
         wage,
@@ -234,6 +239,7 @@ export default function EmployerRecordsPage() {
         work_days,
         work_hours,
         worker: m.users || null,
+        contract_name_snapshot: contractNameSnapshot,
         contracts: mContracts,
         attendance_count: countMap[m.id] || 0,
         retention_expires: hireDate ? addYears(hireDate, 3) : null,
@@ -316,7 +322,7 @@ export default function EmployerRecordsPage() {
         ) : (
           <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
             {filtered.map(m => {
-              const name = m.worker?.nickname || m.worker?.email?.split("@")[0] || "팀원";
+              const name = m.contract_name_snapshot || m.worker?.nickname || m.worker?.email?.split("@")[0] || "팀원";
               const ret = retentionStatus(m.retention_expires);
               const att = todayAttendanceStatus(m.today_attendance);
               // 계약서 상태는 team_members.contract_status(myteam 홈과 동일하게 참조하는 authoritative 컬럼)를
