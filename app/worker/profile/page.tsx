@@ -17,6 +17,7 @@ function WorkerProfileContent() {
 
   const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => { checkAuth(); }, []);
@@ -53,8 +54,9 @@ function WorkerProfileContent() {
     setLoading(false);
   };
 
-  const finishAndRedirect = () => {
+  const finishAndRedirect = (warningMsg?: string) => {
     setSuccess(true);
+    if (warningMsg) setWarning(warningMsg);
     const mypageUrl = `/mypage${sectionParam ? `?section=${sectionParam}` : ""}`;
     const decodedReturn = returnTo ? decodeURIComponent(returnTo) : "";
     setTimeout(() => router.replace(
@@ -63,7 +65,7 @@ function WorkerProfileContent() {
       returnTo === "result" ? "/result?type=worker&level=1" :
       decodedReturn.startsWith("/") ? decodedReturn :
       "/explore?type=worker"
-    ), 1500);
+    ), warningMsg ? 3500 : 1500);
   };
 
   if (loading) return (
@@ -85,8 +87,11 @@ function WorkerProfileContent() {
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 16px" }}>
         {success ? (
           <div style={{ textAlign: "center", padding: "60px 0" }}>
-            <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>{warning ? "⚠️" : "✅"}</div>
             <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 8px" }}>저장됐어요!</h2>
+            {warning && (
+              <p style={{ color: "var(--warning, #f59e0b)", fontSize: 13, margin: "0 0 8px", padding: "0 20px" }}>{warning}</p>
+            )}
             <p style={{ color: "var(--text-muted)", fontSize: 14 }}>잠시 후 이동합니다</p>
           </div>
         ) : !userId ? null : galleryOnly ? (

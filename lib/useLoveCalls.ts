@@ -19,7 +19,11 @@ export interface ConfirmModalState {
 // 로컬로만 있던 걸 두 화면이 같이 쓰게 되면서 추출함(중복 구현 방지).
 // confirmModal은 훅이 소유하지 않고 호출부(setConfirmModal)에 위임 — mypage 메인 페이지는 이 훅과 무관한
 // 다른 확인모달(게시물 삭제 등)도 같은 state를 공유해서 쓰기 때문.
-export function useLoveCalls(userId: string | null, setConfirmModal: (state: ConfirmModalState | null) => void) {
+export function useLoveCalls(
+  userId: string | null,
+  setConfirmModal: (state: ConfirmModalState | null) => void,
+  onError?: (msg: string) => void
+) {
   const [loveCalls, setLoveCalls] = useState<LoveCall[]>([]);
   const [loveCallLoading, setLoveCallLoading] = useState(false);
   const [respondingId, setRespondingId] = useState<string | null>(null);
@@ -73,6 +77,10 @@ export function useLoveCalls(userId: string | null, setConfirmModal: (state: Con
           }
           setMatchModal({ matchId });
         }
+      } else {
+        // 예: 대타 지원자가 휴대폰 번호를 등록 안 해서 수락이 막힌 경우(app/api/lovecall) — 예전엔
+        // 여기서 그냥 조용히 아무 일도 안 일어나서 사용자가 왜 안 되는지 알 방법이 없었음
+        onError?.(data.error || (action === "accept" ? "수락 실패" : "거절 실패"));
       }
     } catch (err) { console.error(err); }
     finally { setRespondingId(null); }

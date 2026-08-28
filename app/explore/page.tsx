@@ -86,7 +86,7 @@ function ExploreContent() {
   const [guideDismissed, setGuideDismissed] = useState(true);
 
   interface SheetItem {
-    id?: string; user_id?: string; image_url?: string;
+    id?: string; user_id?: string; image_url?: string; logo_url?: string;
     image_urls?: string[]; video_url?: string | null;
     employer_avatar?: string; worker_avatar?: string;
     business_name?: string; worker_type?: string; worker_name?: string;

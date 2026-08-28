@@ -227,7 +227,7 @@ function MyPageContent() {
     loveCalls, loveCallLoading, respondingId,
     matchModal, setMatchModal,
     fetchLoveCalls, handleRespond, handleCancel, handleDelete,
-  } = useLoveCalls(userId, setConfirmModal);
+  } = useLoveCalls(userId, setConfirmModal, (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); });
 
   const handleCropComplete = async (croppedBlob: Blob) => {
     if (!user) return;

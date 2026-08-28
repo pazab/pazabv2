@@ -466,7 +466,7 @@ export default function JobDetailPage() {
           <div style={{ padding: "20px 0", borderBottom: "1px solid var(--border)" }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, margin: "0 0 10px", letterSpacing: "0.5px" }}>🏪 매장 소개</p>
             <div style={{ background: "var(--card-inner)", border: "1px solid var(--card-inner-border)", borderRadius: 16, padding: "14px 16px", color: "var(--text)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-              {job.description}
+              {String(job.description)}
             </div>
           </div>
         )}
@@ -561,10 +561,10 @@ export default function JobDetailPage() {
         <div style={{ ...modalOverlay }}>
           <div style={{ ...modalSheet, maxWidth: 480, margin: "0 auto" }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>
-              {existingMatch && ["cancelled", "rejected", "failed"].includes(existingMatch.progress_status) ? "재지원 확인" : "지원 확인"}
+              {existingMatch && ["cancelled", "rejected", "failed"].includes(String(existingMatch.progress_status)) ? "재지원 확인" : "지원 확인"}
             </h3>
             <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 20px", lineHeight: 1.6 }}>
-              {existingMatch && ["cancelled", "rejected", "failed"].includes(existingMatch.progress_status)
+              {existingMatch && ["cancelled", "rejected", "failed"].includes(String(existingMatch.progress_status))
                 ? "이전에 매칭이 결렬(거절/취소/실패)된 이력이 있는 매장입니다. 다시 지원서를 보내시겠습니까?"
                 : "이 매장에 지원서를 보내시겠습니까?"}
             </p>

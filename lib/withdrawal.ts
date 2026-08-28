@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
 import { extractMediaStoragePath } from "@/lib/storagePath";
+import { recordPhoneViolationOnWithdrawal } from "@/lib/phoneViolationHistory";
 
 const getServiceClient = () =>
   createClient(
@@ -59,7 +60,7 @@ export async function finalizeWithdrawal(userId: string) {
   // 구조를 정확히 검증하기 전까진 그대로 옮기지 않는다 — 지금은 컬럼이 확실한 인구통계/활동
   // 지표만 안전하게 남긴다.
   const { data: userRow } = await supabaseAdmin.from("users")
-    .select("created_at").eq("id", userId).maybeSingle();
+    .select("created_at, phone, trust_score, daeta_cancel_suspended_until").eq("id", userId).maybeSingle();
   const { data: wpRow } = await supabaseAdmin.from("worker_profiles")
     .select("birth_year, sido, sigungu, work_count, is_verified")
     .eq("user_id", userId).maybeSingle();
@@ -84,6 +85,29 @@ export async function finalizeWithdrawal(userId: string) {
       business_type: epRow.business_type,
       account_created_at: userRow?.created_at || null,
     });
+  }
+
+  // 0.5. 휴대폰 번호 기준 노쇼/신뢰점수 위반 이력 승계 준비 — 바로 아래 1단계에서
+  // phone이 null 처리되므로 그 전에 캡처해야 한다. 원본 번호가 아니라 해시만 남기고,
+  // 위반 이력(노쇼 등으로 인한 감점, 또는 현재 진행 중인 대타 참여 제한)이 있는
+  // 계정만 기록한다 — 깨끗하게 탈퇴하는 계정까지 추적 가능한 해시를 남길 이유는 없다.
+  if (userRow?.phone) {
+    const { count: violationCount } = await supabaseAdmin.from("trust_score_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .lt("delta", 0);
+    const suspendedUntil = userRow.daeta_cancel_suspended_until;
+    const hasActiveSuspension = !!suspendedUntil && new Date(suspendedUntil) > new Date();
+
+    if ((violationCount ?? 0) > 0 || hasActiveSuspension) {
+      await recordPhoneViolationOnWithdrawal(supabaseAdmin, {
+        phone: userRow.phone,
+        userId,
+        noShowCount: violationCount ?? 0,
+        trustScore: userRow.trust_score ?? 50,
+        suspendedUntil: hasActiveSuspension ? suspendedUntil : null,
+      });
+    }
   }
 
   // 1. users 개인정보 익명화 (계약서 등 다른 테이블이 FK로 참조하는 id 자체는 보존)

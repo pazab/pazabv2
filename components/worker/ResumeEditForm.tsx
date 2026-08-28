@@ -18,7 +18,7 @@ const inputStyle: React.CSSProperties = { width: "100%", boxSizing: "border-box"
 interface ResumeEditFormProps {
   userId: string;
   profileId?: string; // 관리자가 남의 프로필 수정할 때만 사용, 보통은 비움
-  onSaved: () => void;
+  onSaved: (warning?: string) => void;
   saveLabel?: string;
 }
 
@@ -182,8 +182,28 @@ export default function ResumeEditForm({ userId, profileId, onSaved, saveLabel }
     };
     await supabase.from("users").update(userUpdate).eq("id", userId);
 
+    // 휴대폰 번호로 과거(다른 계정) 노쇼/신뢰점수 위반 이력이 있는지 확인 — 있으면
+    // 이 계정에도 승계 적용된다(lib/phoneViolationHistory.ts). 실패해도 저장 자체는
+    // 이미 끝났으니 사용자 흐름을 막지 않는다.
+    let warning: string | undefined;
+    if (userUpdate.phone) {
+      try {
+        const res = await fetch("/api/user/phone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: userUpdate.phone }),
+        });
+        const result = await res.json();
+        if (result?.applied) {
+          warning = "⚠️ 이 번호로 이전에 이용하신 계정에서 노쇼/신뢰점수 위반 이력이 확인되어 신뢰점수에 반영됐어요.";
+        }
+      } catch {
+        // 네트워크 오류 등은 무시 — 저장 성공 흐름을 막지 않음
+      }
+    }
+
     setSaving(false);
-    onSaved();
+    onSaved(warning);
   };
 
   if (loading) return <p style={{ color: "var(--text-muted)", fontSize: 14, textAlign: "center", padding: "30px 0" }}>불러오는 중...</p>;

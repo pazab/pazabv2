@@ -910,9 +910,9 @@ export default function WorkerDetailPage() {
             </div>
             <ResumeEditForm
               userId={userId}
-              onSaved={() => {
+              onSaved={(warning) => {
                 setShowResumeModal(false);
-                showToast("이력서가 저장됐어요");
+                showToast(warning || "이력서가 저장됐어요", warning ? "warning" : "success");
                 fetchProfile(userId, null);
               }}
             />

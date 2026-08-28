@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { applyPhoneViolationHistory } from "@/lib/phoneViolationHistory";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,6 +51,11 @@ export async function PATCH(req: NextRequest) {
 
     const { error: userErr } = await supabaseAdmin.from("users").update(updates).eq("id", tm.worker_id);
     if (userErr) return NextResponse.json({ error: userErr.message }, { status: 500 });
+
+    // 이 번호로 과거(다른 계정) 노쇼/신뢰점수 위반 이력이 있으면 이 팀원 계정에도 승계
+    if (updates.phone) {
+      await applyPhoneViolationHistory(supabaseAdmin, tm.worker_id, updates.phone).catch(() => {});
+    }
 
     // 서명된 계약서 스냅샷도 같이 정정 — 계약서 조회 화면이 오탈자를 계속 보여주지 않도록
     const { data: contract } = await supabaseAdmin

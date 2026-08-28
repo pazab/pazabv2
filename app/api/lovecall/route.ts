@@ -278,6 +278,22 @@ export async function PATCH(req: NextRequest) {
               .maybeSingle();
 
             if (daetaPosting) {
+              // 대타는 수락 즉시 계약이 자동 체결되고 노쇼 시 신뢰점수 위반 이력이 쌓이는데, 휴대폰
+              // 번호가 아예 없으면 탈퇴 후 다른 이메일로 재가입해 이력을 세탁할 수 있다(휴대폰 기준
+              // 위반 이력 승계, lib/phoneViolationHistory.ts) — 정규 채용은 계약서 서명 시점에 번호가
+              // 강제되지만(app/chat/[id]/page.tsx) 대타는 그 단계 자체가 없어서 여기서 먼저 막는다.
+              // 원자적 claim보다 먼저 확인해야 막혔을 때 daeta_postings/matches 상태가 안 꼬인다.
+              const { data: workerPhoneCheck } = await supabase.from("users")
+                .select("phone").eq("id", acceptMatchData.worker_id).maybeSingle();
+              if (!workerPhoneCheck?.phone) {
+                // 사장님이 지원자를 수락하는 경로/알바생이 직접 SOS 요청을 수락하는 경로 둘 다
+                // 이 accept를 타므로, 누가 봐도 이해되게 3인칭으로 안내한다.
+                return NextResponse.json({
+                  error: "휴대폰 번호가 등록되지 않은 알바생이라 대타를 확정할 수 없어요. 이력서에서 번호를 등록하면 바로 확정할 수 있어요.",
+                  success: false, code: "PHONE_REQUIRED",
+                }, { status: 400 });
+              }
+
               // 동시 수락 가드 — 사장님이 두 지원자를 거의 동시에(다른 탭·더블탭) 수락하면 이 체크
               // 없이는 계약서가 두 건 다 체결될 수 있었음. daeta_postings.status가 아직 pending일
               // 때만 matched로 원자적으로 전환하고, 이미 다른 요청이 먼저 가져갔으면 이 수락은 무효 처리.

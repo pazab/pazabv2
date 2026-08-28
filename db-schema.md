@@ -39,6 +39,7 @@
 | ai_usage_logs | ✅ 신규 생성 | AI 호출 비용 추적 |
 | interviews | ✅ 신규 생성 | 사전미팅/인터뷰 기록 |
 | trust_score_logs | ✅ 신규 생성 | 신뢰도 변동 이력 |
+| phone_violation_history | ✅ 신규 생성 (2026-08-29) | 휴대폰 번호 기준 노쇼/신뢰점수 위반 이력 승계 (탈퇴 후 재가입 이력세탁 방지) — `supabase/patch_phone_violation_history.sql` |
 | sudoku_ratings | ✅ 사용 중 | |
 | sudoku_records | ✅ 사용 중 | |
 | tax_rates | ✅ 사용 중 | 세율 |
@@ -371,6 +372,7 @@
 | ai_usage_logs | user_id, model, input_tokens, output_tokens, cost_usd, endpoint, created_at |
 | interviews | match_id, employer_id, worker_id, type, transcript, result, created_at |
 | trust_score_logs | user_id, delta, reason, before_score, after_score, ref_id, created_at |
+| phone_violation_history | phone_hash(원본 아님, HMAC), no_show_count, worst_trust_score, suspended_until, source_user_ids, applied_to_user_ids, last_violation_at — RLS 정책 없음(service_role 전용) |
 | worker_career_entries | worker_id, company_name, role_desc, start_date, end_date, is_current, description, created_at, updated_at |
 | daeta_daily_attendance | match_id, work_date, checked_in_at, checked_out_at, created_at — 다일치 대타 전용, 하루짜리는 미사용(matches.checked_in_at/out이 SOT) |
 
