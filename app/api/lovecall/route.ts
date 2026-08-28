@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
+import { getWorkerTier } from "@/lib/daetaTier";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,6 +15,39 @@ export async function POST(req: NextRequest) {
 
     if (!employerId || !workerId) {
       return NextResponse.json({ error: "필수 정보 없음", success: false }, { status: 400 });
+    }
+
+    // 차단 관계면 지원/채용제안 자체를 막는다 — UserProfileBottomSheet.tsx가 "차단 시 이 사용자의
+    // 대타 공고 지원이 제한됩니다"라고 안내하는데 실제로는 어디도 이걸 체크하지 않아서 장식이었음.
+    // 어느 쪽이 차단했든(사장님이 알바생을, 알바생이 사장님을) 새 매칭 자체를 막는다.
+    const { data: blockRow } = await supabase
+      .from("user_blocks")
+      .select("id")
+      .or(`and(blocker_id.eq.${employerId},blocked_id.eq.${workerId}),and(blocker_id.eq.${workerId},blocked_id.eq.${employerId})`)
+      .maybeSingle();
+    if (blockRow) {
+      return NextResponse.json({ error: "차단된 상대와는 지원/채용제안을 주고받을 수 없어요.", success: false }, { status: 403 });
+    }
+
+    // 대타 지원은 홈 목록(components/daeta/DaetaSosHome.tsx load())이 stage/allow_new와 무관하게
+    // 열려있는 공고를 전부 보여주기 때문에, "신규(Tier2) 알바생에겐 노출 안 함(allow_new=false)"으로
+    // 등록한 공고도 신규 계정이 목록에서 찾아 지원 자체는 할 수 있었던 구멍 — 알림 발송 단계
+    // (lib/daetaEscalation.ts notifyNearby)에서만 Tier로 걸러졌지, 실제 지원 접수는 안 막혀있었다.
+    // 사장님이 직접 특정 알바생에게 보내는 1:1 SOS(senderType==="employer")는 신규든 아니든
+    // 사장님이 골라서 보내는 거라 이 게이트 대상이 아님 — 알바생이 스스로 지원할 때만 막는다.
+    if (daetaPostingId && senderType === "worker") {
+      const { data: posting } = await supabase
+        .from("daeta_postings").select("escalation_stage, allow_new").eq("id", daetaPostingId).maybeSingle();
+      // stage 3(신규 opt-in)/4(전체공개)에 도달하기 전엔 Tier1(검증)만 지원 가능
+      if (posting && (posting.escalation_stage || 1) < 3) {
+        const tier = await getWorkerTier(supabase, workerId);
+        if (tier === "tier2") {
+          return NextResponse.json({
+            error: "아직은 검증된 알바생에게만 열려있는 대타예요. 조금 더 기다리면 신규 알바생에게도 열려요.",
+            success: false,
+          }, { status: 403 });
+        }
+      }
     }
 
     // 대타(SOS) 지원은 team_members가 매장 구분 없이 사장님 단위라, 다른 매장 소속 팀원도

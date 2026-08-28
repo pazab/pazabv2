@@ -156,6 +156,8 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
   const stage = p.escalation_stage || 1;
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
+  const [mediaIndex, setMediaIndex] = useState(0);
+  const images = p.image_urls || [];
   return (
     <div onClick={() => onShowDetail?.(p)} style={{
       width: width ?? "100%",
@@ -170,17 +172,40 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
           ? "1.5px solid rgba(239,68,68,0.45)"
           : "1px solid var(--border, rgba(255,255,255,0.12))",
       borderRadius: 18,
-      padding: 16,
+      overflow: "hidden",
       boxShadow: isMine ? "0 4px 16px rgba(249,115,22,0.15)" : "none",
       display: "flex",
       flexDirection: "column",
       justifyContent: "space-between",
     }}>
+      {/* 업무 현장 사진 — 예전엔 48x48 아이콘 크기 썸네일로만 붙어있어서 사장님이 애써 올린 업무
+          사진이 거의 안 보였음. 카드 절반 가까이 차지하는 배너로 키우고, 여러 장이면 상세 팝업처럼
+          여기서도 ‹ › 로 바로 넘겨볼 수 있게 함(상세까지 안 들어가도 됨). */}
+      {images.length > 0 && (
+        <div style={{ position: "relative" }}>
+          <img src={images[Math.min(mediaIndex, images.length - 1)]} alt="" style={{ width: "100%", aspectRatio: "16/11", objectFit: "cover", display: "block" }} />
+          {images.length > 1 && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); setMediaIndex(prev => (prev - 1 + images.length) % images.length); }}
+                style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 26, height: 26, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, zIndex: 2 }}>
+                ‹
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); setMediaIndex(prev => (prev + 1) % images.length); }}
+                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 26, height: 26, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, zIndex: 2 }}>
+                ›
+              </button>
+              <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 4, zIndex: 2 }}>
+                {images.map((_, i) => (
+                  <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i === mediaIndex ? "#fff" : "rgba(255,255,255,0.4)" }} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", flex: 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
-        {p.image_urls && p.image_urls[0] && (
-          <img src={p.image_urls[0]} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
-        )}
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
             {!isMine && p.employer_profile_id ? (
@@ -408,6 +433,7 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
           </div>
         )
       ) : null}
+      </div>
     </div>
   );
 }
@@ -463,7 +489,17 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   const [selectedPostingId, setSelectedPostingId] = useState<string>("");
   const [sendingSos, setSendingSos] = useState(false);
   const [detailPosting, setDetailPosting] = useState<SosPosting | null>(null);
-  const [applicantsSheet, setApplicantsSheet] = useState<{ postingId: string; businessName: string; applicants: { matchId: string; workerId: string; nickname: string; trustScore: number; avatarUrl?: string; tier: DaetaTier; badges: { key: string; emoji: string; name: string }[] }[] } | null>(null);
+  const [detailMediaIndex, setDetailMediaIndex] = useState(0);
+  const openDetail = (p: SosPosting) => { setDetailMediaIndex(0); setDetailPosting(p); };
+  const [applicantsSheet, setApplicantsSheet] = useState<{
+    postingId: string; businessName: string;
+    applicants: { matchId: string; workerId: string; nickname: string; trustScore: number; avatarUrl?: string; tier: DaetaTier; badges: { key: string; emoji: string; name: string }[] }[];
+    // 거절한 지원자 — 예전엔 거절하는 순간 사장님 화면에서 완전히 사라져서(재조회해도 pending만
+    // 가져옴) "이 사람 전에 거절했었나?" 확인할 방법이 아예 없었음. 재지원 자체는 막지 않으므로
+    // (다른 상황이면 다시 고려할 수도 있어서) 참고용으로만 접어서 보여준다.
+    rejected: { matchId: string; workerId: string; nickname: string; avatarUrl?: string }[];
+  } | null>(null);
+  const [showRejectedApplicants, setShowRejectedApplicants] = useState(false);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [acceptingMatchId, setAcceptingMatchId] = useState<string | null>(null);
   const [rejectingMatchId, setRejectingMatchId] = useState<string | null>(null);
@@ -476,6 +512,14 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         const until = data?.daeta_cancel_suspended_until;
         setSuspendedUntil(until && new Date(until) > new Date() ? until : null);
       });
+  }, [userId]);
+
+  // 내 지원 자격(Tier1/Tier2) — 아직 신규(Tier2)에게 안 열린 공고(stage<3)는 목록에서부터 숨겨서
+  // "지원했는데 거절당함" 경험을 안 만든다. 실제 차단은 app/api/lovecall route가 서버에서 함, 이건 그 결과를 미리 보여주는 것뿐.
+  const [myTier, setMyTier] = useState<DaetaTier | null>(null);
+  useEffect(() => {
+    if (!userId) return;
+    getWorkerTiers(supabase, [userId]).then(tiers => setMyTier(tiers[userId] || "tier2"));
   }, [userId]);
 
   // 첫 진입 가이드 — 1회성, 닫으면 다시 안 뜸
@@ -900,20 +944,24 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   // (응답 N건 이라는 숫자만 표시) MY페이지 지원현황까지 따로 찾아가야만 수락할 수 있었음
   const openApplicants = async (p: SosPosting) => {
     setLoadingApplicants(true);
-    setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants: [] });
+    setShowRejectedApplicants(false);
+    setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants: [], rejected: [] });
     try {
-      const { data: pendingMatches } = await supabase
+      const { data: allMatches } = await supabase
         .from("matches")
-        .select("id, worker_id")
+        .select("id, worker_id, progress_status")
         .eq("daeta_posting_id", p.id)
-        .eq("progress_status", "pending");
+        .in("progress_status", ["pending", "rejected"]);
 
-      if (!pendingMatches || pendingMatches.length === 0) {
-        setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants: [] });
+      const pendingMatches = (allMatches || []).filter(m => m.progress_status === "pending");
+      const rejectedMatches = (allMatches || []).filter(m => m.progress_status === "rejected");
+
+      if (pendingMatches.length === 0 && rejectedMatches.length === 0) {
+        setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants: [], rejected: [] });
         return;
       }
 
-      const workerIds = pendingMatches.map(m => m.worker_id);
+      const workerIds = [...new Set([...pendingMatches, ...rejectedMatches].map(m => m.worker_id))];
       const [{ data: users }, tiers, { data: badgeRows }] = await Promise.all([
         supabase.from("users").select("id, nickname, trust_score, avatar_url").in("id", workerIds),
         getWorkerTiers(supabase, workerIds),
@@ -938,7 +986,13 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         tier: tiers[m.worker_id] || "tier2",
         badges: getBadgesByRole(badgesByWorker.get(m.worker_id) || [], "worker"),
       }));
-      setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants });
+      const rejected = rejectedMatches.map(m => ({
+        matchId: m.id,
+        workerId: m.worker_id,
+        nickname: userMap.get(m.worker_id)?.nickname || "알바생",
+        avatarUrl: userMap.get(m.worker_id)?.avatar_url || undefined,
+      }));
+      setApplicantsSheet({ postingId: p.id, businessName: p.business_name, applicants, rejected });
     } catch {
       showToast("지원자 목록을 불러오지 못했어요.", "error");
     } finally {
@@ -996,7 +1050,16 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "거절 실패");
       showToast("지원을 거절했어요", "info");
-      setApplicantsSheet(prev => prev ? { ...prev, applicants: prev.applicants.filter(a => a.matchId !== matchId) } : prev);
+      // 목록에서 지우지 않고 "지난 지원자"로 옮겨서, 나중에 다시 들어와도 누굴 거절했었는지 남아있게 함
+      setApplicantsSheet(prev => {
+        if (!prev) return prev;
+        const moved = prev.applicants.find(a => a.matchId === matchId);
+        return {
+          ...prev,
+          applicants: prev.applicants.filter(a => a.matchId !== matchId),
+          rejected: moved ? [...prev.rejected, { matchId: moved.matchId, workerId: moved.workerId, nickname: moved.nickname, avatarUrl: moved.avatarUrl }] : prev.rejected,
+        };
+      });
       await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : "거절 중 오류";
@@ -1189,7 +1252,16 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
   // 남의 공고는 아직 구인 중인(pending) 것만 지원 대상으로 노출 — 이미 matched된 건 다른 사람이 이미
   // 잡은 자리라 지원하기를 눌러도 의미가 없음(내 공고는 진행상황 확인을 위해 matched도 계속 보여줘야 함)
   const myPostings = postings.filter(p => p.user_id === userId);
-  const othersPostings = postings.filter(p => p.user_id !== userId && p.status === "pending");
+  // 신규(Tier2)에게 아직 안 열린 공고(stage<3)는 숨김 — 사장님이 나를 콕 찍어 보낸 1:1 요청은
+  // 그 사람이 직접 고른 거라 Tier와 무관하게 항상 보여야 함(app/api/lovecall도 동일 예외)
+  const othersPostings = postings.filter(p =>
+    p.user_id !== userId && p.status === "pending" &&
+    (myTier !== "tier2" || (p.escalation_stage || 1) >= 3 || !!receivedRequestMatchIds[p.id])
+  );
+  // Tier2 게이트 때문에 postings.length(전체)와 실제 이 사람한테 보이는 개수가 달라질 수 있어서
+  // (다른 공고가 있어도 전부 신규에게 안 열렸으면 0개) 탭 배지·빈 상태 판정은 이 값을 써야 한다 —
+  // postings.length를 그대로 쓰면 "공고(1)"이라고 뱃지엔 뜨는데 목록은 텅 비어 보이는 모순이 생김.
+  const visiblePostingsCount = myPostings.length + othersPostings.length;
   // 내가 이미 지원했거나 사장님에게 직접 요청받은 공고는 각 섹션(긴급/다른 공고) 안에서 맨 앞으로 —
   // 특히 받은 요청은 내가 액션(수락/거절)해야 하는 쪽이라 지원한 것보다도 더 우선. 섹션 자체(긴급 vs
   // 일반)는 그대로 유지해서 "긴급 옆"에 붙는 느낌을 살림.
@@ -1386,7 +1458,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}
           >
-            <i className="ti ti-clipboard-list" aria-hidden="true" /> 공고{postings.length > 0 ? ` (${postings.length})` : ""}
+            <i className="ti ti-clipboard-list" aria-hidden="true" /> 공고{visiblePostingsCount > 0 ? ` (${visiblePostingsCount})` : ""}
           </button>
           <button
             onClick={() => setActiveTab("people")}
@@ -1404,7 +1476,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
         {loading ? (
           <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>불러오는 중...</div>
         ) : activeTab === "post" ? (
-          postings.length === 0 ? (
+          visiblePostingsCount === 0 ? (
             <div style={{ background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.08))", borderRadius: 16, padding: "24px 16px", textAlign: "center", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13, marginBottom: 24 }}>
               진행 중인 대타 공고가 없어요. 아래 버튼으로 등록해보세요.
             </div>
@@ -1427,7 +1499,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                         onCancel={() => cancelPosting(p)}
                         onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                         onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
-                        onShowDetail={setDetailPosting}
+                        onShowDetail={openDetail}
                         onShowApplicants={openApplicants}
                         expansionInfo={nextExpansionInfo(p)}
                       />
@@ -1462,7 +1534,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                             onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                         onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                             onViewStore={(id) => router.push(`/store/${id}`)}
-                            onShowDetail={setDetailPosting}
+                            onShowDetail={openDetail}
                           />
                         </div>
                       ))}
@@ -1492,7 +1564,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
                         onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                           onViewStore={(id) => router.push(`/store/${id}`)}
-                          onShowDetail={setDetailPosting}
+                          onShowDetail={openDetail}
                         />
                       ))}
                     </div>
@@ -1706,25 +1778,78 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 })}
               </div>
             )}
+
+            {!loadingApplicants && applicantsSheet.rejected.length > 0 && (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                <button onClick={() => setShowRejectedApplicants(v => !v)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text-muted)", fontSize: 12, fontWeight: 700 }}>
+                  <span>지난 지원자(거절함) {applicantsSheet.rejected.length}명</span>
+                  <i className={`ti ${showRejectedApplicants ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
+                </button>
+                {showRejectedApplicants && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                    {applicantsSheet.rejected.map(r => (
+                      <div key={r.matchId} onClick={() => router.push(`/worker/${r.workerId}`)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", opacity: 0.7 }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: "50%", flexShrink: 0, overflow: "hidden",
+                          background: "var(--surface2)", border: "1px solid var(--border)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 13, fontWeight: 800, color: "var(--text-muted)",
+                        }}>
+                          {r.avatarUrl ? (
+                            <img src={r.avatarUrl} alt={r.nickname} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            r.nickname.charAt(0)
+                          )}
+                        </div>
+                        <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{r.nickname}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {detailPosting && (
         <div onClick={() => setDetailPosting(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", padding: 20, width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-              <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>{detailPosting.business_name}</h3>
-              <button onClick={() => setDetailPosting(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
-            </div>
-
-            {detailPosting.image_urls && detailPosting.image_urls.length > 0 && (
-              <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
-                {detailPosting.image_urls.map((url, i) => (
-                  <img key={url + i} src={url} alt="업무 사진" style={{ width: 140, height: 140, borderRadius: 14, objectFit: "cover", flexShrink: 0 }} />
-                ))}
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflowY: "auto" }}>
+            {/* 업무 사진 — 예전엔 140x140 썸네일을 옆으로 나열만 했는데, 한 장씩 크게 넘겨보는 형태로
+                바꿈(components/daeta/DaetaSosHome.tsx PostingCard 배너 사진과 같은 톤으로 통일) */}
+            {detailPosting.image_urls && detailPosting.image_urls.length > 0 ? (
+              <div style={{ position: "relative", height: 260, background: "#000", overflow: "hidden", borderRadius: "24px 24px 0 0" }}>
+                <img src={detailPosting.image_urls[Math.min(detailMediaIndex, detailPosting.image_urls.length - 1)]} alt="업무 사진"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 30%)", pointerEvents: "none" }} />
+                <h3 style={{ position: "absolute", left: 16, bottom: 12, margin: 0, fontSize: 17, fontWeight: 900, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>{detailPosting.business_name}</h3>
+                <button onClick={() => setDetailPosting(null)} style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>✕</button>
+                {detailPosting.image_urls.length > 1 && (
+                  <>
+                    <button onClick={(e) => { e.stopPropagation(); setDetailMediaIndex(prev => (prev - 1 + detailPosting.image_urls!.length) % detailPosting.image_urls!.length); }}
+                      style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, zIndex: 20 }}>
+                      ‹
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setDetailMediaIndex(prev => (prev + 1) % detailPosting.image_urls!.length); }}
+                      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, zIndex: 20 }}>
+                      ›
+                    </button>
+                    <div style={{ position: "absolute", bottom: 12, right: 12, background: "rgba(0,0,0,0.6)", borderRadius: 10, padding: "3px 6px", fontSize: 10, color: "#fff", fontWeight: 600, zIndex: 20 }}>
+                      {detailMediaIndex + 1} / {detailPosting.image_urls.length}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "20px 20px 0" }}>
+                <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>{detailPosting.business_name}</h3>
+                <button onClick={() => setDetailPosting(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
               </div>
             )}
+
+            <div style={{ padding: 20 }}>
 
             {detailPosting.lat != null && detailPosting.lng != null && (
               <iframe
@@ -1752,6 +1877,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 <i className="ti ti-home" aria-hidden="true" /> 매장 홈 가기
               </button>
             )}
+            </div>
           </div>
         </div>
       )}

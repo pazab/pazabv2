@@ -74,7 +74,6 @@ export default function CallbackPage() {
       setStatus("프로필 확인 중...");
       const user = session.user;
       setUserId(user.id);
-      const userType = localStorage.getItem("pending_user_type") || "worker";
 
       const { data: existingUser } = await supabase
         .from("users").select("user_type, profile_completed").eq("id", user.id).maybeSingle();
@@ -84,16 +83,20 @@ export default function CallbackPage() {
         const userName = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.user_name || "파잡유저";
         const uniqueNickname = await resolveUniqueNickname(userName);
 
+        // user_type은 임시값 — 구글이든 카카오든 가입 경로와 무관하게 역할 선택은
+        // /onboarding 한 곳에서만 한다. onboarded:false라 proxy.ts가 다음 요청에서
+        // 바로 그리로 보내고, 실제 역할은 거기서 확정된다(app/onboarding/page.tsx).
         await supabase.from("users").insert({
           id: user.id,
           email: userEmail,
           name: userName,
           nickname: uniqueNickname,
-          user_type: userType,
+          user_type: "worker",
           profile_completed: false,
           trust_score: 50,
           grade: "bronze",
           is_active: true,
+          onboarded: false,
         });
       }
 

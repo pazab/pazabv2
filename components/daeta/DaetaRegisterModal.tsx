@@ -1383,7 +1383,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       {cropTarget && (
         <ImageCropModal
           imageSrc={cropTarget.url}
-          aspect={1}
+          aspect={16 / 11}
           onClose={handleCropCancel}
           onCrop={handleCropDone}
         />

@@ -129,6 +129,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "권한이 없습니다.", success: false }, { status: 403 });
     }
 
+    // 차단 관계면 메시지 전송 자체를 막는다 — UserProfileBottomSheet.tsx가 "차단 시 메시지 수신이
+    // 차단됩니다"라고 안내하는데 실제로는 어느 쪽도 이걸 체크하는 곳이 없어서 그냥 장식이었음.
+    // 어느 쪽이 차단했든(내가 상대를 차단했든, 상대가 나를 차단했든) 막는다.
+    const { data: blockRow } = await supabaseAdmin
+      .from("user_blocks")
+      .select("id")
+      .or(`and(blocker_id.eq.${senderId},blocked_id.eq.${receiverId}),and(blocker_id.eq.${receiverId},blocked_id.eq.${senderId})`)
+      .maybeSingle();
+    if (blockRow) {
+      return NextResponse.json({ error: "차단된 상대에게는 메시지를 보낼 수 없어요.", success: false }, { status: 403 });
+    }
+
     const { data, error } = await supabaseAdmin
       .from("chats")
       .insert({

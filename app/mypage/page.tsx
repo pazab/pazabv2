@@ -299,11 +299,15 @@ function MyPageContent() {
       const { data, error } = await supabase.from("users").select("*").eq("id", session.user.id).single();
       let userData = data;
       if (error || !data) {
+        // app/auth/callback/page.tsx의 insert가 어떤 이유로든 안 됐을 때의 자가치유 경로 —
+        // 역할 선택은 항상 /onboarding 한 곳에서만 하므로 여기도 onboarded:false로 만들어
+        // 다음 요청에서 proxy.ts가 그리로 보내게 한다.
         const newUser = {
           id: session.user.id, email: session.user.email,
           name: session.user.user_metadata?.full_name || "파잡유저",
-          user_type: localStorage.getItem("pending_user_type") || "worker",
+          user_type: "worker",
           profile_completed: false, trust_score: 50, grade: "bronze", is_active: true,
+          onboarded: false,
         };
         await supabase.from("users").upsert(newUser);
         userData = newUser as any;
