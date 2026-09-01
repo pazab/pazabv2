@@ -38,6 +38,9 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   const [records, setRecords] = useState<any[]>([]);
   const [selectedPayslip, setSelectedPayslip] = useState<any>(null);
   const [showUnpaidModal, setShowUnpaidModal] = useState<any>(null); // 임금 미지급 신고 팝업
+  const [evidenceData, setEvidenceData] = useState<any>(null); // 진정 자료 패키지(노동청 제출용)
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidencePdfSaving, setEvidencePdfSaving] = useState(false);
   const [showAllRecords, setShowAllRecords] = useState(!focusMatchId);
   const [pendingAction, setPendingAction] = useState<{ type: "complete" | "noshow" | "cancel"; match: any } | null>(null);
   const [actionError, setActionError] = useState("");
@@ -294,10 +297,70 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
     }
   };
 
-  // 3. 알바생: 임금 미지급 신고서 PDF 빌드
   const handleUnpaidReport = (match: any) => {
     setActionError("");
     setShowUnpaidModal(match);
+  };
+
+  // 노동청 임금체불 진정에 첨부할 증빙(근태/정산/계약서) 자료를 한 번에 모아서 보여준다.
+  // 파잡이 대신 지급하거나 진정을 접수하는 게 아니라, 이미 갖고 있는 기록을 정리만 해주는 것.
+  const openEvidencePacket = async (match: any) => {
+    setEvidenceLoading(true);
+    try {
+      const res = await fetch(`/api/daeta/unpaid-evidence?matchId=${match.id}`);
+      const result = await res.json();
+      if (!res.ok) {
+        showToast(result.error || "증빙 자료를 불러오지 못했어요.", "error");
+        return;
+      }
+      setEvidenceData(result);
+    } catch (err) {
+      console.error(err);
+      showToast("증빙 자료를 불러오지 못했어요.", "error");
+    } finally {
+      setEvidenceLoading(false);
+    }
+  };
+
+  const downloadEvidencePdf = async () => {
+    const el = document.getElementById("unpaid-evidence-render");
+    if (!el) return;
+    try {
+      setEvidencePdfSaving(true);
+      const { default: jsPDF } = await import("jspdf");
+      const { default: html2canvas } = await import("html2canvas");
+
+      const canvas = await html2canvas(el, {
+        scale: 2.5,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        width: 794,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const imgWidth = 210;
+      const pageHeight = 295;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`임금체불_진정자료_${evidenceData?.employer?.businessName || "파잡"}.pdf`);
+    } catch (e: any) {
+      showToast("PDF 생성 중 오류가 발생했어요: " + e.message, "error");
+    } finally {
+      setEvidencePdfSaving(false);
+    }
   };
 
   // 노쇼 신고 이의제기 — 사장님의 노쇼 신고는 즉시 확정 페널티라(트러스트 -30점 + 정지)
@@ -1086,7 +1149,7 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
             </p>
             {actionError && <p style={{ fontSize: 12, color: "#f87171", marginBottom: 12, textAlign: "center" }}>{actionError}</p>}
 
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
               <button onClick={() => setShowUnpaidModal(null)}
                 style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                 취소
@@ -1094,6 +1157,87 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
               <button onClick={() => reportUnpaidWage(showUnpaidModal)} disabled={actionLoading}
                 style={{ flex: 1, background: "#ef4444", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: actionLoading ? "default" : "pointer", opacity: actionLoading ? 0.7 : 1 }}>
                 {actionLoading ? "처리 중..." : "신고 접수"}
+              </button>
+            </div>
+            <button onClick={() => openEvidencePacket(showUnpaidModal)} disabled={evidenceLoading}
+              style={{ width: "100%", background: "transparent", border: "1px solid rgba(139,92,246,0.4)", borderRadius: 12, padding: "10px", color: "#a78bfa", fontSize: 12, fontWeight: 700, cursor: evidenceLoading ? "default" : "pointer", opacity: evidenceLoading ? 0.7 : 1 }}>
+              {evidenceLoading ? "자료 준비 중..." : "📄 노동청 진정 자료 준비하기"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 모달 3: 임금체불 진정 자료 패키지 */}
+      {evidenceData && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: "20px", width: "100%", maxWidth: 420, maxHeight: "88vh", overflowY: "auto", color: "var(--text)" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 900, margin: "0 0 14px", textAlign: "center" }}>📄 임금체불 진정 자료</h3>
+
+            {/* PDF로 캡처될 표지 영역 */}
+            <div id="unpaid-evidence-render" style={{ background: "#ffffff", color: "#111", padding: 24, fontSize: 12, lineHeight: 1.6, borderRadius: 8 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 900, marginBottom: 4 }}>임금체불 진정 참고자료</h2>
+              <p style={{ fontSize: 10, color: "#666", marginBottom: 16 }}>파잡(matching platform)이 보유한 기록을 정리한 자료이며, 법률 자문이 아닙니다. 파잡은 근로계약의 당사자가 아니며 임금 지급 의무를 지지 않습니다.</p>
+
+              <h4 style={{ fontSize: 13, fontWeight: 800, marginTop: 14, marginBottom: 6, borderBottom: "1px solid #ddd", paddingBottom: 4 }}>사업장 정보</h4>
+              <p>상호: {evidenceData.employer.businessName}</p>
+              <p>사업자등록번호: {evidenceData.employer.bizRegNumber || "미등록"}</p>
+              <p>대표자: {evidenceData.employer.ceoName || "-"}</p>
+              <p>사업장 주소: {evidenceData.employer.address}</p>
+              <p>연락처: {evidenceData.employer.bizTel || evidenceData.employer.contactPhone || "-"}</p>
+
+              <h4 style={{ fontSize: 13, fontWeight: 800, marginTop: 14, marginBottom: 6, borderBottom: "1px solid #ddd", paddingBottom: 4 }}>근로자 정보</h4>
+              <p>성명: {evidenceData.worker.name}</p>
+              <p>연락처: {evidenceData.worker.phone || "-"}</p>
+
+              <h4 style={{ fontSize: 13, fontWeight: 800, marginTop: 14, marginBottom: 6, borderBottom: "1px solid #ddd", paddingBottom: 4 }}>근무 내역</h4>
+              <p>업무: {evidenceData.posting.duty || evidenceData.posting.business_type || "-"}</p>
+              <p>근무일: {evidenceData.posting.work_date}{evidenceData.posting.work_date_end && evidenceData.posting.work_date_end !== evidenceData.posting.work_date ? ` ~ ${evidenceData.posting.work_date_end}` : ""}</p>
+              <p>근무시간(공고 기준): {evidenceData.posting.work_hours}</p>
+              <p>시급: {(evidenceData.posting.wage || 0).toLocaleString()}원</p>
+
+              <h4 style={{ fontSize: 13, fontWeight: 800, marginTop: 14, marginBottom: 6, borderBottom: "1px solid #ddd", paddingBottom: 4 }}>출퇴근 기록</h4>
+              {evidenceData.dailyAttendance.length > 0 ? (
+                evidenceData.dailyAttendance.map((d: any, i: number) => (
+                  <p key={i}>{d.work_date} — 출근 {d.checked_in_at ? new Date(d.checked_in_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "미기록"} / 퇴근 {d.checked_out_at ? new Date(d.checked_out_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "미기록"}</p>
+                ))
+              ) : (
+                <p>{evidenceData.posting.work_date} — 출근 {evidenceData.match.checkedInAt ? new Date(evidenceData.match.checkedInAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "미기록"} / 퇴근 {evidenceData.match.checkedOutAt ? new Date(evidenceData.match.checkedOutAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "미기록"}</p>
+              )}
+
+              <h4 style={{ fontSize: 13, fontWeight: 800, marginTop: 14, marginBottom: 6, borderBottom: "1px solid #ddd", paddingBottom: 4 }}>정산 내역{evidenceData.payslips.length === 0 ? " (발행된 명세서 없음)" : ""}</h4>
+              {evidenceData.payslips.map((p: any, i: number) => (
+                <p key={i}>{p.issued_at ? p.issued_at.slice(0, 10) : "-"} 발행 — 총급여 {(p.total_pay || 0).toLocaleString()}원, 공제 {(p.total_deductions || 0).toLocaleString()}원, 실수령액 {(p.net_pay || 0).toLocaleString()}원 (상태: {p.status})</p>
+              ))}
+              <p style={{ fontWeight: 800, marginTop: 6 }}>미지급 청구 합계(참고): {evidenceData.totalUnpaid.toLocaleString()}원</p>
+
+              <h4 style={{ fontSize: 13, fontWeight: 800, marginTop: 14, marginBottom: 6, borderBottom: "1px solid #ddd", paddingBottom: 4 }}>근로계약서</h4>
+              <p>{evidenceData.contract ? `체결됨 (${evidenceData.contract.employer_signed && evidenceData.contract.worker_signed ? "양측 서명 완료" : "서명 미완료"})` : "체결된 계약서 기록 없음"}</p>
+
+              {evidenceData.unpaidReport && (
+                <p style={{ marginTop: 10, fontSize: 10, color: "#666" }}>* {evidenceData.unpaidReport.created_at.slice(0, 10)} 파잡 앱 내 임금 미지급 신고 접수됨</p>
+              )}
+              <p style={{ marginTop: 14, fontSize: 10, color: "#999" }}>자료 생성일시: {new Date(evidenceData.generatedAt).toLocaleString("ko-KR")}</p>
+            </div>
+
+            {evidenceData.contract && (
+              <a href={`/api/contract?matchId=${evidenceData.match.id}`} target="_blank" rel="noopener noreferrer"
+                style={{ display: "block", textAlign: "center", marginTop: 14, fontSize: 12, color: "#a78bfa", textDecoration: "underline" }}>
+                근로계약서 원본 PDF 열기
+              </a>
+            )}
+
+            <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, margin: "14px 0", textAlign: "center" }}>
+              이 자료를 <a href="https://labor.moel.go.kr/minwonApply/minwonFormat.do?searchVal=SN001" target="_blank" rel="noopener noreferrer" style={{ color: "#a78bfa" }}>고용노동부 노동포털 진정 접수</a>에 첨부해 주세요.
+            </p>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setEvidenceData(null)}
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                닫기
+              </button>
+              <button onClick={downloadEvidencePdf} disabled={evidencePdfSaving}
+                style={{ flex: 1, background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontSize: 12, fontWeight: 800, cursor: evidencePdfSaving ? "default" : "pointer", opacity: evidencePdfSaving ? 0.7 : 1 }}>
+                {evidencePdfSaving ? "생성 중..." : "PDF 다운로드"}
               </button>
             </div>
           </div>

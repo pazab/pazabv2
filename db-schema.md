@@ -316,7 +316,8 @@
 
 > ✅ `contract_data.wageType`: 'hour'\|'day'\|'month' (위자드 내부값)  
 > ✅ `contracts.wage_type`: 'hourly'\|'daily'\|'monthly' (DB 저장값, 변환 후 저장)  
-> ⚠️ 공식 양식 PDF 생성 시 `docs/standard_contract_form.pdf` 필요 (고용노동부 공식 다중페이지 PDF)
+> ⚠️ 공식 양식 PDF 생성 시 `docs/standard_contract_form.pdf` 필요 (고용노동부 공식 다중페이지 PDF)  
+> 🔴 `pdf_url` 죽은 컬럼 — 어디서도 INSERT/UPDATE 안 함(2026-09-02 전체 검색 확인). PDF는 저장 안 하고 `/api/contract?matchId=` (GET/POST)가 매번 그 자리에서 생성해서 스트리밍함. 이 컬럼 값을 신뢰해서 링크 걸면 항상 깨짐 — 계약서 열람은 항상 `/api/contract?matchId=`로
 
 ---
 
