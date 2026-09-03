@@ -204,8 +204,10 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
         </div>
       )}
       <div style={{ padding: 16, display: "flex", flexDirection: "column", flex: 1 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
+      {/* 예전엔 텍스트 블록(좌)과 버튼(우)을 한 행에 나란히 뒀는데, 좁은 카드(긴급, width=280)에서
+          상호명이 길면 버튼과 부딪히거나 겹쳐 보이는 문제가 반복됐음. 카드 폭이 얼마든 절대
+          부딪히지 않게, 버튼을 텍스트 블록 아래 별도 줄로 완전히 분리함. */}
+      <div style={{ marginBottom: 10 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
             {!isMine && p.employer_profile_id ? (
@@ -219,16 +221,18 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
               <span style={{ fontSize: 15, fontWeight: 900, color: "var(--text, #fff)" }}>{p.business_name}</span>
             )}
             {isMine ? (
-              <span style={{ fontSize: 10, background: "rgba(249,115,22,0.25)", color: "#fb923c", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 내가 올린 SOS</span>
+              <span style={{ fontSize: 10, flexShrink: 0, background: "rgba(249,115,22,0.25)", color: "#fb923c", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 내가 올린 SOS</span>
             ) : urgent ? (
-              <span style={{ fontSize: 10, background: "rgba(239,68,68,0.22)", color: "#f87171", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 긴급</span>
+              <span style={{ fontSize: 10, flexShrink: 0, background: "rgba(239,68,68,0.22)", color: "#f87171", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 긴급</span>
             ) : (
-              <span style={{ fontSize: 10, background: "rgba(139,92,246,0.18)", color: "#a78bfa", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>📢 동네 매장 SOS</span>
-            )}
-            {isReceivedRequest && (
-              <span style={{ fontSize: 10, background: "rgba(139,92,246,0.22)", color: "#c4b5fd", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>📥 나에게 직접 요청함</span>
+              <span style={{ fontSize: 10, flexShrink: 0, background: "rgba(139,92,246,0.18)", color: "#a78bfa", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>📢 동네 매장 SOS</span>
             )}
           </div>
+          {isReceivedRequest && (
+            <div style={{ marginTop: 2 }}>
+              <span style={{ fontSize: 10, background: "rgba(139,92,246,0.22)", color: "#c4b5fd", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>📥 나에게 직접 요청함</span>
+            </div>
+          )}
           <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", marginTop: 3, wordBreak: "keep-all", overflowWrap: "break-word" }}>
             {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours}
             {dist != null && ` · 🚶 ${dist < 10 ? dist.toFixed(1) : Math.round(dist)}km`}
@@ -255,8 +259,7 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
             </div>
           )}
         </div>
-        </div>
-        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 10 }}>
           {isMine ? (
             !meta.acceptedMatchId && (
               <>
@@ -447,9 +450,11 @@ interface DaetaSosHomeProps {
   /** "새 지원서 도착" 알림에서 온 경우 — 해당 공고의 지원자 시트를 진입하자마자 자동으로 염 */
   autoOpenApplicantsPostingId?: string | null;
   onAutoOpenApplicantsConsumed?: () => void;
+  /** "myOnly" = /daeta/my 전용 화면 — 둘러보기(공고/인력 탭) 없이 내 SOS 관리만 보여줌 */
+  mode?: "full" | "myOnly";
 }
 
-export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, onRoleChange, autoOpenApplicantsPostingId, onAutoOpenApplicantsConsumed }: DaetaSosHomeProps) {
+export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, onRoleChange, autoOpenApplicantsPostingId, onAutoOpenApplicantsConsumed, mode = "full" }: DaetaSosHomeProps) {
   const router = useRouter();
   const { showToast, ToastUI } = useToast();
 
@@ -1282,27 +1287,63 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg, #0a0a0f)", paddingBottom: 100 }}>
-      <AppHeader
-        title="대타"
-        showBellAndMenu
-        rightActions={
-          <button
-            onClick={() => setShowNeighborhoodSheet(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
-              background: "linear-gradient(135deg, #0ea5e9, #38bdf8)",
-              border: "none", borderRadius: 20, padding: "6px 12px",
-              color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(14,165,233,0.35)",
-            }}>
-            <i className="ti ti-map-pin" style={{ fontSize: 13 }} aria-hidden="true" />
-            {neighborhoodLabel || "동네 설정"}
-          </button>
-        }
-      />
+      {mode === "myOnly" ? (
+        <AppHeader title="내 SOS 현황" showBack onBack={() => router.push("/daeta")} showBellAndMenu />
+      ) : (
+        <AppHeader
+          title="대타"
+          showBellAndMenu
+          rightActions={
+            <button
+              onClick={() => setShowNeighborhoodSheet(true)}
+              style={{
+                display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
+                background: "linear-gradient(135deg, #0ea5e9, #38bdf8)",
+                border: "none", borderRadius: 20, padding: "6px 12px",
+                color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(14,165,233,0.35)",
+              }}>
+              <i className="ti ti-map-pin" style={{ fontSize: 13 }} aria-hidden="true" />
+              {neighborhoodLabel || "동네 설정"}
+            </button>
+          }
+        />
+      )}
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px 0" }}>
-
+        {mode === "myOnly" ? (
+          // 내 SOS 관리 전용 화면(/daeta/my) — 둘러보기 탭 없이 내 공고만. 등록/수정/취소/지원자
+          // 확인 모달들은 아래에 mode와 무관하게 공통으로 렌더되니 여기서 새로 안 만들어도 됨.
+          <>
+            {myPostings.length === 0 ? (
+              <div style={{ background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.08))", borderRadius: 16, padding: "24px 16px", textAlign: "center", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 13 }}>
+                진행 중인 대타 SOS가 없어요. 우측 하단 버튼으로 등록해보세요.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {myPostings.map(p => (
+                  <PostingCard
+                    key={p.id}
+                    p={p}
+                    isMine
+                    urgent={false}
+                    meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
+                    isApplied={false}
+                    isLoading={false}
+                    onEdit={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
+                    onCancel={() => cancelPosting(p)}
+                    onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                    onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
+                    onShowDetail={openDetail}
+                    onShowApplicants={openApplicants}
+                    expansionInfo={nextExpansionInfo(p)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+        <>
         {/* 대타 참여 정지 배너 — 지원/등록을 시도해서 막혀야만 알던 것을 상시 노출로 바꿈 */}
         {suspendedUntil && (
           <div style={{
@@ -1362,90 +1403,71 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
             <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text, #fff)", margin: "0 0 8px", paddingRight: 20 }}>👋 대타 SOS, 이렇게 써요</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🚨 갑자기 사람이 빠지면? 우측 하단 <b>+ 버튼</b>으로 SOS 등록 — 우리 팀 → 동네 검증 인력 순으로 자동 확산돼요</p>
-              <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🟢 나도 대타 뛸 수 있으면 아래 스위치를 켜두세요 — 근처 사장님 요청에 내 카드가 노출돼요</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>🟢 나도 대타 뛸 수 있으면 아래 버튼을 눌러 <b>대타 ON</b>으로 켜두세요 — 근처 사장님 요청에 내 카드가 노출돼요</p>
               <p style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.75))", margin: 0, lineHeight: 1.5 }}>👥 급하면 <b>인력</b> 탭에서 검증된 사람에게 바로 콕 찍어 요청할 수도 있어요</p>
             </div>
           </div>
         )}
 
-        {/* 🟢 내 대타 가능 ON/OFF 스위치 바 */}
-        <button
-          onClick={toggleAvailable}
-          style={{
-            width: "100%",
-            padding: "16px 18px",
-            background: workerProfile?.available_now
-              ? "var(--success-bg, rgba(34,197,94,0.12))"
-              : "var(--surface, rgba(255,255,255,0.05))",
-            border: workerProfile?.available_now
-              ? "1.5px solid rgba(34,197,94,0.5)"
-              : "1.5px solid var(--border, rgba(255,255,255,0.15))",
-            borderRadius: 20,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 20,
-            transition: "all 0.25s ease",
-            boxShadow: workerProfile?.available_now
-              ? "0 4px 20px rgba(34, 197, 94, 0.2)"
-              : "0 2px 10px rgba(0, 0, 0, 0.1)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* 대타 가능 토글 / 내 SOS 진행 중 / 대타 이력 — 세로로 큰 카드 3장을 쌓았더니 너무 커서,
+            가로 3분할 컴팩트 타일로 바꿈. 아이콘 + 짧은 라벨만 남기고 부제 문구는 뺌. */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button
+            onClick={toggleAvailable}
+            style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+              padding: "12px 4px", borderRadius: 14, cursor: "pointer", transition: "all 0.2s ease",
+              background: workerProfile?.available_now ? "var(--success-bg, rgba(34,197,94,0.12))" : "var(--surface, rgba(255,255,255,0.05))",
+              border: workerProfile?.available_now ? "1.5px solid rgba(34,197,94,0.5)" : "1.5px solid var(--border, rgba(255,255,255,0.15))",
+            }}
+          >
             <div style={{
-              width: 38,
-              height: 38,
-              borderRadius: "50%",
-              background: workerProfile?.available_now
-                ? "linear-gradient(135deg, #22c55e, #16a34a)"
-                : "var(--primary-light, rgba(139,92,246,0.15))",
-              border: workerProfile?.available_now ? "none" : "1px solid var(--primary-border, rgba(139,92,246,0.3))",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+              background: workerProfile?.available_now ? "linear-gradient(135deg, #22c55e, #16a34a)" : "var(--primary-light, rgba(139,92,246,0.15))",
               color: workerProfile?.available_now ? "#fff" : "var(--primary, #8b5cf6)",
-              fontSize: 18,
-              boxShadow: workerProfile?.available_now ? "0 2px 8px rgba(34,197,94,0.4)" : "none",
-              flexShrink: 0
             }}>
               <i className={`ti ${workerProfile?.available_now ? "ti-bolt" : "ti-power"}`} aria-hidden="true" />
             </div>
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: 15, fontWeight: 900, color: workerProfile?.available_now ? "var(--success-text, #4ade80)" : "var(--text, #fff)" }}>
-                {workerProfile?.available_now ? "🟢 대타 가능 대기 중" : "⚪ 대타 알림 꺼짐 (터치하여 켜기)"}
-              </div>
-              <div style={{ fontSize: 11, color: workerProfile?.available_now ? "var(--success-text, rgba(134,239,172,0.85))" : "var(--text-muted, rgba(255,255,255,0.6))", marginTop: 2 }}>
-                {workerProfile?.available_now ? "동네 사장님들에게 내 대타 카드가 노출 중이에요" : "스위치를 켜면 동네 대타 요청 알림을 받아요"}
-              </div>
-            </div>
-          </div>
-          <div style={{
-            width: 50, height: 28, borderRadius: 14, position: "relative", flexShrink: 0,
-            background: workerProfile?.available_now
-              ? "linear-gradient(135deg, #22c55e, #16a34a)"
-              : "var(--surface2, rgba(255,255,255,0.12))",
-            border: workerProfile?.available_now ? "none" : "1px solid var(--border, rgba(255,255,255,0.2))",
-            transition: "all 0.25s ease",
-            boxShadow: workerProfile?.available_now ? "0 2px 8px rgba(34,197,94,0.4)" : "inset 0 1px 3px rgba(0,0,0,0.2)",
-          }}>
-            <div style={{
-              position: "absolute", top: 3, left: workerProfile?.available_now ? 25 : 3,
-              width: 20, height: 20, borderRadius: "50%",
-              background: "#ffffff",
-              transition: "left 0.25s ease",
-              boxShadow: "0 2px 5px rgba(0,0,0,0.3)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 10,
-              color: workerProfile?.available_now ? "#16a34a" : "var(--text-muted, #71717a)"
-            }}>
-              <i className={`ti ${workerProfile?.available_now ? "ti-check" : "ti-x"}`} aria-hidden="true" />
-            </div>
-          </div>
-        </button>
+            <span style={{ fontSize: 11, fontWeight: 800, color: workerProfile?.available_now ? "var(--success-text, #4ade80)" : "var(--text-muted, rgba(255,255,255,0.6))", whiteSpace: "nowrap" }}>
+              {workerProfile?.available_now ? "대타 ON" : "대타 OFF"}
+            </span>
+          </button>
 
+          {/* 내 SOS 현황 — 다른 사이트(당근알바/알바몬/에어비앤비 호스팅 등)도 "내가 올린 것 관리"와
+              "남의 것 둘러보기"는 화면 자체를 분리함. 관리(수정/취소/지원자 확인)는 전용 화면(/daeta/my,
+              mode="myOnly")에서 하도록 완전히 분리하고, 이 화면엔 작은 타일 하나만 둠. */}
+          {myPostings.length > 0 && (
+            <button
+              onClick={() => router.push("/daeta/my")}
+              style={{
+                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                padding: "12px 4px", borderRadius: 14, cursor: "pointer",
+                background: "linear-gradient(135deg, rgba(249,115,22,0.14), rgba(239,68,68,0.08))",
+                border: "1.5px solid rgba(249,115,22,0.45)",
+              }}
+            >
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #f97316, #ef4444)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13 }}>
+                <i className="ti ti-flame" aria-hidden="true" />
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 800, color: "#fb923c", whiteSpace: "nowrap" }}>내 SOS {myPostings.length}건</span>
+            </button>
+          )}
+
+          {/* 대타 이력 — 다른 두 타일과 같은 행으로, 같은 레시피(원형 아이콘+짧은 라벨) */}
+          <button
+            onClick={() => router.push(`/mypage/daeta-history?tab=${roleView || (userType === "employer" ? "employer" : "worker")}`)}
+            style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+              padding: "12px 4px", borderRadius: 14, cursor: "pointer",
+              background: "var(--surface, rgba(255,255,255,0.05))",
+              border: "1.5px solid var(--border, rgba(255,255,255,0.15))",
+            }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text, #fff)", fontSize: 12 }}>
+              <i className="ti ti-list" aria-hidden="true" />
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text, #fff)", whiteSpace: "nowrap" }}>대타 이력{historyCount > 0 ? ` ${historyCount}건` : ""}</span>
+          </button>
+        </div>
 
         {/* 공고 ⇄ 인력 탭 전환 — 지원(pull)할 공고와 직접 지목(push)할 인력은 액션이 달라 한 화면에 섞지 않음 */}
         <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "var(--surface, rgba(255,255,255,0.04))", borderRadius: 16, padding: 4 }}>
@@ -1458,7 +1480,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}
           >
-            <i className="ti ti-clipboard-list" aria-hidden="true" /> 공고{visiblePostingsCount > 0 ? ` (${visiblePostingsCount})` : ""}
+            <i className="ti ti-clipboard-list" aria-hidden="true" /> 공고{othersPostings.length > 0 ? ` (${othersPostings.length})` : ""}
           </button>
           <button
             onClick={() => setActiveTab("people")}
@@ -1481,40 +1503,19 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               진행 중인 대타 공고가 없어요. 아래 버튼으로 등록해보세요.
             </div>
           ) : (
-            <div style={{ maxHeight: "70vh", overflowY: "auto", borderRadius: 18, border: "1px solid var(--border, rgba(255,255,255,0.1))", marginBottom: 24 }}>
-              {myPostings.length > 0 && (
-                <div style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--bg, #0a0a0f)", padding: "14px 14px 10px", borderBottom: "1px solid var(--border, rgba(255,255,255,0.1))" }}>
-                  <h3 style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted, rgba(255,255,255,0.5))", margin: "0 0 8px", textTransform: "uppercase", letterSpacing: 0.3 }}>내 공고</h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {myPostings.map(p => (
-                      <PostingCard
-                        key={p.id}
-                        p={p}
-                        isMine
-                        urgent={false}
-                        meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
-                        isApplied={false}
-                        isLoading={false}
-                        onEdit={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
-                        onCancel={() => cancelPosting(p)}
-                        onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
-                        onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
-                        onShowDetail={openDetail}
-                        onShowApplicants={openApplicants}
-                        expansionInfo={nextExpansionInfo(p)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ padding: 14 }}>
+            // "내 공고"는 이제 이 리스트 안이 아니라 탭 위쪽에 항상 고정으로 보이는 "내 SOS 현황"
+            // 카드로 따로 뺐음(둘러보기용 리스트랑 관리용 내 공고를 같은 스크롤/탭 안에 억지로 섞으니
+            // sticky 겹침, 스크롤 방향, 탭 제스처 충돌이 계속 생겼음 — 아래 참고).
+            <div style={{ marginBottom: 24 }}>
+              <div>
                 {urgentOthers.length > 0 && (
                   <div style={{ marginBottom: 16 }}>
                     <h3 style={{ fontSize: 12, fontWeight: 800, color: "#f87171", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
                       <i className="ti ti-flame" aria-hidden="true" /> 긴급
                     </h3>
-                    <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
+                    {/* scrollSnapType을 mandatory에서 proximity로 완화 — mandatory는 살짝만 밀어도
+                        스냅이 강하게 원위치로 되돌려서 "스크롤이 아예 안 된다"처럼 느껴질 수 있음 */}
+                    <div className="no-scrollbar" style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
                       {urgentOthers.map(p => (
                         <div key={p.id} style={{ scrollSnapAlign: "start", flexShrink: 0 }}>
                           <PostingCard
@@ -1675,14 +1676,9 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
           </div>
         )}
 
-        {/* 보조 경로 — "직접 고르기"(카드덱)는 위 목록과 같은 후보를 다시 스와이프로 보여줘 중복이라 강등(코드는 유지, 진입 버튼만 제거) */}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={() => router.push(`/mypage/daeta-history?tab=${roleView || (userType === "employer" ? "employer" : "worker")}`)}
-            style={{ flex: 1, padding: "14px", background: "var(--surface, rgba(255,255,255,0.04))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 16, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            <i className="ti ti-list" aria-hidden="true" /> 대타 이력 {historyCount > 0 ? `(${historyCount}건)` : ""}
-          </button>
-        </div>
+        {/* "직접 고르기"(카드덱)는 위 목록과 같은 후보를 다시 스와이프로 보여줘 중복이라 강등(코드는 유지, 진입 버튼만 제거) — 대타 이력 버튼은 "내 SOS 진행 중" 배너 아래로 옮김 */}
+        </>
+        )}
       </div>
 
       {showRegisterModal && (
@@ -1705,7 +1701,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       {applicantsSheet && (
         <div onClick={() => setApplicantsSheet(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: "10px 20px 20px", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid var(--border)", color: "var(--text)", maxHeight: "80vh", overflowY: "auto" }}>
+          <div className="no-scrollbar" onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: "10px 20px 20px", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid var(--border)", color: "var(--text)", maxHeight: "80vh", overflowY: "auto" }}>
             <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--border)", margin: "0 auto 14px" }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
               <div>
@@ -1816,7 +1812,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       {detailPosting && (
         <div onClick={() => setDetailPosting(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflowY: "auto" }}>
+          <div className="no-scrollbar" onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflowY: "auto" }}>
             {/* 업무 사진 — 예전엔 140x140 썸네일을 옆으로 나열만 했는데, 한 장씩 크게 넘겨보는 형태로
                 바꿈(components/daeta/DaetaSosHome.tsx PostingCard 배너 사진과 같은 톤으로 통일) */}
             {detailPosting.image_urls && detailPosting.image_urls.length > 0 ? (
@@ -2000,7 +1996,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                   <label style={{ fontSize: 13, fontWeight: 900, color: "var(--text, #fff)", display: "block", marginBottom: 8 }}>
                     어느 대타 공고로 요청할까요? (터치하여 선택)
                   </label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 220, overflowY: "auto" }}>
+                  <div className="no-scrollbar" style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 220, overflowY: "auto" }}>
                     {myPostings.map(p => {
                       const isSelected = selectedPostingId === p.id;
                       return (

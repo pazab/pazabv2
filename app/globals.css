@@ -148,6 +148,17 @@ body {
   margin: 0;
 }
 
+/* 모바일 앱에선 페이지 스크롤바가 원래 안 보이는데, 데스크톱 브라우저(윈도우 크롬 등)는 문서
+   전체 스크롤에도 기본 스크롤바를 그려서 앱처럼 안 보임 — 스크롤 기능은 그대로 두고 막대만 숨김 */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
+}
+
 /* 바텀시트 버튼 커스텀 스타일 및 호버 효과 */
 .btn-bottomsheet-secondary {
   flex: 1;
@@ -223,5 +234,16 @@ body {
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
+}
+
+/* 폰에서는 원래 스크롤바가 안 보이는데, 데스크톱 브라우저(윈도우 크롬 등)는 기본 스크롤바를
+   항상 그려서 목록형 UI가 지저분해 보임 — 스크롤 기능은 유지하고 막대만 숨김 */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
