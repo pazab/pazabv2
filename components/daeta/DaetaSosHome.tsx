@@ -262,18 +262,20 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 10 }}>
           {isMine ? (
             !meta.acceptedMatchId && (
-              <>
+              // 이 화면(/daeta/my)에서 수정/취소는 남의 공고 지원하기 등과 달리 "관리"의 핵심 액션이라
+              // 다른 작은 버튼들과 같은 크기로 두면 눈에 안 띄었음 — 행 전체를 채우는 큰 버튼으로 키움
+              <div style={{ display: "flex", gap: 8, width: "100%" }}>
                 <button
                   onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
-                  style={{ background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.1))", borderRadius: 10, padding: "6px 10px", color: "var(--text, #fff)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  style={{ flex: 1, background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 14, padding: "12px", color: "var(--text, #fff)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
                   수정
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onCancel?.(); }}
-                  style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  style={{ flex: 1, background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, padding: "12px", color: "#f87171", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
                   취소
                 </button>
-              </>
+              </div>
             )
           ) : isReceivedRequest ? (
             // 사장님이 나를 콕 찍어 보낸 1:1 SOS 요청 — 내가 지원한 게 아니라 저쪽이 나한테 제안한 거라
@@ -1514,8 +1516,16 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                       <i className="ti ti-flame" aria-hidden="true" /> 긴급
                     </h3>
                     {/* scrollSnapType을 mandatory에서 proximity로 완화 — mandatory는 살짝만 밀어도
-                        스냅이 강하게 원위치로 되돌려서 "스크롤이 아예 안 된다"처럼 느껴질 수 있음 */}
-                    <div className="no-scrollbar" style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
+                        스냅이 강하게 원위치로 되돌려서 "스크롤이 아예 안 된다"처럼 느껴질 수 있음.
+                        PC는 터치 스와이프가 없어서 기본으론 Shift+휠을 눌러야만 가로 스크롤이 되는데,
+                        그건 알기 어려우니 세로 휠(deltaY)도 이 영역 위에서는 가로 스크롤로 변환해줌
+                        (트랙패드의 진짜 가로 제스처(deltaX)는 그대로 두고, 세로 위주 입력만 가로로 돌림). */}
+                    <div className="no-scrollbar" onWheel={(e) => {
+                      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                        e.currentTarget.scrollLeft += e.deltaY;
+                        e.preventDefault();
+                      }
+                    }} style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
                       {urgentOthers.map(p => (
                         <div key={p.id} style={{ scrollSnapAlign: "start", flexShrink: 0 }}>
                           <PostingCard

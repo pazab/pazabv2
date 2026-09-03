@@ -56,12 +56,20 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
   const [completeBankAccount, setCompleteBankAccount] = useState<string | null>(null);
   // 취소 확인 화면에서 "상대방과 미리 합의된 취소예요" 체크박스 — 켜면 페널티 없이 처리됨
   const [cancelMutual, setCancelMutual] = useState(false);
-  // "지난 기록"은 계속 쌓이는 정보라 최근 1건만 접어서 보여주고, 필요할 때만 펼쳐서 전체를 봄
-  // (LoveCallSection.tsx와 동일한 접기 컨벤션). 펼쳤을 때도 너무 많으면 페이지 자체가
-  // 한없이 길어지지 않도록 그 영역만 스크롤되게 함.
-  const [pastExpanded, setPastExpanded] = useState(false);
-  const PAST_COLLAPSED_COUNT = 1;
-  const PAST_SCROLL_THRESHOLD = 5;
+  // "지난 기록"은 계속 쌓이는 정보라 처음엔 일부만 보여주고, 페이지 아래쪽으로 스크롤하면
+  // 자동으로 다음 묶음이 더 보임(무한 스크롤). 예전엔 "펼치기" 버튼을 눌러야 전체가 한꺼번에
+  // 나오고, 그마저 많으면 그 영역만 따로 스크롤되는 중첩 스크롤 박스였는데 — 페이지 스크롤
+  // 하나로 통일하고 버튼 클릭 없이 이어지게 바꿈.
+  const PAST_PAGE_SIZE = 5;
+  const [pastVisibleCount, setPastVisibleCount] = useState(PAST_PAGE_SIZE);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolledToBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 400;
+      if (scrolledToBottom) setPastVisibleCount(v => v + PAST_PAGE_SIZE);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   // 노쇼 신고 이의제기 — 서버가 중복 접수를 막아주지만(409), 한 번 접수한 뒤엔 이 화면에서도
   // 버튼을 바로 "접수됨"으로 바꿔줘야 다시 눌러서 매번 에러 토스트를 보는 걸 피할 수 있음
   const [disputedIds, setDisputedIds] = useState<Set<string>>(new Set());
@@ -806,26 +814,11 @@ export default function DaetaHistoryView({ userId, userType, onBack, focusMatchI
                 }}>
                   지난 기록 <span style={{ fontSize: 11, fontWeight: 700 }}>{pastRecords.length}건</span>
                 </div>
-                {pastExpanded && pastRecords.length > PAST_SCROLL_THRESHOLD ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: 480, overflowY: "auto", paddingRight: 4 }}>
-                    {pastRecords.map((rec: any, i: number) => renderCard(rec, i + 1))}
+                {pastRecords.slice(0, pastVisibleCount).map((rec: any, i: number) => renderCard(rec, i + 1))}
+                {pastVisibleCount < pastRecords.length && (
+                  <div style={{ textAlign: "center", padding: "12px 0", color: "var(--text-muted, rgba(255,255,255,0.4))", fontSize: 12 }}>
+                    아래로 스크롤하면 더 보여요 ({pastVisibleCount}/{pastRecords.length})
                   </div>
-                ) : (
-                  (pastExpanded ? pastRecords : pastRecords.slice(0, PAST_COLLAPSED_COUNT)).map((rec: any, i: number) => renderCard(rec, i + 1))
-                )}
-                {pastRecords.length > PAST_COLLAPSED_COUNT && (
-                  <button
-                    onClick={() => setPastExpanded(v => !v)}
-                    style={{
-                      width: "100%", marginTop: 2, padding: "10px",
-                      borderRadius: 12, background: "var(--surface2)", border: "1px solid var(--border)",
-                      color: "var(--primary, #8b5cf6)", fontSize: 12, fontWeight: 800, cursor: "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                    }}
-                  >
-                    <span>{pastExpanded ? "접기" : `펼치기 (전체 ${pastRecords.length}건 보기)`}</span>
-                    <i className={`ti ${pastExpanded ? "ti-chevron-up" : "ti-chevron-down"}`} style={{ fontSize: 14 }} aria-hidden="true" />
-                  </button>
                 )}
               </>
             )}
