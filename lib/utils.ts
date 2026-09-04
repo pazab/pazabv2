@@ -1,5 +1,13 @@
 export const KOREAN_DAY_BY_INDEX = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 한국 표준시(Asia/Seoul) 기준 오늘 날짜(yyyy-mm-dd). new Date().toISOString().split("T")[0]는 UTC
+// 기준이라 한국 자정~오전 9시 사이엔 실제 로컬 날짜보다 하루 전으로 계산되는 버그가 있었음(예: 토요일
+// 새벽 1시인데 "오늘"이 금요일로 계산됨, 2026-09-05). 서버(Vercel은 UTC로 돎)·클라이언트(기기
+// 시간대가 다를 수 있음) 어디서든 일관되게 "한국 기준 오늘"을 써야 하는 곳은 전부 이 함수로 통일.
+export function todayKstStr(baseDate: Date = new Date()): string {
+  return baseDate.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+}
+
 // 대타 공고 근무일수 — daeta_postings.work_date_end가 있으면 그 기간(양끝 포함) 일수, 없으면 하루.
 // 정산(app/api/daeta/complete)에서 wage × hours × 일수 계산에 사용.
 export function daetaDayCount(startDate: string, endDate?: string | null): number {

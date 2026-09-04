@@ -101,9 +101,10 @@ function isTodayDate(dateStr: string, now: number): boolean {
   return dateStr === todayStr;
 }
 
-// 긴급 판정 — 시작 3시간 이내 or 당일 시작 or 확대공지 단계(3+, 동네 검증인력까지 풀었는데도 안 잡힘)
+// 긴급 판정 — 시간적 급함만 본다(당일 시작 or 시작 3시간 이내). 확대공지 단계는 "매칭 안 됨" 신호일
+// 뿐 시간과는 무관해서 예전엔 여기 같이 섞여 있었는데, 그 신호는 카드의 단계 표시(STAGE_STEPS)로
+// 이미 따로 보여주고 있어 여기 넣으면 두 가지가 겹쳐 보임 — 그래서 뺐다(2026-09-04).
 function isUrgentPosting(p: SosPosting, now: number): boolean {
-  if ((p.escalation_stage || 1) >= 3) return true;
   if (isTodayDate(p.work_date, now)) return true;
   return hoursUntilShiftStart(p, now) <= 3;
 }
@@ -135,15 +136,10 @@ interface PostingCardProps {
   meta: PostingMatchMeta;
   isApplied: boolean;
   isReceivedRequest?: boolean;
-  isLoading: boolean;
   width?: number | string;
   myBase?: { lat: number; lng: number } | null;
   onEdit?: () => void;
   onCancel?: () => void;
-  onApply?: () => void;
-  onCancelApply?: () => void;
-  onAcceptRequest?: () => void;
-  onRejectRequest?: () => void;
   onGoToChat: (matchId: string) => void;
   onGoToSettle: (matchId: string) => void;
   onViewStore?: (employerProfileId: string) => void;
@@ -152,11 +148,15 @@ interface PostingCardProps {
   expansionInfo?: { label: string; minutesLeft: number } | null;
 }
 
-function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, isLoading, width, myBase, onEdit, onCancel, onApply, onCancelApply, onAcceptRequest, onRejectRequest, onGoToChat, onGoToSettle, onViewStore, onShowDetail, onShowApplicants, expansionInfo }: PostingCardProps) {
+// 내공고/긴급/다른공고 3종이 전부 이 카드 하나를 씀 — 썸네일+3줄 요약인 헤더는 완전히 동일하고,
+// 차이는 강조색·상단 뱃지뿐. 남의 공고에 지원/취소/수락/거절하는 액션은 여기 안 두고 상세 팝업
+// (openDetail)으로 몰아넣었음 — "훑어보기는 리스트, 결정은 상세"로 역할을 나눴다(2026-09-04).
+// 단, 내 공고 관리(수정/취소, 진행 스테퍼, 지원자 확인, 매칭 후 출퇴근/정산)는 사장님이 리스트만
+// 보고 바로 알아야 하는 정보라 예외적으로 카드에 그대로 남겨둠.
+function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, width, myBase, onEdit, onCancel, onGoToChat, onGoToSettle, onViewStore, onShowDetail, onShowApplicants, expansionInfo }: PostingCardProps) {
   const stage = p.escalation_stage || 1;
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
-  const [mediaIndex, setMediaIndex] = useState(0);
   const images = p.image_urls || [];
   return (
     <div onClick={() => onShowDetail?.(p)} style={{
@@ -174,52 +174,33 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
       borderRadius: 18,
       overflow: "hidden",
       boxShadow: isMine ? "0 4px 16px rgba(249,115,22,0.15)" : "none",
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "space-between",
+      padding: "12px 14px",
     }}>
-      {/* 업무 현장 사진 — 예전엔 48x48 아이콘 크기 썸네일로만 붙어있어서 사장님이 애써 올린 업무
-          사진이 거의 안 보였음. 카드 절반 가까이 차지하는 배너로 키우고, 여러 장이면 상세 팝업처럼
-          여기서도 ‹ › 로 바로 넘겨볼 수 있게 함(상세까지 안 들어가도 됨). */}
-      {images.length > 0 && (
-        <div style={{ position: "relative" }}>
-          <img src={images[Math.min(mediaIndex, images.length - 1)]} alt="" style={{ width: "100%", aspectRatio: "16/11", objectFit: "cover", display: "block" }} />
-          {images.length > 1 && (
-            <>
-              <button onClick={(e) => { e.stopPropagation(); setMediaIndex(prev => (prev - 1 + images.length) % images.length); }}
-                style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 26, height: 26, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, zIndex: 2 }}>
-                ‹
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); setMediaIndex(prev => (prev + 1) % images.length); }}
-                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 26, height: 26, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, zIndex: 2 }}>
-                ›
-              </button>
-              <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 4, zIndex: 2 }}>
-                {images.map((_, i) => (
-                  <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i === mediaIndex ? "#fff" : "rgba(255,255,255,0.4)" }} />
-                ))}
-              </div>
-            </>
+      {/* 유튜브식 컴팩트 리스트 헤더 — 예전엔 사진을 카드 절반을 차지하는 배너로 키웠었는데, 리스트
+          한 화면에 몇 개나 보이는지·훑어보는 속도가 더 중요하다고 판단해 왼쪽 썸네일로 줄임. 여러
+          장 넘겨보기는 이제 상세 팝업 전용(거기서 ‹ › 로 이미 지원). */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ width: 96, height: 72, borderRadius: 10, overflow: "hidden", flexShrink: 0, background: "var(--surface2, rgba(255,255,255,0.06))", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {images.length > 0 ? (
+            <img src={images[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          ) : (
+            <i className="ti ti-building-store" style={{ fontSize: 22, color: "var(--text-muted, rgba(255,255,255,0.35))" }} aria-hidden="true" />
           )}
         </div>
-      )}
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", flex: 1 }}>
-      {/* 예전엔 텍스트 블록(좌)과 버튼(우)을 한 행에 나란히 뒀는데, 좁은 카드(긴급, width=280)에서
-          상호명이 길면 버튼과 부딪히거나 겹쳐 보이는 문제가 반복됐음. 카드 폭이 얼마든 절대
-          부딪히지 않게, 버튼을 텍스트 블록 아래 별도 줄로 완전히 분리함. */}
-      <div style={{ marginBottom: 10 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             {!isMine && p.employer_profile_id ? (
               <span
                 onClick={(e) => { e.stopPropagation(); onViewStore?.(p.employer_profile_id!); }}
-                style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 15, fontWeight: 900, color: "var(--text, #fff)", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3, cursor: "pointer" }}>
-                <i className="ti ti-home" style={{ fontSize: 13, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 14, fontWeight: 900, color: "var(--text, #fff)", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3, cursor: "pointer" }}>
+                <i className="ti ti-home" style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />
                 {p.business_name}
               </span>
             ) : (
-              <span style={{ fontSize: 15, fontWeight: 900, color: "var(--text, #fff)" }}>{p.business_name}</span>
+              <span style={{ fontSize: 14, fontWeight: 900, color: "var(--text, #fff)" }}>{p.business_name}</span>
             )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
             {isMine ? (
               <span style={{ fontSize: 10, flexShrink: 0, background: "rgba(249,115,22,0.25)", color: "#fb923c", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>🔥 내가 올린 SOS</span>
             ) : urgent ? (
@@ -227,112 +208,45 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
             ) : (
               <span style={{ fontSize: 10, flexShrink: 0, background: "rgba(139,92,246,0.18)", color: "#a78bfa", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>📢 동네 매장 SOS</span>
             )}
-          </div>
-          {isReceivedRequest && (
-            <div style={{ marginTop: 2 }}>
+            {isReceivedRequest && (
               <span style={{ fontSize: 10, background: "rgba(139,92,246,0.22)", color: "#c4b5fd", padding: "2px 7px", borderRadius: 10, fontWeight: 900 }}>📥 나에게 직접 요청함</span>
-            </div>
-          )}
+            )}
+            {!isMine && !isReceivedRequest && isApplied && (
+              <span style={{ fontSize: 10, background: "var(--surface2, rgba(255,255,255,0.1))", border: "1px solid var(--border)", color: "var(--text-muted)", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>✅ 지원함</span>
+            )}
+          </div>
           <div style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.55))", marginTop: 3, wordBreak: "keep-all", overflowWrap: "break-word" }}>
-            {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours}
-            {dist != null && ` · 🚶 ${dist < 10 ? dist.toFixed(1) : Math.round(dist)}km`}
+            {formatDaetaDateRange(p.work_date, p.work_date_end)} · {p.work_hours} · {p.duty}
           </div>
-          <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.5))", marginTop: 2, wordBreak: "keep-all", overflowWrap: "break-word" }}>
-            {p.duty}
-          </div>
-          {p.region && (
-            <div style={{ fontSize: 11, color: "var(--text-muted, rgba(255,255,255,0.45))", marginTop: 3, display: "flex", alignItems: "flex-start", gap: 3, wordBreak: "keep-all", overflowWrap: "break-word" }}>
-              <i className="ti ti-map-pin" style={{ fontSize: 11, marginTop: 1, flexShrink: 0 }} aria-hidden="true" /> {p.region}
-            </div>
-          )}
           <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c", marginTop: 3 }}>
             시급 {p.wage.toLocaleString()}원
-            {isMine && p.base_wage != null && p.wage > p.base_wage && (
-              <span style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.5))", fontWeight: 600, marginLeft: 4 }}>
-                (기본 {p.base_wage.toLocaleString()}원 → 자동 할증)
+            {/* 하드 반경 필터는 안 둠(밀도 낮은 지역에서 목록이 더 비어 보이는 게 더 큰 손해) — 대신
+                상권 밖(탕정/아산 기준 15km~)이면 색으로 눈에 띄게만 경고, 필터링은 안 함 */}
+            {dist != null && (
+              <span style={{ color: dist > 15 ? "#fbbf24" : "var(--text-muted, rgba(255,255,255,0.5))", fontWeight: dist > 15 ? 700 : 600, fontSize: 11 }}>
+                {" · "}{dist > 15 ? "⚠️" : "🚶"} {dist < 10 ? dist.toFixed(1) : Math.round(dist)}km{dist > 15 ? " 거리있음" : ""}
               </span>
             )}
           </div>
-          {isMine && (p.max_urgent_pct || 0) > 0 && (
-            <div style={{ fontSize: 10, color: "var(--text-muted, rgba(255,255,255,0.45))", marginTop: 2 }}>
-              ⚡ 안 잡히면 최대 +{p.max_urgent_pct}%까지 자동 할증돼요
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 10 }}>
-          {isMine ? (
-            !meta.acceptedMatchId && (
-              // 이 화면(/daeta/my)에서 수정/취소는 남의 공고 지원하기 등과 달리 "관리"의 핵심 액션이라
-              // 다른 작은 버튼들과 같은 크기로 두면 눈에 안 띄었음 — 행 전체를 채우는 큰 버튼으로 키움
-              <div style={{ display: "flex", gap: 8, width: "100%" }}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
-                  style={{ flex: 1, background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 14, padding: "12px", color: "var(--text, #fff)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                  수정
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onCancel?.(); }}
-                  style={{ flex: 1, background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, padding: "12px", color: "#f87171", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                  취소
-                </button>
-              </div>
-            )
-          ) : isReceivedRequest ? (
-            // 사장님이 나를 콕 찍어 보낸 1:1 SOS 요청 — 내가 지원한 게 아니라 저쪽이 나한테 제안한 거라
-            // "지원 완료/취소"가 아니라 수락/거절이 맞음. 예전엔 이것도 isApplied로 뭉뚱그려서
-            // "지원 완료"로만 보이고 취소 버튼만 있어서, 진짜 요청인 줄 모르고 거절하기 쉬웠음.
-            // "나에게 직접 요청함" 표시는 상단 뱃지 줄로 옮김(여기 두면 거절/수락 버튼보다 넓어져서 삐져나왔음).
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                onClick={(e) => { e.stopPropagation(); onRejectRequest?.(); }}
-                disabled={isLoading}
-                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 10, padding: "6px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1 }}
-              >
-                거절
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onAcceptRequest?.(); }}
-                disabled={isLoading}
-                style={{ background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 10, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 800, cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1 }}
-              >
-                {isLoading ? "..." : "수락"}
-              </button>
-            </div>
-          ) : isApplied ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-              <span style={{ background: "var(--surface2, rgba(255,255,255,0.1))", border: "1px solid var(--border)", borderRadius: 10, padding: "6px 12px", color: "var(--text-muted)", fontSize: 11, fontWeight: 800 }}>
-                ✅ 지원 완료
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); onCancelApply?.(); }}
-                disabled={isLoading}
-                style={{ background: "none", border: "none", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1, padding: "2px 4px" }}
-              >
-                {isLoading ? "..." : "지원 취소"}
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={(e) => { e.stopPropagation(); onApply?.(); }}
-              disabled={isLoading}
-              style={{
-                background: "linear-gradient(135deg, #f97316, #ef4444)",
-                border: "none",
-                borderRadius: 10,
-                padding: "8px 14px",
-                color: "#fff",
-                fontSize: 12,
-                fontWeight: 800,
-                cursor: "pointer",
-                opacity: isLoading ? 0.6 : 1,
-                boxShadow: "0 2px 8px rgba(249,115,22,0.3)",
-              }}
-            >
-              {isLoading ? "..." : "🚀 지원하기"}
-            </button>
-          )}
         </div>
       </div>
+
+      {isMine && !meta.acceptedMatchId && (
+        // 이 화면(/daeta/my)에서 수정/취소는 남의 공고 지원하기 등과 달리 "관리"의 핵심 액션이라
+        // 다른 작은 버튼들과 같은 크기로 두면 눈에 안 띄었음 — 행 전체를 채우는 큰 버튼으로 키움
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
+            style={{ flex: 1, background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 14, padding: "12px", color: "var(--text, #fff)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+            수정
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onCancel?.(); }}
+            style={{ flex: 1, background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, padding: "12px", color: "#f87171", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+            취소
+          </button>
+        </div>
+      )}
 
       {/* 진행상황(스테퍼·응답건수)은 사장님 본인에게만 의미있는 내부 정보라 내 공고에만 노출 — 남의 공고엔 매장 홈 링크로 대체 */}
       {isMine ? (
@@ -438,7 +352,6 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, is
           </div>
         )
       ) : null}
-      </div>
     </div>
   );
 }
@@ -1331,7 +1244,6 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                     urgent={false}
                     meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
                     isApplied={false}
-                    isLoading={false}
                     onEdit={() => { setEditingPostingId(p.id); setShowRegisterModal(true); }}
                     onCancel={() => cancelPosting(p)}
                     onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
@@ -1515,39 +1427,24 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                     <h3 style={{ fontSize: 12, fontWeight: 800, color: "#f87171", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
                       <i className="ti ti-flame" aria-hidden="true" /> 긴급
                     </h3>
-                    {/* scrollSnapType을 mandatory에서 proximity로 완화 — mandatory는 살짝만 밀어도
-                        스냅이 강하게 원위치로 되돌려서 "스크롤이 아예 안 된다"처럼 느껴질 수 있음.
-                        PC는 터치 스와이프가 없어서 기본으론 Shift+휠을 눌러야만 가로 스크롤이 되는데,
-                        그건 알기 어려우니 세로 휠(deltaY)도 이 영역 위에서는 가로 스크롤로 변환해줌
-                        (트랙패드의 진짜 가로 제스처(deltaX)는 그대로 두고, 세로 위주 입력만 가로로 돌림). */}
-                    <div className="no-scrollbar" onWheel={(e) => {
-                      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                        e.currentTarget.scrollLeft += e.deltaY;
-                        e.preventDefault();
-                      }
-                    }} style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
+                    {/* 예전엔 가로 스크롤 캐러셀(width=280)로 따로 뒀는데, 내공고/다른공고와 카드 골격이
+                        갈라지는 원인이었음 — 지금은 셋 다 같은 세로 리스트 카드를 쓴다(2026-09-04). */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       {urgentOthers.map(p => (
-                        <div key={p.id} style={{ scrollSnapAlign: "start", flexShrink: 0 }}>
-                          <PostingCard
-                            p={p}
-                            isMine={false}
-                            urgent
-                            width={280}
-                            meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
-                            isApplied={Boolean(appliedMatchIds[p.id])}
-                            isReceivedRequest={Boolean(receivedRequestMatchIds[p.id])}
-                            isLoading={actionLoading === p.id}
-                            myBase={myBase}
-                            onApply={() => applyPosting(p)}
-                            onCancelApply={() => cancelApplication(p)}
-                            onAcceptRequest={() => respondToSosRequest(p, "accept")}
-                            onRejectRequest={() => respondToSosRequest(p, "reject")}
-                            onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
-                        onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
-                            onViewStore={(id) => router.push(`/store/${id}`)}
-                            onShowDetail={openDetail}
-                          />
-                        </div>
+                        <PostingCard
+                          key={p.id}
+                          p={p}
+                          isMine={false}
+                          urgent
+                          meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
+                          isApplied={Boolean(appliedMatchIds[p.id])}
+                          isReceivedRequest={Boolean(receivedRequestMatchIds[p.id])}
+                          myBase={myBase}
+                          onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
+                          onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
+                          onViewStore={(id) => router.push(`/store/${id}`)}
+                          onShowDetail={openDetail}
+                        />
                       ))}
                     </div>
                   </div>
@@ -1566,14 +1463,9 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                           meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
                           isApplied={Boolean(appliedMatchIds[p.id])}
                           isReceivedRequest={Boolean(receivedRequestMatchIds[p.id])}
-                          isLoading={actionLoading === p.id}
                           myBase={myBase}
-                          onApply={() => applyPosting(p)}
-                          onCancelApply={() => cancelApplication(p)}
-                          onAcceptRequest={() => respondToSosRequest(p, "accept")}
-                          onRejectRequest={() => respondToSosRequest(p, "reject")}
                           onGoToChat={(matchId) => router.push(`/chat/${matchId}`)}
-                        onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
+                          onGoToSettle={(matchId) => router.push(`/mypage/daeta-history?tab=employer&matchId=${matchId}`)}
                           onViewStore={(id) => router.push(`/store/${id}`)}
                           onShowDetail={openDetail}
                         />
@@ -1882,6 +1774,45 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 style={{ width: "100%", marginTop: 12, padding: "12px", background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 14, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <i className="ti ti-home" aria-hidden="true" /> 매장 홈 가기
               </button>
+            )}
+
+            {/* 남의 공고에 지원/취소/수락/거절하는 액션은 전부 여기로 몰아넣었음 — 리스트 카드에서는
+                뺐음(2026-09-04, "훑어보기는 리스트, 결정은 상세" 원칙). 내 공고는 관리 액션(수정/취소)이
+                리스트 카드에 그대로 남아있어서 여기선 아무것도 안 보여줌. */}
+            {detailPosting.user_id !== userId && (
+              receivedRequestMatchIds[detailPosting.id] ? (
+                <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                  <button
+                    onClick={() => respondToSosRequest(detailPosting, "reject")}
+                    disabled={actionLoading === detailPosting.id}
+                    style={{ flex: 1, padding: "14px", background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 14, color: "#f87171", fontSize: 14, fontWeight: 800, cursor: actionLoading === detailPosting.id ? "default" : "pointer", opacity: actionLoading === detailPosting.id ? 0.6 : 1 }}>
+                    거절
+                  </button>
+                  <button
+                    onClick={() => respondToSosRequest(detailPosting, "accept")}
+                    disabled={actionLoading === detailPosting.id}
+                    style={{ flex: 2, padding: "14px", background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 14, color: "#fff", fontSize: 14, fontWeight: 800, cursor: actionLoading === detailPosting.id ? "default" : "pointer", opacity: actionLoading === detailPosting.id ? 0.6 : 1 }}>
+                    {actionLoading === detailPosting.id ? "..." : "수락"}
+                  </button>
+                </div>
+              ) : appliedMatchIds[detailPosting.id] ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)" }}>✅ 지원 완료 · 수락 기다리는 중</span>
+                  <button
+                    onClick={() => cancelApplication(detailPosting)}
+                    disabled={actionLoading === detailPosting.id}
+                    style={{ background: "none", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 12, padding: "8px 12px", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: actionLoading === detailPosting.id ? "default" : "pointer", opacity: actionLoading === detailPosting.id ? 0.6 : 1 }}>
+                    {actionLoading === detailPosting.id ? "..." : "지원 취소"}
+                  </button>
+                </div>
+              ) : detailPosting.status === "pending" ? (
+                <button
+                  onClick={() => applyPosting(detailPosting)}
+                  disabled={actionLoading === detailPosting.id}
+                  style={{ width: "100%", marginTop: 12, padding: "14px", background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 14, color: "#fff", fontSize: 14, fontWeight: 800, cursor: actionLoading === detailPosting.id ? "default" : "pointer", opacity: actionLoading === detailPosting.id ? 0.6 : 1, boxShadow: "0 2px 8px rgba(249,115,22,0.3)" }}>
+                  {actionLoading === detailPosting.id ? "..." : "🚀 지원하기"}
+                </button>
+              ) : null
             )}
             </div>
           </div>

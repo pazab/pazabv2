@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { useToast } from "@/lib/useToast";
 import { supabase } from "@/lib/supabase";
 import AppHeader from "@/components/AppHeader";
-import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX, getBreakMinutesForDate, calcWeeklyHolidayPay, getOvertimePremiumMultiplier } from "@/lib/utils";
+import { getTrustGrade, isWorkingOnDay, KOREAN_DAY_BY_INDEX, getBreakMinutesForDate, calcWeeklyHolidayPay, getOvertimePremiumMultiplier, todayKstStr } from "@/lib/utils";
 import DateWheelPicker from "@/components/DateWheelPicker";
 import { getTaxRates, calcDailyWorkerTax, calcInsuranceEligibility, calcInsuranceDeduction } from "@/lib/taxRates";
 import { sendPushNotification } from "@/lib/usePush";
@@ -350,7 +350,7 @@ export default function TeamMemberPage() {
 
   // 근태 입력 모달
   const [showAttModal, setShowAttModal] = useState(false);
-  const [attDate, setAttDate] = useState(new Date().toISOString().split("T")[0]);
+  const [attDate, setAttDate] = useState(todayKstStr());
   const [attStatus, setAttStatus] = useState("normal");
   const [attNote, setAttNote] = useState("");
   const [attStart, setAttStart] = useState<string>("");
@@ -1070,7 +1070,7 @@ export default function TeamMemberPage() {
                   입사일 {member.hire_date || "미설정"}{" "}
                   {!isResigned && (
                     <button onClick={() => {
-                      setHireDateInput(member.hire_date || new Date().toISOString().split("T")[0]);
+                      setHireDateInput(member.hire_date || todayKstStr());
                       setEditHireDate(true);
                     }} style={{ fontSize: 10, color: "#fff", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer" }}>
                       수정
@@ -2059,7 +2059,7 @@ export default function TeamMemberPage() {
 
       {editHireDate && (
         <DateWheelPicker
-          value={hireDateInput || new Date().toISOString().split("T")[0]}
+          value={hireDateInput || todayKstStr()}
           onChange={v => setHireDateInput(v)}
           onClose={() => setEditHireDate(false)}
           onConfirm={async v => {
@@ -2180,8 +2180,8 @@ export default function TeamMemberPage() {
 
             <div style={{ marginBottom: 12 }}>
               <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>날짜</p>
-              <input type="date" value={attDate} max={new Date().toISOString().split("T")[0]}
-                onChange={e => { const today = new Date().toISOString().split("T")[0]; if (e.target.value > today) return; setAttDate(e.target.value); }}
+              <input type="date" value={attDate} max={todayKstStr()}
+                onChange={e => { const today = todayKstStr(); if (e.target.value > today) return; setAttDate(e.target.value); }}
                 style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
             </div>
 

@@ -57,9 +57,19 @@ const DEFAULT_CONFIG: SosConfig = {
 // 안 잡히고 단계가 오를수록(escalation_stage) 사장님이 등록 시 동의한 상한(max_urgent_pct) 안에서만 자동 인상
 const STAGE_PCT_KEY: Record<number, keyof SosConfig> = { 2: "stage2_pct", 3: "stage3_pct", 4: "stage4_pct" };
 
-export function computeAutoWage(posting: DaetaPostingRow, nextStage: number, cfg: SosConfig): number {
+// 단계 전진(stage1_wait_min~stage3_wait_min, 합계 70분)은 "등록 후 경과 시간"만 보고 돈다 — 근무일이
+// 며칠 뒤든 상관없이 70분이면 전체공개까지 다 도달함. 확산 단계(누구에게 보이는지)가 빨리 넓어지는
+// 건 리드타임이 길어도 해롭지 않지만(오히려 노출 기회가 늘어남), 시급 자동인상까지 같이 따라가면
+// "안 급한데 급한 것처럼" 며칠씩 과할증 상태로 방치됨 — 그래서 시급 인상만 실제 근무 임박(24시간
+// 이내)일 때로 분리해서 게이팅한다(2026-09-04). 등록 화면 미리보기(DaetaRegisterModal.tsx)에도
+// 안내 문구를 같이 달아야 함.
+const WAGE_BUMP_MAX_LEAD_HOURS = 24;
+
+export function computeAutoWage(posting: DaetaPostingRow, nextStage: number, cfg: SosConfig, now: Date = new Date()): number {
   const pctKey = STAGE_PCT_KEY[nextStage];
   if (!pctKey) return posting.wage;
+  const hoursUntilShift = (new Date(posting.expires_at).getTime() - now.getTime()) / 3600000;
+  if (hoursUntilShift > WAGE_BUMP_MAX_LEAD_HOURS) return posting.wage;
   const appliedPct = Math.min(cfg[pctKey], posting.max_urgent_pct || 0);
   if (appliedPct <= 0) return posting.wage;
   return Math.round((posting.base_wage * (1 + appliedPct / 100)) / 10) * 10;
@@ -302,6 +312,16 @@ export async function expireStalePostings(sb: SupabaseClient, now: Date): Promis
   return ids;
 }
 
+// 리드타임(등록~근무 시작) 대비 단계별 대기시간 비율 — stage1/2/3_wait_min은 하한선으로 그대로 두고,
+// 리드타임이 길수록(최대 7일) 이 비율만큼 늘어남. 진짜 긴급(리드타임 ~3시간 이내)은 비율값이
+// 하한선보다 작아서 max()가 항상 하한선을 골라 지금과 완전히 동일한 속도를 유지한다 — 계산:
+// 3시간(180분) 기준 stage1=180*0.05=9<10, stage2/3=180*0.15=27<30, 전부 하한선 승. 리드타임이
+// 길어질 때만(며칠짜리 공고) 비율값이 하한선을 넘어서면서 전환이 자연스럽게 퍼진다. 근거: 시급
+// 자동인상은 24시간 게이팅했지만(computeAutoWage) stage 2/3 전환마다 나가는 실제 푸시 알림
+// (notifyNearby)은 그대로라서, 안 급한 공고가 등록 70분 만에 동네·신규 인력한테까지 "긴급"
+// 알림이 뿌려지는 문제가 남아있었음(2026-09-04).
+const STAGE_WAIT_LEAD_FRACTION: Record<number, number> = { 1: 0.05, 2: 0.15, 3: 0.15 };
+
 /**
  * 단계 전진. 전진했으면 새 stage 반환, 아니면 null.
  * 규칙: 1→2 (stage1_wait 경과), 2→3 (allow_new) 또는 2→4, 3→4
@@ -318,10 +338,16 @@ export async function advancePostingStage(
   const stageStart = new Date(posting.stage_updated_at || posting.created_at).getTime();
   const elapsedMin = (now.getTime() - stageStart) / 60000;
 
-  const waitMap: Record<number, number> = {
+  const totalLeadMin = (new Date(posting.expires_at).getTime() - new Date(posting.created_at).getTime()) / 60000;
+  const baseWaitMap: Record<number, number> = {
     1: cfg.stage1_wait_min,
     2: cfg.stage2_wait_min,
     3: cfg.stage3_wait_min,
+  };
+  const waitMap: Record<number, number> = {
+    1: Math.max(baseWaitMap[1], totalLeadMin * STAGE_WAIT_LEAD_FRACTION[1]),
+    2: Math.max(baseWaitMap[2], totalLeadMin * STAGE_WAIT_LEAD_FRACTION[2]),
+    3: Math.max(baseWaitMap[3], totalLeadMin * STAGE_WAIT_LEAD_FRACTION[3]),
   };
   if (elapsedMin < waitMap[stage]) {
     if (elapsedMin >= waitMap[stage] - WARN_BEFORE_MIN) {
@@ -335,7 +361,7 @@ export async function advancePostingStage(
   else if (stage === 2) nextStage = posting.allow_new ? 3 : 4;
   else nextStage = 4;
 
-  const newWage = computeAutoWage(posting, nextStage, cfg);
+  const newWage = computeAutoWage(posting, nextStage, cfg, now);
   const wageBumped = newWage !== posting.wage;
 
   const updatePayload: { escalation_stage: number; stage_updated_at: string; wage?: number } = {

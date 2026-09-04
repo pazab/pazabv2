@@ -5,9 +5,18 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/lib/useToast";
 import { fetchCredentialsWithFallback } from "@/lib/credentials";
 import { fetchMinWage } from "@/lib/minWage";
-import { parseWorkHoursRange, daetaDayCount, calcLegalBreakMinutes } from "@/lib/utils";
+import { parseWorkHoursRange, daetaDayCount, calcLegalBreakMinutes, formatDaetaDateRange, todayKstStr } from "@/lib/utils";
 import { convertHeicIfNeeded } from "@/lib/heicConvert";
 import ImageCropModal from "@/components/ImageCropModal";
+import DateSheetPicker from "@/components/DateSheetPicker";
+
+const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+function formatDateWithWeekday(dateStr: string): string {
+  if (!dateStr) return "";
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  return `${formatDaetaDateRange(dateStr)} (${WEEKDAY_LABELS[d.getDay()]})`;
+}
 
 const MAX_DAETA_PHOTOS = 3;
 
@@ -79,6 +88,9 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
 
   // 2. 대타 구인 정보 입력 상태
   const [workDate, setWorkDate] = useState("");
+  // 네이티브 input[type=date]가 iOS 휠피커/안드로이드 다이얼로그 등 기기마다 다르게 뜨면서 이 앱의
+  // 다크테마·커스텀 바텀시트 톤과 어긋난다는 피드백으로, 자체 바텀시트(DateSheetPicker)로 교체함(2026-09-05)
+  const [showDateSheet, setShowDateSheet] = useState(false);
   // 근무시간이 같은 기간을 한번에 등록할 때 사용 (신규 등록에서만, 요일별로 시간이 다르면 각각 따로 등록해야 함)
   const [isSingleDay, setIsSingleDay] = useState(true);
   const [endDate, setEndDate] = useState("");
@@ -126,9 +138,16 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
   const [customDuty, setCustomDuty] = useState("");
   const [profileCategoryId, setProfileCategoryId] = useState<string | null>(null);
 
-  // 오늘 날짜 계산 (min 설정용)
-  const todayStr = new Date().toISOString().split("T")[0];
-  const maxDateStr = new Date(Date.now() + 3 * 86400000).toISOString().split("T")[0]; // 최대 3일 뒤
+  // 오늘 날짜 계산 (min 설정용) — 반드시 lib/utils.ts의 todayKstStr() 사용. toISOString()은 UTC
+  // 기준이라 한국 자정~오전 9시 사이엔 하루 전 날짜가 나오는 버그가 있었음(2026-09-05)
+  const todayStr = todayKstStr();
+  // 원래 3일이었는데(긴급 땜빵만 상정), 휴가 등으로 미리 확정된 펑크를 앞당겨 구하고 싶은 사장님도
+  // 있어서 늘림(2026-09-04). 14일까지 고려했으나, escalation_stage는 등록 후 경과시간만 보고
+  // 70분 안에 전체공개까지 다 도는 구조라(lib/daetaEscalation.ts) 리드타임이 길수록 "안 급한데
+  // 전체공개+할증" 상태로 방치되는 기간이 늘어남 — 시급 자동인상은 실제 근무 임박(24시간 이내)
+  // 때로 따로 게이팅해뒀지만(computeAutoWage), 그래도 "확정된 미래 펑크" 커버(보통 근무표는 1주
+  // 단위로 확정)와 방치 기간을 같이 저울질해 7일로 확정
+  const maxDateStr = todayKstStr(new Date(Date.now() + 7 * 86400000));
 
   // 자동 할증 미리보기 — 사장님이 정한 max_urgent_pct 상한과 단계별 할증률(autoPct) 중 작은 쪽만 적용
   const previewWage = (stagePct: number) => {
@@ -158,6 +177,20 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
       checkEmployerProfile();
     }
   }, [postingId, userId]);
+
+  // 법적 필수 자격(예: 카페의 보건증)은 등록을 막는 게 아니라 직무를 고르는 순간 자동으로 미리
+  // 체크해둠 — 급한 SOS 등록까지 "저거 눌렀냐"로 막을 필요는 없다는 피드백으로 되돌림(2026-09-04).
+  // 그래도 눈에는 보이게(칩이 이미 선택된 상태로) 남겨서 지원자에게는 여전히 안내가 나간다.
+  // selectedCreds는 의존성에서 뺐음 — 사장님이 특수한 사정으로 직접 해제해도 다시 강제로 안 붙게.
+  useEffect(() => {
+    if (!duty || !selectedParent) return;
+    const mandatory = credentialsMaster.filter(c => c.category_name === selectedParent.name && c.duty_name === duty && c.is_mandatory_by_law);
+    if (mandatory.length === 0) return;
+    setSelectedCreds(prev => {
+      const toAdd = mandatory.filter(c => !prev.some(sc => sc.name === c.name));
+      return toAdd.length > 0 ? [...prev, ...toAdd.map(c => ({ id: c.id, name: c.name, is_preset: true }))] : prev;
+    });
+  }, [duty, selectedParent, credentialsMaster]);
 
   // 이 사장님이 예전 대타 공고에 올렸던 사진들을 모아 재사용 후보로 보여줌 — 매번 새로 찍게 하지 않기 위함
   const loadPastPhotos = async () => {
@@ -283,7 +316,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
     if (!workDate) { setWageHint(""); return; }
     const start = new Date(`${workDate}T${startHour}:${startMin}:00`);
     const hoursUntil = (start.getTime() - Date.now()) / 3600000;
-    const isSameDay = workDate === new Date().toISOString().split("T")[0];
+    const isSameDay = workDate === todayKstStr();
 
     let pct = 0;
     let label = "";
@@ -863,34 +896,39 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   )}
                 </div>
 
-                {/* 대타 일자 */}
+                {/* 대타 일자 — "하루만 진행" 토글이 시트 안에 내장돼 있어서(DateSheetPicker) 진입점은
+                    하나뿐. 토글 상태에 따라 시트 안에서 단일 날짜 선택 ↔ 기간(여행앱 숙박일처럼
+                    시작~종료 탭) 선택으로 바로 전환됨(2026-09-05). 고를 수 있는 날짜는 항상
+                    오늘~최대 7일 이내(maxDateStr)로 같다 — 오늘부터 시작하면 최대 7일짜리 기간까지,
+                    며칠 뒤부터 시작하면 그만큼 짧아짐(전체 창이 "오늘 기준 7일"이라 시작일이 늦을수록
+                    남는 기간이 줄어듦). 수정 모드(postingId 있음)에선 토글 자체를 숨기고 항상 단일. */}
                 <div>
                   <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>📅 대타 필요한 날짜 *</label>
-                  <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} min={todayStr} max={maxDateStr}
-                    style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }} />
-                  <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>* 대타 구인은 오늘 기준 3일 이내 긴급 일정만 가능합니다. 근무 시작 최소 {minLeadMinutes}분 전까지 등록해 주세요.</span>
-
-                  {/* 근무시간이 같은 기간을 한번에 등록 — 신규 등록에서만 노출(수정 중엔 하루만) */}
-                  {!postingId && (
-                    <div style={{ marginTop: 10 }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
-                        <input type="checkbox" checked={isSingleDay}
-                          onChange={e => { setIsSingleDay(e.target.checked); if (e.target.checked) setEndDate(""); }}
-                          style={{ width: 16, height: 16, cursor: "pointer" }} />
-                        하루만 진행
-                      </label>
-                      {!isSingleDay && (
-                        <div style={{ marginTop: 8 }}>
-                          <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>종료일</label>
-                          <input type="date" value={endDate} min={workDate || todayStr} max={maxDateStr}
-                            onChange={e => setEndDate(e.target.value)}
-                            style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: "var(--text)", fontSize: 14, outline: "none" }} />
-                          <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
-                            시작일~종료일 전체를 하나의 공고로 등록해요. 한 분이 수락하면 기간 전체를 맡게 돼요. 요일마다 근무시간이 다르면 체크박스를 켜고 하루씩 따로 등록해 주세요.
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                  <button type="button" onClick={() => setShowDateSheet(true)}
+                    style={{ width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px", color: workDate ? "var(--text)" : "var(--text-muted)", fontSize: 14, cursor: "pointer", textAlign: "left" }}>
+                    <i className="ti ti-calendar" style={{ fontSize: 16, color: "var(--text-muted)" }} aria-hidden="true" />
+                    {!isSingleDay && workDate && endDate
+                      ? `${formatDateWithWeekday(workDate)} ~ ${formatDateWithWeekday(endDate)}`
+                      : workDate ? formatDateWithWeekday(workDate) : "날짜를 선택해 주세요"}
+                  </button>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+                    * 대타 구인은 오늘 기준 7일 이내 일정만 가능합니다. 근무 시작 최소 {minLeadMinutes}분 전까지 등록해 주세요.
+                  </span>
+                  {showDateSheet && (
+                    <DateSheetPicker
+                      title="대타 필요한 날짜"
+                      value={workDate}
+                      rangeEnd={endDate}
+                      min={todayStr}
+                      max={maxDateStr}
+                      todayStr={todayStr}
+                      isSingleDay={isSingleDay}
+                      showModeToggle={!postingId}
+                      onToggleSingleDay={v => { setIsSingleDay(v); if (v) setEndDate(""); }}
+                      onConfirmSingle={setWorkDate}
+                      onConfirmRange={(s, e) => { setWorkDate(s); setEndDate(e); }}
+                      onClose={() => setShowDateSheet(false)}
+                    />
                   )}
                 </div>
 
@@ -978,6 +1016,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.6 }}>
                     대타가 계속 안 잡히면 요청 범위가 <b style={{ color: "var(--text)" }}>팀 → 동네 검증인력 → 신규 포함 → 전체 공개</b> 순으로 넓어지는데,
                     이때마다 아래 시급이 <b style={{ color: "var(--text)" }}>자동으로</b> 오릅니다. 지금 정하는 <b style={{ color: "var(--text)" }}>상한(%)을 넘는 일은 절대 없어요</b> — 그 이상은 사장님이 직접 수정해야만 올라갑니다.
+                    {" "}단, 시급 인상은 <b style={{ color: "var(--text)" }}>근무 시작 24시간 전부터만</b> 적용돼요 — 며칠 뒤 공고라 요청 범위만 먼저 넓어져도 시급은 아직 안 오릅니다.
                   </p>
 
                   <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
@@ -1053,57 +1092,20 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   )}
                 </div>
 
-                {/* 업무 이해를 돕는 사진 — 인터뷰 없이 바로 지원 여부를 결정해야 하는 대타 특성상 미스매치·노쇼를 줄여줌 */}
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>📸 업무 사진 (선택)</label>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 8, lineHeight: 1.5 }}>
-                    업무 이해를 돕는 사진 위주로 올려주세요 (예: 작업 공간, 사용 장비 등). 처음 지원하는 분도 감이 잡혀요.
-                  </span>
-
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: pastPhotos.length > 0 ? 10 : 0 }}>
-                    {imageUrls.map((url, idx) => (
-                      <div key={url + idx} style={{ position: "relative", width: 72, height: 72, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
-                        <img src={url} alt="업무 사진" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        <button type="button" onClick={() => removeImage(idx)}
-                          style={{ position: "absolute", top: 2, right: 2, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                    {imageUrls.length < MAX_DAETA_PHOTOS && (
-                      <label style={{ width: 72, height: 72, borderRadius: 12, border: "1px dashed var(--border)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: imageUploading ? "default" : "pointer", color: "var(--text-muted)", fontSize: 11 }}>
-                        {imageUploading ? "업로드 중" : (<><span style={{ fontSize: 18, lineHeight: 1 }}>＋</span>사진 추가</>)}
-                        <input type="file" accept="image/*" multiple disabled={imageUploading} onChange={handlePhotoUpload} style={{ display: "none" }} />
-                      </label>
-                    )}
-                  </div>
-
-                  {pastPhotos.length > 0 && (
-                    <div>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>최근 올린 사진에서 선택</span>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {pastPhotos.map(url => {
-                          const selected = imageUrls.includes(url);
-                          return (
-                            <button key={url} type="button" onClick={() => togglePastPhoto(url)}
-                              style={{ position: "relative", width: 56, height: 56, borderRadius: 10, overflow: "hidden", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", padding: 0, cursor: "pointer" }}>
-                              <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                              {selected && (
-                                <span style={{ position: "absolute", inset: 0, background: "rgba(124,58,237,0.35)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 16, fontWeight: 900 }}>✓</span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 필수/우대 자격 요건 선택 */}
+                {/* 필수/우대 자격 요건 선택 — 직무 선택 직후 바로 이어지게 사진 위로 옮김(2026-09-04):
+                    사장님이 직무를 고른 다음 흐름에서 자연스레 이어지는 입력이라, 사이에 사진 업로드가
+                    끼어있으면 다시 스크롤해서 찾아야 했음 */}
                 {duty && (
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 8 }}>🏅 필수/우대 자격 요건</label>
-                    
+                    <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>🏅 필수/우대 자격 요건</label>
+                    {/* ⚠️ 표시가 눌러야 추가되는 건지 이미 걸린 건지 헷갈린다는 피드백이 있어서(2026-09-04)
+                        안내 문구를 추가 — 실제로는 위 useEffect가 직무 선택 시 자동으로 미리 체크해둠 */}
+                    {credentialsMaster.some(c => c.category_name === selectedParent?.name && c.duty_name === duty && c.is_mandatory_by_law) && (
+                      <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 8, lineHeight: 1.5 }}>
+                        ⚠️ 표시는 이 업무에 법적으로 필수인 자격이라 자동으로 켜뒀어요. 해당 안 되면 눌러서 빼도 돼요.
+                      </span>
+                    )}
+
                     {/* 동적 프리셋 칩 목록 */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
                       {[
@@ -1298,6 +1300,52 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
                   </div>
                 )}
 
+                {/* 업무 이해를 돕는 사진 — 인터뷰 없이 바로 지원 여부를 결정해야 하는 대타 특성상 미스매치·노쇼를 줄여줌 */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>📸 업무 사진 (선택)</label>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 8, lineHeight: 1.5 }}>
+                    업무 이해를 돕는 사진 위주로 올려주세요 (예: 작업 공간, 사용 장비 등). 처음 지원하는 분도 감이 잡혀요.
+                  </span>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: pastPhotos.length > 0 ? 10 : 0 }}>
+                    {imageUrls.map((url, idx) => (
+                      <div key={url + idx} style={{ position: "relative", width: 72, height: 72, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
+                        <img src={url} alt="업무 사진" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <button type="button" onClick={() => removeImage(idx)}
+                          style={{ position: "absolute", top: 2, right: 2, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    {imageUrls.length < MAX_DAETA_PHOTOS && (
+                      <label style={{ width: 72, height: 72, borderRadius: 12, border: "1px dashed var(--border)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: imageUploading ? "default" : "pointer", color: "var(--text-muted)", fontSize: 11 }}>
+                        {imageUploading ? "업로드 중" : (<><span style={{ fontSize: 18, lineHeight: 1 }}>＋</span>사진 추가</>)}
+                        <input type="file" accept="image/*" multiple disabled={imageUploading} onChange={handlePhotoUpload} style={{ display: "none" }} />
+                      </label>
+                    )}
+                  </div>
+
+                  {pastPhotos.length > 0 && (
+                    <div>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>최근 올린 사진에서 선택</span>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {pastPhotos.map(url => {
+                          const selected = imageUrls.includes(url);
+                          return (
+                            <button key={url} type="button" onClick={() => togglePastPhoto(url)}
+                              style={{ position: "relative", width: 56, height: 56, borderRadius: 10, overflow: "hidden", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", padding: 0, cursor: "pointer" }}>
+                              <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              {selected && (
+                                <span style={{ position: "absolute", inset: 0, background: "rgba(124,58,237,0.35)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 16, fontWeight: 900 }}>✓</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* 신규(Tier2) 알바생 노출 opt-in — STRATEGY.md §4 */}
                 <div style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.18)", borderRadius: 14, padding: "12px 14px" }}>
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -1396,7 +1444,7 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
             <div style={{ fontSize: 32, textAlign: "center", marginBottom: 8 }}>⚡</div>
             <p style={{ fontSize: 15, fontWeight: 800, textAlign: "center", margin: "0 0 10px" }}>이 조건으로 등록할까요?</p>
             <div style={{ background: "var(--surface2)", borderRadius: 12, padding: "12px 14px", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8, marginBottom: 16 }}>
-              시급 {parseInt(wage || "0").toLocaleString()}원으로 등록되고, 안 잡히면 최대 <strong style={{ color: "var(--text)" }}>{maxUrgentPct}%</strong> 오른
+              시급 {parseInt(wage || "0").toLocaleString()}원으로 등록되고, 근무 시작 24시간 전부터 안 잡히면 최대 <strong style={{ color: "var(--text)" }}>{maxUrgentPct}%</strong> 오른
               <strong style={{ color: "#fb923c" }}> {previewWage(maxUrgentPct).toLocaleString()}원</strong>까지 사장님 확인 없이 자동으로 시급이 인상될 수 있어요.
             </div>
             <div style={{ display: "flex", gap: 8 }}>

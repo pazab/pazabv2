@@ -3,15 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
-import { daetaDayCount, parseWorkHoursRange } from "@/lib/utils";
+import { daetaDayCount, parseWorkHoursRange, todayKstStr } from "@/lib/utils";
 import { DaetaPostingRow } from "@/lib/daetaEscalation";
 import { markNoShowAndReescalate } from "@/lib/daetaNoShow";
 import { calcSettlementPay, calcDailyTaxForPeriod, getIs5OrMore, settlePriorDailyAttendance } from "@/lib/daetaSettlement";
 import { checkAndAwardDaetaBadges } from "@/lib/trustScore";
-
-function todayKstStr(): string {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
-}
 
 const getServiceClient = () =>
   createClient(

@@ -7,6 +7,7 @@ import { promisify } from "util";
 import { writeFile, readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
+import { todayKstStr } from "@/lib/utils";
 
 const execAsync = promisify(exec);
 
@@ -682,7 +683,7 @@ export async function PATCH(req: NextRequest) {
               worker_id: wrkId,
               employer_profile_id: matchRow?.employer_profile_id || null,
               match_id: targetMatchId,
-              hire_date: new Date().toISOString().split("T")[0],
+              hire_date: todayKstStr(),
               status: "active",
               contract_status: "active",
             });

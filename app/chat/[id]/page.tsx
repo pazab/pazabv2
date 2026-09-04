@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getTrustGrade } from "@/lib/utils";
+import { getTrustGrade, todayKstStr } from "@/lib/utils";
 import { chipStyle, chipSuccess, chipWarning, chipDanger, chipPrimary } from "@/lib/styles";
 import { useToast } from "@/lib/useToast";
 import { encryptBankFields, decryptBankFields } from "@/lib/bankCryptoClient";
@@ -477,7 +477,7 @@ export default function ChatRoomPage() {
             worker_id: match?.worker_id,
             employer_profile_id: match?.employer_profile_id || null,
             match_id: matchId,
-            hire_date: new Date().toISOString().split("T")[0],
+            hire_date: todayKstStr(),
             status: "active",
             wage: null,
             work_days: null,
@@ -1437,7 +1437,7 @@ export default function ChatRoomPage() {
               <div>
                 <label style={{ fontSize: 13, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>📆 면접 날짜</label>
                 <input type="date" value={interviewDate} onChange={e => setInterviewDate(e.target.value)}
-                  min={new Date().toISOString().split("T")[0]}
+                  min={todayKstStr()}
                   style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "12px 14px", color: "var(--text)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
               </div>
 

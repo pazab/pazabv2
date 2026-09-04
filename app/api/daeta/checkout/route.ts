@@ -3,17 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
-import { daetaDayCount } from "@/lib/utils";
+import { daetaDayCount, todayKstStr } from "@/lib/utils";
 
 const getServiceClient = () =>
   createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
-
-function todayKstStr(): string {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
-}
 
 // 대타 알바생 원탭 퇴근 체크아웃 — checked_in_at과 짝을 이뤄 실근무시간 정산(app/api/daeta/complete)의 기준이 됨.
 export async function POST(req: NextRequest) {

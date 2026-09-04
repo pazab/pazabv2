@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "@/lib/notify";
 import { getWorkerTier } from "@/lib/daetaTier";
+import { todayKstStr } from "@/lib/utils";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -362,7 +363,7 @@ export async function PATCH(req: NextRequest) {
                 employerProfile = ep;
               }
 
-              const workDate = daetaPosting.work_date || new Date().toISOString().split("T")[0];
+              const workDate = daetaPosting.work_date || todayKstStr();
               const workDateEnd = daetaPosting.work_date_end || workDate;
               const formattedDate = workDate.replace(/-/g, ". ");
               const formattedEndDate = workDateEnd.replace(/-/g, ". ");

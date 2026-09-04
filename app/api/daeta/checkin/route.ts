@@ -3,17 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createNotification } from "@/lib/notify";
-import { daetaDayCount } from "@/lib/utils";
+import { daetaDayCount, todayKstStr } from "@/lib/utils";
 
 const getServiceClient = () =>
   createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
-
-function todayKstStr(): string {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
-}
 
 // 크론(app/api/cron/daeta-checkin)이 "10분 전" 알림+원탭 출근 버튼을 보내는 시점과 맞춤 —
 // 알림은 10분 전에 왔는데 버튼은 그 전부터 눌려있으면 너무 일찍 체크인해서 실근무시간이

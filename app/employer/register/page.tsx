@@ -12,7 +12,7 @@ import { fetchCredentialsWithFallback } from "@/lib/credentials";
 
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
-import { calcWorkPay } from "@/lib/utils";
+import { calcWorkPay, todayKstStr } from "@/lib/utils";
 import { cardStyle, cardGradientStyle, btnPrimary, btnSecondary } from "@/lib/styles";
 
 
@@ -659,10 +659,12 @@ function EmployerRegisterContent() {
 
   const getChildCats = (parentId: string) => childCategories.filter(c => c.parent_id === parentId);
 
-  // 오늘 날짜 (date input min)
-  const today = new Date().toISOString().split("T")[0];
-  // 3일 후 (긴급대타 최대)
-  const in3days = new Date(Date.now() + 3 * 86400000).toISOString().split("T")[0];
+  // 오늘 날짜 (date input min) — 반드시 todayKstStr() 사용, toISOString()은 UTC라 한국 자정~오전
+  // 9시 사이 하루 전 날짜로 계산되는 버그가 있었음(2026-09-05)
+  const today = todayKstStr();
+  // 3일 후 (긴급대타 최대) — 이 "3일" 캡 자체는 이 화면(일반 구인공고)만의 별도 설정이라 안 건드림,
+  // daeta_postings SOS의 7일 캡(components/daeta/DaetaRegisterModal.tsx)과는 다른 기능
+  const in3days = todayKstStr(new Date(Date.now() + 3 * 86400000));
 
   if (loading) return (
     <main style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
