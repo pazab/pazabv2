@@ -1739,7 +1739,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       {detailPosting && (
         <div onClick={() => setDetailPosting(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "94vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div className="no-scrollbar" style={{ overflowY: "auto", minHeight: 0 }}>
             {/* 업무 사진 — 예전엔 140x140 썸네일을 옆으로 나열만 했는데, 한 장씩 크게 넘겨보는 형태로
                 바꿈(components/daeta/DaetaSosHome.tsx PostingCard 배너 사진과 같은 톤으로 통일) */}
