@@ -4,22 +4,39 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    * { margin:0; padding:0; } 
+    * { margin:0; padding:0; }
     #map { width:100%; height:100vh; }
+    #map-error {
+      display:none; width:100%; height:100vh; box-sizing:border-box;
+      align-items:center; justify-content:center; text-align:center;
+      padding:12px; font:12px/1.5 -apple-system, sans-serif; color:#71717a; background:#f4f4f5;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="map-error">지도를 불러오지 못했어요</div>
   <script>
+    // 예전엔 로딩 실패 시(도메인 미등록, 네트워크 차단 등) 아무 에러도 안 보이고 그냥 빈 흰 화면으로
+    // 남아서 원인 파악이 안 됐음 — onerror·타임아웃 둘 다 잡아서 최소한 실패했다는 건 보이게 함(2026-09-09)
+    function showError(reason) {
+      console.error('[map.html] 카카오맵 로딩 실패:', reason);
+      const err = document.getElementById('map-error');
+      if (err) err.style.display = 'flex';
+    }
+
     const p = new URLSearchParams(location.search);
     const lat = parseFloat(p.get('lat'));
     const lng = parseFloat(p.get('lng'));
     const addr = p.get('addr') || '';
 
     if (!isNaN(lat) && !isNaN(lng)) {
+      const timeout = setTimeout(function() { showError('timeout — SDK 스크립트가 5초 안에 로드되지 않음(카카오 개발자센터에 이 도메인이 등록돼 있는지 확인 필요)'); }, 5000);
       const script = document.createElement('script');
       script.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=e86fd6c4b97c3607fb429d8f75526f41&autoload=false';
+      script.onerror = function() { clearTimeout(timeout); showError('script.onerror — 네트워크 차단 또는 스크립트 로드 자체가 실패함'); };
       script.onload = function() {
+        clearTimeout(timeout);
         if (window.kakao && window.kakao.maps) {
           window.kakao.maps.load(function() {
             const container = document.getElementById('map');
@@ -39,9 +56,13 @@
               iw.open(map, marker);
             }
           });
+        } else {
+          showError('script는 로드됐지만 window.kakao.maps가 없음 — 앱키 도메인 제한에 걸렸을 가능성이 큼(카카오 개발자센터 > 내 애플리케이션 > 플랫폼 > Web에 이 사이트 도메인이 등록돼 있는지 확인)');
         }
       };
       document.head.appendChild(script);
+    } else {
+      showError('lat/lng 파라미터가 없거나 유효하지 않음');
     }
   </script>
 </body>

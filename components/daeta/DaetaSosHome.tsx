@@ -1739,7 +1739,8 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
 
       {detailPosting && (
         <div onClick={() => setDetailPosting(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "flex-end" }}>
-          <div className="no-scrollbar" onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflowY: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface, #18181b)", borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, margin: "0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", color: "var(--text, #fff)", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div className="no-scrollbar" style={{ overflowY: "auto", minHeight: 0 }}>
             {/* 업무 사진 — 예전엔 140x140 썸네일을 옆으로 나열만 했는데, 한 장씩 크게 넘겨보는 형태로
                 바꿈(components/daeta/DaetaSosHome.tsx PostingCard 배너 사진과 같은 톤으로 통일) */}
             {detailPosting.image_urls && detailPosting.image_urls.length > 0 ? (
@@ -1772,7 +1773,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               </div>
             )}
 
-            <div style={{ padding: 20 }}>
+            <div style={{ padding: "20px 20px 12px" }}>
 
             {detailPosting.lat != null && detailPosting.lng != null && (
               <iframe
@@ -1800,13 +1801,18 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 <i className="ti ti-home" aria-hidden="true" /> 매장 홈 가기
               </button>
             )}
+            </div>
+          </div>
 
-            {/* 남의 공고에 지원/취소/수락/거절하는 액션은 전부 여기로 몰아넣었음 — 리스트 카드에서는
-                뺐음(2026-09-04, "훑어보기는 리스트, 결정은 상세" 원칙). 내 공고는 관리 액션(수정/취소)이
-                리스트 카드에 그대로 남아있어서 여기선 아무것도 안 보여줌. */}
-            {detailPosting.user_id !== userId && (
-              receivedRequestMatchIds[detailPosting.id] ? (
-                <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          {/* 지원/수락·거절 같은 "결정" 액션은 스크롤 영역 밖, 시트 하단에 고정 — 사진(260px)+지도(180px)+
+              정보 박스가 쌓이면 이 버튼이 화면 아래로 밀려서 스크롤해야만 보였던 문제를 해결(2026-09-09).
+              "훑어보기는 리스트, 결정은 상세" 원칙(2026-09-04)은 유지 — 다만 상세 안에서도 결정 버튼은
+              항상 눈에 보여야 한다는 게 이번에 추가된 기준. 내 공고는 관리 액션이 리스트 카드에 그대로
+              남아있어서 여기선 아무것도 안 보여줌. */}
+          {detailPosting.user_id !== userId && (
+            <div style={{ padding: "12px 20px", paddingBottom: "max(16px, env(safe-area-inset-bottom))", borderTop: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
+              {receivedRequestMatchIds[detailPosting.id] ? (
+                <div style={{ display: "flex", gap: 10 }}>
                   <button
                     onClick={() => respondToSosRequest(detailPosting, "reject")}
                     disabled={actionLoading === detailPosting.id}
@@ -1821,7 +1827,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                   </button>
                 </div>
               ) : appliedMatchIds[detailPosting.id] ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)" }}>✅ 지원 완료 · 수락 기다리는 중</span>
                   <button
                     onClick={() => cancelApplication(detailPosting)}
@@ -1834,12 +1840,12 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 <button
                   onClick={() => applyPosting(detailPosting)}
                   disabled={actionLoading === detailPosting.id}
-                  style={{ width: "100%", marginTop: 12, padding: "14px", background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 14, color: "#fff", fontSize: 14, fontWeight: 800, cursor: actionLoading === detailPosting.id ? "default" : "pointer", opacity: actionLoading === detailPosting.id ? 0.6 : 1, boxShadow: "0 2px 8px rgba(249,115,22,0.3)" }}>
+                  style={{ width: "100%", padding: "14px", background: "linear-gradient(135deg, #f97316, #ef4444)", border: "none", borderRadius: 14, color: "#fff", fontSize: 14, fontWeight: 800, cursor: actionLoading === detailPosting.id ? "default" : "pointer", opacity: actionLoading === detailPosting.id ? 0.6 : 1, boxShadow: "0 2px 8px rgba(249,115,22,0.3)" }}>
                   {actionLoading === detailPosting.id ? "..." : "🚀 지원하기"}
                 </button>
-              ) : null
-            )}
+              ) : null}
             </div>
+          )}
           </div>
         </div>
       )}
