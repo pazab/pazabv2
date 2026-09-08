@@ -1748,7 +1748,12 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 <img src={detailPosting.image_urls[Math.min(detailMediaIndex, detailPosting.image_urls.length - 1)]} alt="업무 사진"
                   style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 30%)", pointerEvents: "none" }} />
-                <h3 style={{ position: "absolute", left: 16, bottom: 12, margin: 0, fontSize: 17, fontWeight: 900, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>{detailPosting.business_name}</h3>
+                <h3
+                  onClick={detailPosting.employer_profile_id ? () => { const id = detailPosting.employer_profile_id!; setDetailPosting(null); router.push(`/store/${id}`); } : undefined}
+                  style={{ position: "absolute", left: 16, bottom: 12, margin: 0, fontSize: 17, fontWeight: 900, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.5)", display: "flex", alignItems: "center", gap: 6, cursor: detailPosting.employer_profile_id ? "pointer" : "default" }}>
+                  {detailPosting.employer_profile_id && <i className="ti ti-home" style={{ fontSize: 15 }} aria-hidden="true" />}
+                  {detailPosting.business_name}
+                </h3>
                 <button onClick={() => setDetailPosting(null)} style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>✕</button>
                 {detailPosting.image_urls.length > 1 && (
                   <>
@@ -1768,7 +1773,12 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               </div>
             ) : (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "20px 20px 0" }}>
-                <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>{detailPosting.business_name}</h3>
+                <h3
+                  onClick={detailPosting.employer_profile_id ? () => { const id = detailPosting.employer_profile_id!; setDetailPosting(null); router.push(`/store/${id}`); } : undefined}
+                  style={{ fontSize: 17, fontWeight: 900, margin: 0, display: "flex", alignItems: "center", gap: 6, cursor: detailPosting.employer_profile_id ? "pointer" : "default" }}>
+                  {detailPosting.employer_profile_id && <i className="ti ti-home" style={{ fontSize: 15, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />}
+                  {detailPosting.business_name}
+                </h3>
                 <button onClick={() => setDetailPosting(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
               </div>
             )}
@@ -1794,13 +1804,6 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               <div style={{ fontSize: 13, fontWeight: 800, color: "#fb923c" }}>💰 시급 {detailPosting.wage.toLocaleString()}원</div>
             </div>
 
-            {detailPosting.employer_profile_id && (
-              <button
-                onClick={() => { const id = detailPosting.employer_profile_id!; setDetailPosting(null); router.push(`/store/${id}`); }}
-                style={{ width: "100%", marginTop: 12, padding: "12px", background: "var(--surface2, rgba(255,255,255,0.08))", border: "1px solid var(--border, rgba(255,255,255,0.15))", borderRadius: 14, color: "var(--text, #fff)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <i className="ti ti-home" aria-hidden="true" /> 매장 홈 가기
-              </button>
-            )}
             </div>
           </div>
 
