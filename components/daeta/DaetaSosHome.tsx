@@ -204,16 +204,18 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, wi
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {/* 상호명은 한 줄 말줄임(ellipsis) 고정 — 줄바꿈을 허용하면 상호명 길이에 따라 카드 세로
+              길이가 들쭉날쭉해짐(특히 긴급 가로 캐러셀에서 옆 카드와 높이가 안 맞아 티가 남)(2026-09-09) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
             {!isMine && p.employer_profile_id ? (
               <span
                 onClick={(e) => { e.stopPropagation(); onViewStore?.(p.employer_profile_id!); }}
-                style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 14, fontWeight: 900, color: "var(--text, #fff)", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3, cursor: "pointer" }}>
-                <i className="ti ti-home" style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />
-                {p.business_name}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 14, fontWeight: 900, color: "var(--text, #fff)", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3, cursor: "pointer", minWidth: 0 }}>
+                <i className="ti ti-home" style={{ fontSize: 12, color: "var(--text-muted, rgba(255,255,255,0.5))", flexShrink: 0 }} aria-hidden="true" />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.business_name}</span>
               </span>
             ) : (
-              <span style={{ fontSize: 14, fontWeight: 900, color: "var(--text, #fff)" }}>{p.business_name}</span>
+              <span style={{ fontSize: 14, fontWeight: 900, color: "var(--text, #fff)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{p.business_name}</span>
             )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
