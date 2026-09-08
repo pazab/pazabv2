@@ -423,6 +423,19 @@ export default function DaetaRegisterModal({ userId, onClose, onSuccess, posting
     }
   }, [profileCategoryId, childCategories, parentCategories]);
 
+  // 수정 모드 전용 — daeta_postings에는 category_id 컬럼이 없어(employer_profiles에만 있음)
+  // loadPostingDetails가 duty(저장된 직무명, 예: "바리스타")만 복원하고 selectedParent(업종)는
+  // 못 채웠었음. 위 효과는 profileCategoryId(매장 기본 업종)로만 채워지는데 그건 신규 등록
+  // 전용 흐름(checkEmployerProfile)이라 수정 모드에선 아예 안 불림 — 그래서 수정 진입 시 업종
+  // 선택이 항상 빈 채로 시작해 매번 다시 골라야 했음. duty로 child 카테고리를 역으로 찾아 채움.
+  useEffect(() => {
+    if (!postingId || !duty || selectedParent || childCategories.length === 0 || parentCategories.length === 0) return;
+    const child = childCategories.find(c => c.name === duty);
+    if (!child) return;
+    const parent = parentCategories.find(p => p.id === child.parent_id);
+    if (parent) setSelectedParent(parent);
+  }, [postingId, duty, childCategories, parentCategories, selectedParent]);
+
   const checkEmployerProfile = async () => {
     try {
       const { data, error } = await supabase

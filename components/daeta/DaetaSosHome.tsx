@@ -159,28 +159,38 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, wi
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
   const images = p.image_urls || [];
   return (
-    <div onClick={() => onShowDetail?.(p)} style={{
-      width: width ?? "100%",
-      flexShrink: 0,
-      cursor: onShowDetail ? "pointer" : "default",
-      background: isMine
-        ? "linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(239,68,68,0.06) 100%)"
-        : "var(--surface, rgba(255,255,255,0.04))",
-      border: isMine
-        ? "1.5px solid rgba(249,115,22,0.6)"
-        : urgent
-          ? "1.5px solid rgba(239,68,68,0.45)"
-          : "1px solid var(--border, rgba(255,255,255,0.12))",
-      borderRadius: 18,
-      overflow: "hidden",
-      boxShadow: isMine ? "0 4px 16px rgba(249,115,22,0.15)" : "none",
-      padding: "12px 14px",
-    }}>
-      {/* 유튜브식 컴팩트 리스트 헤더 — 예전엔 사진을 카드 절반을 차지하는 배너로 키웠었는데, 리스트
-          한 화면에 몇 개나 보이는지·훑어보는 속도가 더 중요하다고 판단해 왼쪽 썸네일로 줄임. 여러
-          장 넘겨보기는 이제 상세 팝업 전용(거기서 ‹ › 로 이미 지원). */}
+    <div
+      onClick={() => onShowDetail?.(p)}
+      // 일반 카드(내 공고 아닌 것)만 유튜브 피드식 호버 배경(paz-card-hover, globals.css)을 씀 —
+      // 내 공고는 이미 자기 상태색(주황 그라디언트)이 있어서 호버로 덮으면 오히려 헷갈림(2026-09-08)
+      className={!isMine ? "paz-card-hover" : undefined}
+      style={{
+        width: width ?? "100%",
+        flexShrink: 0,
+        scrollSnapAlign: urgent ? "start" : undefined,
+        cursor: onShowDetail ? "pointer" : "default",
+        background: isMine
+          ? "linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(239,68,68,0.06) 100%)"
+          : undefined,
+        border: isMine
+          ? "1.5px solid rgba(249,115,22,0.6)"
+          : "1px solid transparent",
+        borderRadius: 18,
+        overflow: "hidden",
+        // 일반 카드는 배경색·테두리선·그림자 기본값은 전부 없앰 — 구분은 카드 사이 간격(gap)+
+        // 내용(사진·글자)으로 하고, 배경은 마우스 호버 시에만 옅게 켜짐(위 paz-card-hover)(2026-09-08).
+        // (isMine은 상태를 나타내는 강조색 배경·테두리·그림자라 그대로 유지)
+        boxShadow: isMine ? "0 4px 16px rgba(249,115,22,0.15)" : "none",
+        padding: "12px 14px",
+      }}>
+      {/* 썸네일을 텍스트 정보량 기준 정사각형(96x72)으로 고정했더니 오른쪽 텍스트 블록(상호명+태그+
+          날짜+시급 4줄)보다 사진이 짧아 보이는 문제가 있었음 — 폭을 카드 폭 비례(42%)로 키우고
+          높이는 고정하지 않아서(align-items 기본값 stretch) 오른쪽 텍스트 블록 높이에 자동으로
+          맞춰지게 함(2026-09-08). 고정 px가 아니라 %인 이유: 이 카드가 풀와이드 리스트(다른 공고)와
+          좁은 가로 캐러셀(긴급, width=280) 둘 다에서 재사용되기 때문 — 고정폭이면 캐러셀에서 텍스트
+          영역이 너무 좁아짐. 여러 장 넘겨보기는 상세 팝업 전용(거기서 ‹ › 로 이미 지원). */}
       <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ width: 96, height: 72, borderRadius: 10, overflow: "hidden", flexShrink: 0, background: "var(--surface2, rgba(255,255,255,0.06))", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: "42%", borderRadius: 10, overflow: "hidden", flexShrink: 0, background: "var(--surface2, rgba(255,255,255,0.06))", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {images.length > 0 ? (
             <img src={images[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           ) : (
@@ -1235,7 +1245,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 진행 중인 대타 SOS가 없어요. 우측 하단 버튼으로 등록해보세요.
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {myPostings.map(p => (
                   <PostingCard
                     key={p.id}
@@ -1427,13 +1437,20 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                     <h3 style={{ fontSize: 12, fontWeight: 800, color: "#f87171", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
                       <i className="ti ti-flame" aria-hidden="true" /> 긴급
                     </h3>
-                    {/* 예전엔 가로 스크롤 캐러셀(width=280)로 따로 뒀는데, 내공고/다른공고와 카드 골격이
-                        갈라지는 원인이었음 — 지금은 셋 다 같은 세로 리스트 카드를 쓴다(2026-09-04). */}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {/* 2026-09-04엔 내공고/다른공고와 카드 골격을 맞추려고 세로 리스트로 통일했다가,
+                        긴급은 다른공고와 시각적으로 확실히 구분돼야 한다는 피드백으로 가로 스크롤
+                        캐러셀로 되돌림(2026-09-08). PostingCard 자체(썸네일 42% 등)는 그대로 재사용 —
+                        카드 골격이 갈라지진 않고, 이 감싸는 컨테이너만 가로/세로로 다름. */}
+                    <div
+                      className="no-scrollbar"
+                      onWheel={(e) => { if (e.deltaY !== 0) { e.currentTarget.scrollLeft += e.deltaY; } }}
+                      style={{ display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x proximity", paddingBottom: 2 }}
+                    >
                       {urgentOthers.map(p => (
                         <PostingCard
                           key={p.id}
                           p={p}
+                          width={280}
                           isMine={false}
                           urgent
                           meta={matchMeta[p.id] || { total: 0, notified: 0, acceptedMatchId: null, acceptedWorkerName: null, checkedInAt: null, checkedOutAt: null }}
@@ -1453,7 +1470,7 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 {generalOthers.length > 0 && (
                   <div>
                     <h3 style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted, rgba(255,255,255,0.5))", margin: "0 0 8px" }}>다른 공고</h3>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       {generalOthers.map(p => (
                         <PostingCard
                           key={p.id}
