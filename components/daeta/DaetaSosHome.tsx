@@ -158,12 +158,17 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, wi
   const visibleSteps = STAGE_STEPS.filter(s => s.n !== 3 || p.allow_new);
   const dist = !isMine && myBase && p.lat != null && p.lng != null ? distanceKm(myBase, { lat: p.lat, lng: p.lng }) : null;
   const images = p.image_urls || [];
+  // CSS ":hover" 클래스(.paz-card-hover, globals.css)로 시도했다가 PC에서 안 먹는 게 확인돼서
+  // (원인 미확인 — Tailwind v4 레이어 캐스케이드 등 의심되나 미해결) 인라인 style로 직접 전환.
+  // 인라인 style은 외부 스타일시트보다 항상 우선순위가 높아서 이쪽은 원인 불문 확실히 동작함(2026-09-08).
+  const [hovered, setHovered] = useState(false);
   return (
     <div
       onClick={() => onShowDetail?.(p)}
-      // 일반 카드(내 공고 아닌 것)만 유튜브 피드식 호버 배경(paz-card-hover, globals.css)을 씀 —
-      // 내 공고는 이미 자기 상태색(주황 그라디언트)이 있어서 호버로 덮으면 오히려 헷갈림(2026-09-08)
-      className={!isMine ? "paz-card-hover" : undefined}
+      // 터치 기기는 탭할 때 mouseenter가 합성 이벤트로 발생해서 그대로 두면 "탭한 카드가 계속 눌린
+      // 색으로 남는"(sticky hover) 문제가 생김 — 실제 마우스가 있는 기기에서만 켜지게 가드.
+      onMouseEnter={() => { if (window.matchMedia?.("(hover: hover)").matches) setHovered(true); }}
+      onMouseLeave={() => setHovered(false)}
       style={{
         width: width ?? "100%",
         flexShrink: 0,
@@ -171,14 +176,15 @@ function PostingCard({ p, isMine, urgent, meta, isApplied, isReceivedRequest, wi
         cursor: onShowDetail ? "pointer" : "default",
         background: isMine
           ? "linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(239,68,68,0.06) 100%)"
-          : undefined,
+          : hovered ? "var(--surface2, rgba(255,255,255,0.06))" : "transparent",
         border: isMine
           ? "1.5px solid rgba(249,115,22,0.6)"
           : "1px solid transparent",
         borderRadius: 18,
         overflow: "hidden",
+        transition: "background-color 0.15s ease",
         // 일반 카드는 배경색·테두리선·그림자 기본값은 전부 없앰 — 구분은 카드 사이 간격(gap)+
-        // 내용(사진·글자)으로 하고, 배경은 마우스 호버 시에만 옅게 켜짐(위 paz-card-hover)(2026-09-08).
+        // 내용(사진·글자)으로 하고, 배경은 마우스 호버 시에만(hovered state) 옅게 켜짐(2026-09-08).
         // (isMine은 상태를 나타내는 강조색 배경·테두리·그림자라 그대로 유지)
         boxShadow: isMine ? "0 4px 16px rgba(249,115,22,0.15)" : "none",
         padding: "12px 14px",

@@ -388,10 +388,10 @@
 - **카드 간격 축소**: 10 → 6 → 3 → 2(다른 공고)로 여러 차례 줄임. 배경/테두리/그림자가 다 없는 상태라 간격이 유일한 구분 신호이므로, 너무 좁으면 카드끼리 붙어 보일 위험이 있음 — 실기기 확인 필요.
 - **썸네일 고정 96px → 카드 폭 비례 42%로 변경**: 텍스트 블록(상호명+태그+날짜+시급 4줄)보다 사진이 짧아 보이던 문제 해결(높이는 `align-items: stretch` 기본값으로 텍스트 블록 높이에 자동으로 맞춰짐). 고정 px가 아니라 %인 이유는 아래 항목과 직결됨.
 - **긴급 섹션 — 세로 리스트 → 가로 스크롤 캐러셀로 재분리**: 9/5에 "카드 골격 통일"을 이유로 세로 리스트로 합쳤던 걸 다시 되돌림 — 긴급은 다른 공고와 시각적으로 확실히 구분돼야 한다는 판단. `PostingCard` 자체는 그대로 재사용(썸네일 % 비율 덕분에 풀와이드 리스트든 `width=280` 캐러셀이든 양쪽에서 다 동작), 감싸는 컨테이너만 `overflowX:auto`+`scrollSnapType:"x proximity"`+PC 마우스 휠 지원으로 다름.
-- **마우스 호버 배경(유튜브 피드 참고)**: `.paz-card-hover:hover { background-color: var(--surface2) }`를 `app/globals.css`에 추가, `@media (hover: hover)`로 감싸서 터치 기기의 sticky-hover를 방지. **PC 데스크톱 브라우저에서도 작동 안 하는 게 확인됨(2026-09-08) — 원인 미해결, 다음 세션에서 디버깅 필요**(브라우저 캐시/Turbopack 캐시 stale 의심되나 미확인).
+- **마우스 호버 배경(유튜브 피드 참고)**: 처음엔 CSS `:hover` 클래스(`.paz-card-hover`, `app/globals.css`)로 시도했는데 PC 데스크톱 브라우저에서 작동 안 하는 게 확인됨(원인 미확인 — Tailwind v4 레이어 캐스케이드 의심되나 미해결). React state(`hovered`) + `onMouseEnter`/`onMouseLeave`로 인라인 style에 직접 반영하는 방식으로 전환해서 해결(인라인 style은 외부 스타일시트보다 항상 우선순위가 높아 원인 불문 확실히 동작함). 터치 기기 sticky-hover 방지는 `window.matchMedia("(hover: hover)")` 체크로 대체.
 - **수정 모드 업종(상위 카테고리) 프리필 버그 수정**: `daeta_postings` 테이블엔 애초에 `category_id` 컬럼이 없음(업종은 `employer_profiles`에만 있음) — 저장되는 건 `duty`(구체 직무명)뿐. 업종 선택 UI(`selectedParent`)를 채우는 유일한 경로가 `checkEmployerProfile()`(신규 등록 전용, 수정 모드에선 미호출)였어서, 수정 진입 시 `duty`는 복원되지만 업종은 항상 빈 채로 시작해 매번 다시 골라야 했음. `DaetaRegisterModal.tsx`에 수정 모드 전용 `useEffect` 추가 — 저장된 `duty`로 `childCategories`를 역매칭해 `selectedParent`를 채움.
 
-**남은 것**: 위 호버 배경 버그 미해결. 카드 간격(2px)이 너무 좁아 보이면 조정 필요 — 실기기 확인 대기 중.
+**남은 것**: 카드 간격(2px)이 너무 좁아 보이면 조정 필요 — 실기기 확인 대기 중.
 
 ---
 
