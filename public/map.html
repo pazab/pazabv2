@@ -15,13 +15,22 @@
 </head>
 <body>
   <div id="map"></div>
-  <div id="map-error">지도를 불러오지 못했어요</div>
+  <div id="map-error">
+    <div>
+      <div>지도를 불러오지 못했어요</div>
+      <div id="map-error-detail" style="margin-top:6px;font-size:10px;color:#a1a1aa;word-break:break-all;"></div>
+    </div>
+  </div>
   <script>
     // 예전엔 로딩 실패 시(도메인 미등록, 네트워크 차단 등) 아무 에러도 안 보이고 그냥 빈 흰 화면으로
-    // 남아서 원인 파악이 안 됐음 — onerror·타임아웃 둘 다 잡아서 최소한 실패했다는 건 보이게 함(2026-09-09)
+    // 남아서 원인 파악이 안 됐음 — onerror·타임아웃 둘 다 잡아서 최소한 실패했다는 건 보이게 함(2026-09-09).
+    // 이유를 console.error뿐 아니라 화면에도 작게 표시 — 폰에서는 개발자도구를 보기 어려우니
+    // 스크린샷만으로 원인을 알 수 있게(2026-09-09).
     function showError(reason) {
-      console.error('[map.html] 카카오맵 로딩 실패:', reason);
+      console.error('[map.html] 카카오맵 로딩 실패:', reason, 'UA:', navigator.userAgent, 'referrer:', document.referrer);
       const err = document.getElementById('map-error');
+      const detail = document.getElementById('map-error-detail');
+      if (detail) detail.textContent = reason;
       if (err) err.style.display = 'flex';
     }
 
@@ -31,10 +40,10 @@
     const addr = p.get('addr') || '';
 
     if (!isNaN(lat) && !isNaN(lng)) {
-      const timeout = setTimeout(function() { showError('timeout — SDK 스크립트가 5초 안에 로드되지 않음(카카오 개발자센터에 이 도메인이 등록돼 있는지 확인 필요)'); }, 5000);
+      const timeout = setTimeout(function() { showError('타임아웃(5초 내 SDK 미로드) — 네트워크가 dapi.kakao.com을 못 불렀을 가능성'); }, 5000);
       const script = document.createElement('script');
       script.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=e86fd6c4b97c3607fb429d8f75526f41&autoload=false';
-      script.onerror = function() { clearTimeout(timeout); showError('script.onerror — 네트워크 차단 또는 스크립트 로드 자체가 실패함'); };
+      script.onerror = function() { clearTimeout(timeout); showError('script.onerror — 스크립트 요청 자체가 실패(네트워크 차단)'); };
       script.onload = function() {
         clearTimeout(timeout);
         if (window.kakao && window.kakao.maps) {
@@ -57,12 +66,12 @@
             }
           });
         } else {
-          showError('script는 로드됐지만 window.kakao.maps가 없음 — 앱키 도메인 제한에 걸렸을 가능성이 큼(카카오 개발자센터 > 내 애플리케이션 > 플랫폼 > Web에 이 사이트 도메인이 등록돼 있는지 확인)');
+          showError('스크립트는 로드됐지만 window.kakao.maps 없음 — 앱키 도메인 제한(referrer=' + (document.referrer || '없음') + ')');
         }
       };
       document.head.appendChild(script);
     } else {
-      showError('lat/lng 파라미터가 없거나 유효하지 않음');
+      showError('lat/lng 파라미터가 없거나 유효하지 않음(lat=' + p.get('lat') + ', lng=' + p.get('lng') + ')');
     }
   </script>
 </body>
