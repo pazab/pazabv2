@@ -1750,9 +1750,16 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
                 <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 30%)", pointerEvents: "none" }} />
                 <h3
                   onClick={detailPosting.employer_profile_id ? () => { const id = detailPosting.employer_profile_id!; setDetailPosting(null); router.push(`/store/${id}`); } : undefined}
-                  style={{ position: "absolute", left: 16, bottom: 12, margin: 0, fontSize: 17, fontWeight: 900, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.5)", display: "flex", alignItems: "center", gap: 6, cursor: detailPosting.employer_profile_id ? "pointer" : "default" }}>
-                  {detailPosting.employer_profile_id && <i className="ti ti-home" style={{ fontSize: 15 }} aria-hidden="true" />}
+                  style={{
+                    position: "absolute", left: 16, bottom: 12, margin: 0, fontSize: 20, fontWeight: 900, color: "#fff",
+                    textShadow: "0 1px 4px rgba(0,0,0,0.5)", display: "flex", alignItems: "center", gap: 6,
+                    cursor: detailPosting.employer_profile_id ? "pointer" : "default",
+                    textDecoration: detailPosting.employer_profile_id ? "underline" : "none",
+                    textDecorationColor: "rgba(255,255,255,0.5)", textUnderlineOffset: 4,
+                  }}>
+                  {detailPosting.employer_profile_id && <i className="ti ti-home" style={{ fontSize: 17 }} aria-hidden="true" />}
                   {detailPosting.business_name}
+                  {detailPosting.employer_profile_id && <i className="ti ti-chevron-right" style={{ fontSize: 15, opacity: 0.7 }} aria-hidden="true" />}
                 </h3>
                 <button onClick={() => setDetailPosting(null)} style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>✕</button>
                 {detailPosting.image_urls.length > 1 && (
@@ -1775,9 +1782,15 @@ export default function DaetaSosHome({ userId, userType, onOpenDeck, roleView, o
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "20px 20px 0" }}>
                 <h3
                   onClick={detailPosting.employer_profile_id ? () => { const id = detailPosting.employer_profile_id!; setDetailPosting(null); router.push(`/store/${id}`); } : undefined}
-                  style={{ fontSize: 17, fontWeight: 900, margin: 0, display: "flex", alignItems: "center", gap: 6, cursor: detailPosting.employer_profile_id ? "pointer" : "default" }}>
-                  {detailPosting.employer_profile_id && <i className="ti ti-home" style={{ fontSize: 15, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />}
+                  style={{
+                    fontSize: 20, fontWeight: 900, margin: 0, display: "flex", alignItems: "center", gap: 6,
+                    cursor: detailPosting.employer_profile_id ? "pointer" : "default",
+                    textDecoration: detailPosting.employer_profile_id ? "underline" : "none",
+                    textDecorationColor: "var(--text-muted, rgba(255,255,255,0.3))", textUnderlineOffset: 4,
+                  }}>
+                  {detailPosting.employer_profile_id && <i className="ti ti-home" style={{ fontSize: 17, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />}
                   {detailPosting.business_name}
+                  {detailPosting.employer_profile_id && <i className="ti ti-chevron-right" style={{ fontSize: 15, color: "var(--text-muted, rgba(255,255,255,0.5))" }} aria-hidden="true" />}
                 </h3>
                 <button onClick={() => setDetailPosting(null)} style={{ background: "none", border: "none", color: "var(--text-muted, rgba(255,255,255,0.5))", fontSize: 20, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
               </div>
